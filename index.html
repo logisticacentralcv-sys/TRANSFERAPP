@@ -200,7 +200,7 @@ tr:hover td{background:var(--s2)}
 // ══════════════════════════════════════════════════════════
 //  ★  CONFIGURACIÓN — PEGÁ TU URL AQUÍ  ★
 // ══════════════════════════════════════════════════════════
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzhAqn8z0Wk2EHPA7iFQomlKAgVdNOpihQ9q5oaBXfCRNrQPpY_OesnActmUqccLw4tcQ/exec";  // URL del Apps Script (termina en /exec)
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx5CV49bSA1UnH-j1YSgiGRuO0Vg7KUiuucvbDnE3c87EFTGLvoznoVxpOaVr4SbF7r/exec";  // URL del Apps Script (termina en /exec)
 const USE_SHEETS  = WEB_APP_URL !== "";
 
 // ══════════════════════════════════════════════════════════
@@ -417,6 +417,8 @@ function fechaCorta(){
   const yyyy = hoy.getFullYear();
   return dd+mm+yyyy;
 }
+
+function fechaISO(){ return new Date().toISOString().slice(0,10); }
 
 function genId(){
   const hoy = new Date();
@@ -997,13 +999,13 @@ function renderRecepcionista(){
 
   // ENTRANTES: destino = fábrica/depósito
   const entrantes  = S.requests.filter(r=>esDestinoFabrica(r));
-  const entActivas = entrantes.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
-  const entHist    = entrantes.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const entActivas = entrantes.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const entHist    = entrantes.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
 
   // SALIENTES: origen = fábrica/depósito
   const salientes  = S.requests.filter(r=>esOrigenFabrica(r));
-  const salActivas = salientes.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
-  const salHist    = salientes.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const salActivas = salientes.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const salHist    = salientes.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
 
   const tab  = S.tabSuc||"entrantes";
   const list = tab==="entrantes" ? entActivas
@@ -1096,10 +1098,10 @@ function renderSucursalArea(){
 
   const miosPedidos    = mine.filter(r => matchArea(r.sucursal)||matchArea(r.area));
   const miDestinoQ     = mine.filter(r => matchArea(r.destino) && !matchArea(r.sucursal) && !matchArea(r.area));
-  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
-  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
-  const open=mine.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
-  const hist=mine.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const open=mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const hist=mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
   const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado))
              : S.tabSuc==="destino"  ? lleganActivas
              : [...hist, ...lleganHistorial];
@@ -2745,7 +2747,7 @@ async function submitPedirBolsin(){
       const nueva = {
         id: genId(),
         sucursal: "Fábrica",
-        area: "",
+        area: "Tesorería",
         solicitante: nombreSolicitante,
         dniSolicitante: dniVal,
         destino: u.area,
@@ -2893,7 +2895,7 @@ async function submitNuevoLote(){
       const nuevas = items.map(it => ({
         id: genId(),
         sucursal: "Fábrica",
-        area: "",
+        area: "Tesorería",
         solicitante: nombre,
         dniSolicitante: dniVal,
         destino: it.sucursal,
@@ -2901,7 +2903,7 @@ async function submitNuevoLote(){
         cantidad: it.cantidad,
         unidad: "Bolsines",
         prioridad: "Media",
-        fechaRequerida: null,
+        fechaRequerida: fechaISO(),
         observaciones: "",
         estado: "Aprobada",
         tipoPedido: "bolsin",
