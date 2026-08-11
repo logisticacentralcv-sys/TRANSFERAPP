@@ -1,0 +1,3641 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TransferLog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b1120;--s1:#111827;--s2:#1a2338;--s3:#1f2d44;
+  --border:#263348;--border2:#2f4060;
+  --text:#e2e8f4;--muted:#7a90b0;--faint:#3d5070;
+  --blue:#4f9eff;--green:#2ecc7a;--amber:#f5a623;
+  --red:#f05252;--purple:#9b8ff7;--teal:#2de0c4;
+  --font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
+  --r:10px;--rsm:6px;
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;font-size:16px}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* LAYOUT */
+.navbar{background:var(--s1);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200}
+.navbar-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.ntag{padding:2px 9px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.8px;border:1px solid}
+.ntag-log{background:#2ecc7a18;color:var(--green);border-color:#2ecc7a30}
+.ntag-suc{background:#4f9eff18;color:var(--blue);border-color:#4f9eff30}
+.ntag-rep{background:#f5a62318;color:var(--amber);border-color:#f5a62330}
+.ntag-adm{background:#9b8ff718;color:var(--purple);border-color:#9b8ff730}
+main{flex:1;padding:24px 24px;max-width:1800px;width:100%;margin:0 auto}
+footer{border-top:1px solid var(--border);padding:10px 20px;display:flex;justify-content:space-between;font-size:12px;color:var(--faint);font-family:var(--mono)}
+#app{min-height:100vh;display:flex;flex-direction:column}
+
+/* CARDS */
+.card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:20px}
+.card-flush{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+
+/* FORMS */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px;font-weight:500}
+.req{color:var(--red);margin-left:2px}
+.inp,select,textarea{width:100%;background:var(--s2);border:1px solid var(--border);border-radius:var(--rsm);padding:10px 13px;color:var(--text);font-size:15px;font-family:var(--font);outline:none;transition:border-color .15s}
+.inp:focus,select:focus,textarea:focus{border-color:var(--blue)}
+.inp.err{border-color:var(--red)!important;background:#f0525210}
+textarea{resize:vertical;min-height:76px}
+select{cursor:pointer}
+select option{background:#1a2338}
+.err-msg{font-size:11px;color:var(--red);margin-top:3px;display:block}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0 16px}
+
+/* BUTTONS */
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:var(--rsm);font-weight:600;cursor:pointer;font-family:var(--font);transition:filter .15s;white-space:nowrap;border:1px solid}
+.btn:hover:not(:disabled){filter:brightness(1.2)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn-md{padding:10px 22px;font-size:14px}
+.btn-sm{padding:7px 14px;font-size:13px}
+.btn-full{width:100%;justify-content:center}
+.btn-primary{background:#4f9eff1a;border-color:#4f9eff50;color:var(--blue)}
+.btn-success{background:#2ecc7a1a;border-color:#2ecc7a50;color:var(--green)}
+.btn-danger{background:#f0525218;border-color:#f0525250;color:var(--red)}
+.btn-purple{background:#9b8ff71a;border-color:#9b8ff750;color:var(--purple)}
+.btn-warn{background:#f5a6231a;border-color:#f5a62350;color:var(--amber)}
+.btn-teal{background:#2de0c41a;border-color:#2de0c450;color:var(--teal)}
+.btn-ghost{background:transparent;border-color:var(--border);color:var(--muted)}
+.spinner{width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
+
+/* BADGES */
+.badge{display:inline-block;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600;letter-spacing:.3px;font-family:var(--mono);white-space:nowrap;border:1px solid}
+
+/* TABS */
+.tabs{display:flex;gap:4px;background:var(--s2);border-radius:8px;padding:4px;width:fit-content;margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:7px 14px;border-radius:6px;border:none;cursor:pointer;font-family:var(--font);font-weight:600;font-size:13px;transition:all .2s;background:transparent;color:var(--muted)}
+.tab.active{background:var(--s3);color:var(--text)}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:24px}
+.stat-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);padding:16px 18px;display:flex;justify-content:space-between;align-items:flex-start}
+.stat-label{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.8px;margin-bottom:6px}
+.stat-val{font-size:30px;font-weight:700;font-family:var(--mono);line-height:1}
+.stat-icon{font-size:22px;opacity:.6}
+
+/* TABLE */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th{padding:11px 14px;text-align:left;color:var(--muted);font-weight:600;font-size:12px;letter-spacing:.5px;white-space:nowrap;background:var(--s2)}
+td{padding:11px 14px;border-top:1px solid var(--border)}
+tr:nth-child(even) td{background:rgba(255,255,255,.015)}
+tr:hover td{background:var(--s2)}
+.id-cell{font-family:var(--mono);font-size:12px;color:var(--blue)}
+.muted-cell{color:var(--muted)}
+.trunc{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px}
+.mono{font-family:var(--mono)}
+.empty-row td{text-align:center;padding:48px;color:var(--muted)}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.78);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;padding:16px}
+.modal-box{background:var(--s1);border:1px solid var(--border2);border-radius:var(--r);width:100%;max-width:580px;max-height:90vh;overflow-y:auto;animation:fadeUp .2s ease;box-shadow:0 20px 60px rgba(0,0,0,.6)}
+.modal-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--s1);z-index:1}
+.modal-head h3{font-size:17px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:20px;line-height:1;padding:4px}
+.modal-body{padding:20px}
+
+/* LOGIN */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px}
+.login-box{width:100%;max-width:440px}
+.login-brand{text-align:center;margin-bottom:28px}
+.login-brand .ico{font-size:42px;margin-bottom:8px}
+.login-brand h1{font-size:28px;font-weight:700;letter-spacing:-.5px}
+.login-brand p{color:var(--muted);font-size:14px;margin-top:4px}
+/* role-grid removed — login unificado */
+.sep{border:none;border-top:1px solid var(--border);margin:16px 0}
+.hint-box{background:var(--s2);border-radius:8px;padding:12px 15px;font-size:14px;color:var(--muted);margin-bottom:14px;line-height:1.6}
+.hint-box strong{color:var(--text)}
+.alert-err{background:#f0525210;border:1px solid #f0525230;border-radius:var(--rsm);padding:11px 15px;font-size:14px;color:var(--red);margin-bottom:12px}
+.alert-ok{background:#2ecc7a10;border:1px solid #2ecc7a30;border-radius:var(--rsm);padding:11px 15px;font-size:14px;color:var(--green);margin-bottom:12px}
+.alert-info{background:var(--s2);border-radius:8px;padding:13px 15px;margin-bottom:16px;font-size:14px;border-left:3px solid var(--blue)}
+
+/* DIVIDER */
+.div-label{display:flex;align-items:center;gap:10px;margin:4px 0 14px}
+.div-label span{font-size:11px;font-weight:700;letter-spacing:1.5px;color:var(--faint);white-space:nowrap}
+.div-line{flex:1;height:1px;background:var(--border)}
+
+/* ACTION BUTTONS ROW */
+.action-row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+
+/* DETAIL ROWS */
+.drow{display:flex;justify-content:space-between;align-items:flex-start;padding:8px 0;border-bottom:1px solid var(--border)}
+.drow-label{font-size:13px;color:var(--muted);min-width:140px}
+.drow-val{font-size:14px;font-weight:500;text-align:right;max-width:300px}
+
+/* METRIC BARS */
+.bar-wrap{margin-bottom:10px}
+.bar-head{display:flex;justify-content:space-between;margin-bottom:3px;font-size:12px}
+.bar-track{background:var(--s2);border-radius:3px;height:5px}
+.bar-fill{height:5px;border-radius:3px;transition:width .5s ease}
+
+/* TRAZABILIDAD */
+.trace-step{display:flex;gap:12px;margin-bottom:16px}
+.trace-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0;margin-top:4px}
+.trace-line{width:2px;background:var(--border);margin:14px auto 0;flex-shrink:0}
+.trace-body{flex:1}
+.trace-title{font-size:14px;font-weight:600;margin-bottom:3px}
+.trace-meta{font-size:13px;color:var(--muted)}
+
+/* DELIVERY CARDS */
+.del-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.del-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:border-color .2s}
+.del-card:hover{border-color:var(--border2)}
+.del-stripe{height:4px}
+.del-body{padding:16px 18px}
+
+/* DNI MODAL */
+.dni-modal{max-width:400px}
+.dni-big{font-size:32px;text-align:center;margin:8px 0 4px;font-family:var(--mono);color:var(--blue)}
+
+/* FILTERS */
+.filter-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0 16px;align-items:end}
+.filter-bar{display:flex;justify-content:space-between;align-items:center;margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+
+/* TOAST */
+.toast{position:fixed;bottom:24px;right:24px;z-index:9999;background:var(--s2);border-radius:var(--r);padding:12px 18px;min-width:260px;max-width:380px;box-shadow:0 8px 32px rgba(0,0,0,.5);animation:fadeUp .25s ease;display:flex;align-items:center;gap:10px;font-size:13px}
+
+/* LOADING */
+.loading-center{display:flex;align-items:center;justify-content:center;padding:80px;flex-direction:column;gap:14px;color:var(--muted)}
+.spin-circle{width:32px;height:32px;border:3px solid var(--border2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite}
+
+/* METRICS */
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}
+.kpi-mini-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.kpi-mini{text-align:center;padding:10px 0;background:var(--s2);border-radius:8px}
+.kpi-mini-val{font-size:24px;font-weight:700;font-family:var(--mono);line-height:1}
+.kpi-mini-lbl{font-size:11px;color:var(--muted);margin-top:3px}
+
+@media(max-width:640px){
+  .g2,.g3{grid-template-columns:1fr}
+  .filter-grid{grid-template-columns:1fr 1fr}
+  main{padding:16px 12px}
+  .stat-val{font-size:24px}
+  th{padding:9px 10px;font-size:12px}
+  td{padding:10px 10px;font-size:14px}
+  .role-grid{grid-template-columns:1fr 1fr}
+  .inp,select,textarea{font-size:16px} /* evita zoom en iOS */
+  .btn-md{font-size:15px;padding:12px 20px}
+  .btn-sm{font-size:13px;padding:9px 14px}
+}
+@media(max-width:380px){
+  .filter-grid,.role-grid{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+// ══════════════════════════════════════════════════════════
+//  ★  CONFIGURACIÓN — PEGÁ TU URL AQUÍ  ★
+// ══════════════════════════════════════════════════════════
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx5CV49bSA1UnH-j1YSgiGRuO0Vg7KUiuucvbDnE3c87EFTGLvoznoVxpOaVr4SbF7r/exec";  // URL del Apps Script (termina en /exec)
+const USE_SHEETS  = WEB_APP_URL !== "";
+
+// ══════════════════════════════════════════════════════════
+//  EMAIL — notificación a logística cuando entra una solicitud
+//  Configurá el email en el Apps Script (línea EMAIL_LOGISTICA)
+//  El HTML no necesita cambios para esto — el script lo maneja
+// ══════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════
+//  USUARIOS DEMO (solo cuando NO hay Sheets conectado)
+//  En producción todo viene de la hoja "Usuarios" de Sheets.
+//
+//  TIPOS: SUCURSAL | LOGISTICA | REPARTIDOR | AREA
+// ══════════════════════════════════════════════════════════
+const DEMO_USUARIOS = [
+  {usuario:"Logistica", password:"LogisticaCV", tipo:"LOGISTICA",  nombre:"Logística",       area:"",               recorrido:"",    activo:"si"},
+  {usuario:"Compras",      password:"compras123",  tipo:"AREA",          nombre:"Área Compras",     area:"Compras",        recorrido:"",    activo:"si"},
+  {usuario:"Planificacion",   password:"plan123",  tipo:"PLANIFICACION",  nombre:"Planificación",    area:"Planificación",  recorrido:"", activo:"si"},
+  {usuario:"Administracion",  password:"admin123", tipo:"ADMINISTRACION", nombre:"Administración",   area:"Administración", recorrido:"", activo:"si"},
+  {usuario:"RRHH",            password:"rrhh123",  tipo:"RRHH",           nombre:"Recursos Humanos", area:"RRHH",           recorrido:"", activo:"si"},
+  {usuario:"Precios",         password:"precios123",tipo:"PRECIOS",       nombre:"Precios",          area:"Precios",        recorrido:"", activo:"si"},
+  {usuario:"Deposito",        password:"deposito123",tipo:"DEPOSITO",      nombre:"Depósito",         area:"Depósito",       recorrido:"", activo:"si"},
+  {usuario:"Recepcionista",   password:"recep123",   tipo:"RECEPCIONISTA", nombre:"Recepcionista",    area:"Fábrica",        recorrido:"", activo:"si"},
+  {usuario:"RRHH",      password:"rrhh123",     tipo:"AREA",       nombre:"Recursos Humanos", area:"RRHH",           recorrido:"",    activo:"si"},
+  {usuario:"Admin",     password:"admin123",    tipo:"AREA",       nombre:"Administración",   area:"Administración", recorrido:"",    activo:"si"},
+  {usuario:"Carlos",    password:"reparto123",  tipo:"REPARTIDOR", nombre:"Carlos López",     area:"",               recorrido:"SUR", activo:"si"},
+  {usuario:"Martin",    password:"reparto123",  tipo:"REPARTIDOR", nombre:"Martín García",    area:"",               recorrido:"NORTE",activo:"si"},
+];
+
+// ══════════════════════════════════════════════════════════
+//  DATOS FIJOS
+// ══════════════════════════════════════════════════════════
+// Lista de sucursales — se reemplaza con lo que venga de Sheets (hoja "Sucursales")
+// Para agregar o quitar una sucursal: editás la hoja en Sheets, sin tocar este código.
+// Este array es el fallback que se usa solo en modo demo (sin Sheets).
+const SUCURSALES_DEFAULT = [
+  "Paso","Güemes","Edison","Feria","Paunero","Independencia",
+  "Arenales","Alsina","Rioja","Castelli","San Martín","Patagones",
+  "Constitución","Peña","Belgrano","Alberti","Libertad","San Juan","Administración",
+];
+// En el código siempre usamos getSucursales() en lugar del array directo
+function getSucursales(){ return S.sucursales.length ? S.sucursales : SUCURSALES_DEFAULT; }
+// Destinos extra que no son sucursales (se suman a la lista de destinos en el formulario)
+// Para agregar o quitar: editá la hoja "Destinos" en Sheets (columna: nombre | activo)
+// o editá este array directamente si no usás Sheets.
+const DESTINOS_EXTRA_DEFAULT = [
+  "Depósito Central",
+  "Casa Central",
+  "Compras",
+  "RRHH",
+];
+function getDestinos(){
+  // Si Sheets cargó destinos, los usa. Si no, combina sucursales + extras sin duplicados.
+  if(S.destinos && S.destinos.length) return S.destinos;
+  const todos = [...getSucursales(), ...DESTINOS_EXTRA_DEFAULT];
+  // Eliminar duplicados manteniendo el orden
+  return todos.filter((v,i,a)=>a.indexOf(v)===i);
+}
+// Código de entrega: 4 letras al azar
+// Solo consonantes para que no se formen palabras accidentalmente
+const LETRAS = "BCDFGHJKLMNPQRSTVWXYZ";
+function generarPalabra(){
+  let codigo = "";
+  for(let i=0;i<4;i++){
+    codigo += LETRAS[Math.floor(Math.random()*LETRAS.length)];
+  }
+  return codigo; // Ej: BKTR, GMVX, DJWN
+}
+
+// Mostrar solicitante completo: "PLANIFICACIÓN (Tomás Bandiera)" o solo "Ana Gómez"
+function solicitanteLabel(r){
+  const nombre = r.solicitante || "";
+  const area   = r.area        || "";
+  if(!area) return nombre; // sucursal normal → solo nombre
+  // Si el área es diferente del nombre → "ÁREA (Nombre)"
+  if(area.trim().toLowerCase() !== nombre.trim().toLowerCase()){
+    return `${area.toUpperCase()} (${nombre})`;
+  }
+  return nombre;
+}
+
+// Normalizar para comparar Fábrica/Depósito con o sin tilde
+const _fabNames = ["fábrica","fabrica","fábrica central","fabrica central","deposito","depósito","deposito central","depósito central"];
+function esFabricaDestino(s){ return _fabNames.includes((s||"").trim().toLowerCase()); }
+
+// Detectar si el ORIGEN es fábrica/depósito — no necesita confirmación "Lista"
+function esOrigenFabrica(r){
+  const suc = (r.sucursal||r.area||"").trim().toLowerCase();
+  return _fabNames.includes(suc);
+}
+
+// Detectar si el DESTINO es fábrica/depósito
+function esDestinoFabrica(r){
+  return _fabNames.includes((r.destino||"").trim().toLowerCase());
+}
+
+// Mostrar origen: SOLO la sucursal física
+// El solicitante (área/planificación) ya aparece en la columna Solicitante
+function origenLabel(r){
+  const suc  = (r.sucursal||"").trim();
+  const area = (r.area    ||"").trim();
+  if(!suc && !area) return "—";
+  // Si hay sucursal física, mostrar solo esa
+  if(suc) return suc;
+  // Si no hay sucursal (pedido de área sin origen físico elegido)
+  return area;
+}
+
+// Destino es "Otra dirección" si no está en la lista conocida de sucursales/destinos
+function esOtraDireccion(destino){
+  const d = (destino||"").trim().toLowerCase();
+  if(!d || d === "otra dirección" || d === "otra direccion") return true;
+  const conocidos = [...getSucursales(), ...getDestinos()];
+  return !conocidos.some(c=>(c||"").trim().toLowerCase()===d);
+}
+
+const UNIDADES    = ["Unidades","Cajas","Bultos","Pallets","Kg","Litros","Paquetes","Atados"];
+const PRIORIDADES = ["Baja","Media","Alta","Urgente"];
+const ESTADOS     = ["Pendiente Tesorería","Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En tránsito","En fábrica","Entregada (sin confirmar)","Entregada","No entregada","No levantada","Rechazada","Reprogramada"];
+
+const S_COLOR = {
+  "Pendiente Tesorería":"#c98a1f","Pendiente":"#8b9dc0","En revisión":"#4f9eff","Aprobada":"#2ecc7a",
+  "Programada":"#9b8ff7","En tránsito":"#f5a623","En fábrica":"#2de0c4",
+  "Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f","Lista para retirar":"#34d399","Rechazada":"#f05252","No entregada":"#ff6b35","No levantada":"#ff8c6b","Reprogramada":"#ff8c6b",
+};
+const P_COLOR = {"Baja":"#8b9dc0","Media":"#4f9eff","Alta":"#f5a623","Urgente":"#f05252"};
+
+// ══════════════════════════════════════════════════════════
+//  ESTADO GLOBAL
+// ══════════════════════════════════════════════════════════
+let S = {
+  // sesión
+  view: "login",   // login | app
+  user: null,      // {nombre, dni, rol, area, recorrido}
+
+  // datos
+  requests:  [],
+  usuarios:  [],   // cargado desde Sheets hoja Usuarios
+  recorridos:[], // cargado desde Sheets hoja Recorridos
+  sucursales:[], // cargado desde Sheets hoja Sucursales (fallback: SUCURSALES_DEFAULT)
+  sucursalesInfo:{}, // por sucursal: {email, recorridoDefault} — normalizado en minúsculas
+  destinos:[],   // cargado desde Sheets hoja Destinos (fallback: getDestinos())
+
+  // UI – login (una sola pantalla, usuario + contraseña)
+  loginUser: "", loginPass: "",
+  loginErr:  "", loginLoading: false,
+
+  // UI – filtros logística
+  fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:"", fRecorrido:"", fSolicitante:"",
+  fSucFecha:"", fPlanFecha:"",
+
+  // UI – filtros repartidor
+  fRepRecorrido:"",
+
+  // UI – tabs
+  tabLog: "solicitudes",  // solicitudes | metricas
+  tabSuc: "abiertas",
+  tabRep: "activas",
+
+  // UI – modales
+  modal: null,
+  selId: null,
+
+  // UI – formulario nueva solicitud
+  form: emptyForm(),
+  formErr: {},
+
+  // UI – gestión logística
+  action: {estado:"", comentario:"", scheduledAt:"", recorrido:""},
+
+  // UI – DNI confirm modal
+  dniModal: {title:"", field:"", cb: null, val:"", err:"", loading:false, nombreOk:""},
+
+  // UI – tomar transferencia (repartidor levanta)
+  tomarModal:   {id:"", dni:"", err:"", loading:false, nombreOk:""},
+  fabricaModal:   {id:"", dni:"", err:"", loading:false, nombreOk:""},
+  // Modal de código de entrega — para sucursal destino
+  codigoModal:    {id:"", codigo:"", palabraGenerada:"", err:"", loading:false, confirmada:false},
+  // Modal del repartidor ingresa la palabra que le dio la sucursal
+  palabraModal:   {id:"", palabraIngresada:"", err:"", loading:false},
+  noEntregaModal:  {id:"", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
+  noLevantaModal:  {id:"", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
+  listoModal:     {id:"", dni:"", aclaracion:"", err:"", loading:false, nombreOk:""},
+  cerradoModal:   {id:"", dni:"", aclaracion:"", err:"", loading:false, nombreOk:""},
+  confirmarCerradoModal: {id:"", dni:"", err:"", loading:false, nombreOk:""},
+  pedirBolsinModal: {cantidad:"", motivo:"", err:"", loading:false},
+  pedidoTesoreriaModal: {id:"", accion:"aprobar", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
+  nuevoLoteModal: {cantidades:{}, err:"", loading:false},
+  loteListoModal: {loteId:"", dni:"", err:"", loading:false, nombreOk:""},
+  loteRecorridoModal: {loteId:"", asignaciones:{}, err:"", loading:false},
+  editarModal:    {id:"", descripcion:"", cantidad:"", observaciones:"", err:"", loading:false},
+  // UI – confirmar entrega repartidor
+  delivModal:  {id:"", dni:"", err:"", loading:false},
+
+  // misc
+  toast: null,
+  loading: false,
+  saving: false,
+  refreshing: false,  // recarga de datos sin cerrar sesión
+  lastRefresh: null,   // timestamp de la última actualización
+};
+
+// ══════════════════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════════════════
+// ID formato: TRF-ddmmyyyyN
+// Ej: TRF-100720261 (primer pedido del 10/07/2026)
+//     TRF-100720262 (segundo pedido del mismo día)
+// El contador diario se guarda en sessionStorage para no reiniciar si se recarga.
+function fechaCorta(){
+  const hoy = new Date();
+  const dd   = String(hoy.getDate()).padStart(2,"0");
+  const mm   = String(hoy.getMonth()+1).padStart(2,"0");
+  const yyyy = hoy.getFullYear();
+  return dd+mm+yyyy;
+}
+
+function genId(){
+  const hoy = new Date();
+  const dd   = String(hoy.getDate()).padStart(2,"0");
+  const mm   = String(hoy.getMonth()+1).padStart(2,"0");
+  const yyyy = hoy.getFullYear();
+  const fecha = dd+mm+yyyy;
+
+  // Leer el último contador del día desde sessionStorage
+  const storageKey = "trf_counter_" + fecha;
+  let n = 1;
+  try{
+    const stored = sessionStorage.getItem(storageKey);
+    if(stored) n = parseInt(stored) + 1;
+    // También chequeamos el máximo existente en S.requests para no duplicar
+    const existingToday = S.requests.filter(r=>r.id&&r.id.includes(fecha));
+    if(existingToday.length >= n) n = existingToday.length + 1;
+    sessionStorage.setItem(storageKey, String(n));
+  }catch(e){}
+  return "TRF-" + fecha + n;
+}
+function now(){ return new Date().toISOString(); }
+function fdt(iso){ return iso ? new Date(iso).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"; }
+function fd(iso){ return iso ? new Date(iso).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"}) : "—"; }
+function dh(a,b){ return (a&&b)?Math.round((new Date(b)-new Date(a))/3600000):null; }
+function emptyForm(){
+  return {destino:"",descripcion:"",cantidad:"",unidad:"Unidades",prioridad:"Media",fechaRequerida:"",observaciones:""};
+}
+function $(id){ return document.getElementById(id); }
+function badge(label,color){
+  return `<span class="badge" style="background:${color}1a;color:${color};border-color:${color}40">${escH(label)}</span>`;
+}
+function escH(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function toast(msg,type="success"){
+  S.toast={msg,type};
+  render();
+  setTimeout(()=>{S.toast=null;render();},3200);
+}
+function divider(label){
+  return `<div class="div-label"><span>${label}</span><div class="div-line"></div></div>`;
+}
+function statCard(icon,label,val,color){
+  return `<div class="stat-card"><div><div class="stat-label">${label}</div><div class="stat-val" style="color:${color}">${val}</div></div><div class="stat-icon">${icon}</div></div>`;
+}
+function bar(label,val,max,color){
+  const pct=max?Math.min(100,Math.round(val/max*100)):0;
+  return `<div class="bar-wrap"><div class="bar-head"><span style="color:var(--muted)">${escH(label)}</span><span style="font-family:var(--mono);color:${color};font-weight:600">${val}</span></div><div class="bar-track"><div class="bar-fill" style="width:${pct}%;background:${color}"></div></div></div>`;
+}
+function drow(label,val,mono=false){
+  return `<div class="drow"><span class="drow-label">${label}</span><span class="drow-val ${mono?"mono":""}">${escH(String(val||"—"))}</span></div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  GOOGLE SHEETS API
+// ══════════════════════════════════════════════════════════
+async function apiPost(payload){
+  const body="payload="+encodeURIComponent(JSON.stringify(payload));
+  const r=await fetch(WEB_APP_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
+  return r.json();
+}
+async function apiGet(params){
+  const qs=Object.entries(params).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join("&");
+  const r=await fetch(`${WEB_APP_URL}?${qs}`);
+  return r.json();
+}
+
+// FASE 1: solo lo necesario para validar el login (hojas pequeñas y rápidas)
+async function sheetsLoadUsuarios(){
+  if(!USE_SHEETS) return;
+  try{
+    const [us,sucs]=await Promise.all([
+      apiGet({action:"getAll",sheet:"Usuarios"}),
+      apiGet({action:"getAll",sheet:"Sucursales"}),
+    ]);
+    if(us.rows)   S.usuarios   = us.rows.filter(u=>u.activo!=="no");
+    if(sucs.rows){
+      S.sucursales = sucs.rows.filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
+      // Guardamos también el resto de datos de cada sucursal (email,
+      // recorrido habitual, etc.) para usarlos en notificaciones y en la
+      // asignación rápida de recorridos de un lote.
+      const info = {};
+      sucs.rows.forEach(r=>{
+        if(!r.nombre) return;
+        info[(r.nombre||"").trim().toLowerCase()] = {
+          email: r.email||"",
+          recorridoDefault: r.recorridoDefault||r.recorrido||"",
+        };
+      });
+      S.sucursalesInfo = info;
+    }
+  }catch(e){console.warn("Sheets load usuarios:",e);}
+}
+
+// FASE 2: cargar el resto en background una vez que ya entraste
+async function sheetsLoadDatos(){
+  if(!USE_SHEETS) return;
+  try{
+    const [rs,recs,dests]=await Promise.all([
+      apiGet({action:"getAll",sheet:"Solicitudes"}),
+      apiGet({action:"getAll",sheet:"Recorridos"}),
+      apiGet({action:"getAll",sheet:"Destinos"}),
+    ]);
+    if(rs.rows)    S.requests   = rs.rows.filter(r=>r.id);
+    if(recs.rows)  S.recorridos = recs.rows.filter(r=>r.nombre).map(r=>r.nombre);
+    if(dests.rows) S.destinos   = dests.rows.filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
+  }catch(e){console.warn("Sheets load datos:",e);}
+}
+
+// Recarga completa (botón actualizar) — ambas fases
+async function sheetsLoadAll(){
+  if(!USE_SHEETS) return;
+  await Promise.all([sheetsLoadUsuarios(), sheetsLoadDatos()]);
+}
+
+// Busca un usuario en Sheets (o demo) por usuario+password
+// Para SUCURSAL: solo necesita el nombre de la sucursal como usuario, sin pass
+function buscarUsuario(usuario, password){
+  const lista = USE_SHEETS ? S.usuarios : DEMO_USUARIOS;
+  const u = usuario.trim().toLowerCase();
+  const p = (password||"").trim();
+
+  // ¿Es una sucursal conocida? (login sin contraseña)
+  // Comparamos normalizando espacios también
+  const esSucursal = getSucursales().find(s => s.trim().toLowerCase() === u.trim());
+  if(esSucursal){
+    // Buscar si existe en lista con tipo SUCURSAL, o aceptar directamente
+    const found = lista.find(x => x.usuario?.toLowerCase() === u && x.tipo === "SUCURSAL" && x.activo !== "no");
+    if(USE_SHEETS && !found) return {ok:false, msg:"Esta sucursal no está habilitada. Consultá con logística."};
+    return {ok:true, tipo:"SUCURSAL", nombre:esSucursal, area:esSucursal, recorrido:"", dni:found?.dni||""};
+  }
+
+  // Buscar usuario por nombre
+  const foundUser = lista.find(x => x.usuario?.toLowerCase() === u && x.activo !== "no");
+
+  if(!foundUser){
+    return {ok:false, msg:"Usuario no encontrado."};
+  }
+
+  // Si el usuario no tiene contraseña configurada en Sheets → entra directo
+  const tienePass = foundUser.password && String(foundUser.password).trim() !== "";
+  if(tienePass && foundUser.password !== p){
+    return {ok:false, msg:"Contraseña incorrecta."};
+  }
+  if(tienePass && !p){
+    return {ok:false, msg:"Ingresá tu contraseña."};
+  }
+
+  return {ok:true, tipo:foundUser.tipo, usuario:foundUser.usuario||"", nombre:foundUser.nombre||foundUser.usuario, area:foundUser.area||"", recorrido:foundUser.recorrido||"", dni:foundUser.dni||""};
+}
+
+async function sheetsAdd(row){
+  if(!USE_SHEETS) return;
+  try{
+    const res = await apiPost({action:"addRow",sheet:"Solicitudes",data:row});
+    // El backend genera el ID definitivo con un lock (evita duplicados si dos
+    // sesiones/dispositivos crean una solicitud al mismo tiempo). Si difiere
+    // del que pusimos optimistamente, corregimos la solicitud ya mostrada.
+    if(res && res.ok && res.id && res.id!==row.id){
+      const idViejo = row.id;
+      S.requests = S.requests.map(x=>x.id===idViejo?{...x,id:res.id}:x);
+      if(S.selId===idViejo) S.selId=res.id;
+      render();
+    }
+  }
+  catch(e){console.warn("Sheets add:",e);}
+}
+
+async function sheetsUpdate(id,data){
+  if(!USE_SHEETS) return;
+  try{ await apiPost({action:"updateRow",sheet:"Solicitudes",id,data}); }
+  catch(e){console.warn("Sheets update:",e);}
+}
+
+// ──────────────────────────────────────────────────────────
+//  VALIDAR DNI
+//  Busca el DNI en la hoja Usuarios de Sheets.
+//  No filtra por tipo — cualquier persona registrada puede validar.
+//  Devuelve el nombre para mostrarlo en pantalla.
+//  En modo demo (sin Sheets) acepta cualquier DNI de 7-8 dígitos.
+// ──────────────────────────────────────────────────────────
+function validarDNI(dni){
+  // Normalizar: solo dígitos, sin puntos ni espacios
+  const dniLimpio = String(dni).replace(/\D/g,"");
+
+  if(!dniLimpio || dniLimpio.length < 7 || dniLimpio.length > 8){
+    return {ok:false, msg:"DNI inválido. Debe tener 7 u 8 dígitos (sin puntos)."};
+  }
+
+  // Modo demo: acepta cualquier DNI válido y devuelve nombre genérico
+  if(!USE_SHEETS){
+    return {ok:true, nombre:"Usuario demo", dni:dniLimpio};
+  }
+
+  // Buscar en la lista completa de usuarios (incluye sucursales, logística, etc.)
+  const lista = S.usuarios;
+  const found = lista.find(u => {
+    const dniUsuario = String(u.dni||"").replace(/\D/g,"");
+    return dniUsuario === dniLimpio;
+  });
+
+  if(!found){
+    return {ok:false, msg:"DNI no encontrado. Pedile a logística que te registre en el sistema."};
+  }
+
+  if(found.activo === "no"){
+    return {ok:false, msg:"Este DNI está deshabilitado. Consultá con logística."};
+  }
+
+  return {ok:true, nombre:found.nombre||"Sin nombre", dni:dniLimpio, usuario:found};
+}
+
+// Datos demo si no hay Sheets
+function seedData(){
+  // Datos de ejemplo variados — en producción todo viene de Sheets
+  return [
+    {id:"TRF-2001",sucursal:"Paso",area:"",solicitante:"Ana Gómez",dniSolicitante:"12345678",destino:"Depósito Central",descripcion:"Resmas papel A4",cantidad:10,unidad:"Cajas",prioridad:"Media",fechaRequerida:"2025-06-10",estado:"Entregada",comentario:"Entregado sin novedad.",recorrido:"SUR",dniLogistica:"87654321",dniRepartidor:"11223344",nombreQuienLevanto:"Carlos López",dniEntrega:"22334455",nombreQuienEntrego:"Martín García",observaciones:"",createdAt:"2025-06-01T08:00:00Z",approvedAt:"2025-06-01T09:30:00Z",scheduledAt:"2025-06-02",deliveredAt:"2025-06-02T14:00:00Z",updatedAt:"2025-06-02T14:00:00Z"},
+    {id:"TRF-2002",sucursal:"Güemes",area:"",solicitante:"Carlos Pérez",dniSolicitante:"23456789",destino:"Casa Central",descripcion:"Cartuchos HP 664",cantidad:5,unidad:"Unidades",prioridad:"Alta",fechaRequerida:"2025-06-08",estado:"En tránsito",comentario:"Sale mañana a las 9hs.",recorrido:"CENTRO",dniLogistica:"87654321",dniRepartidor:"11223344",nombreQuienLevanto:"Martín García",dniEntrega:"",nombreQuienEntrego:"",observaciones:"",createdAt:"2025-06-02T10:00:00Z",approvedAt:"2025-06-02T11:00:00Z",scheduledAt:"2025-06-03",deliveredAt:null,updatedAt:"2025-06-03T08:00:00Z"},
+    {id:"TRF-2003",sucursal:"Edison",area:"",solicitante:"María Torres",dniSolicitante:"34567890",destino:"Administración",descripcion:"Sillas ergonómicas",cantidad:3,unidad:"Unidades",prioridad:"Baja",fechaRequerida:"2025-06-15",estado:"Aprobada",comentario:"Aprobado. Coordiná con el depósito.",recorrido:"NORTE",dniLogistica:"87654321",dniRepartidor:"",nombreRepartidor:"",observaciones:"Preferencia horario mañana",createdAt:"2025-06-03T11:00:00Z",approvedAt:"2025-06-03T14:00:00Z",scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-03T14:00:00Z"},
+    {id:"TRF-2004",sucursal:"Rioja",area:"",solicitante:"Pedro Suárez",dniSolicitante:"45123456",destino:"Casa Central",descripcion:"Botiquín primeros auxilios",cantidad:2,unidad:"Unidades",prioridad:"Urgente",fechaRequerida:"2025-06-07",estado:"Programada",comentario:"Programado para el 7/6.",recorrido:"SUR",dniLogistica:"87654321",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-04T07:30:00Z",approvedAt:"2025-06-04T08:00:00Z",scheduledAt:"2025-06-07",deliveredAt:null,updatedAt:"2025-06-04T08:00:00Z"},
+    {id:"TRF-2005",sucursal:"Administración",area:"Administración",solicitante:"Luis Sosa",dniSolicitante:"45678901",destino:"Güemes",descripcion:"Artículos de limpieza",cantidad:20,unidad:"Bultos",prioridad:"Media",fechaRequerida:"2025-06-12",estado:"Pendiente",comentario:"",recorrido:"",dniLogistica:"",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-05T09:00:00Z",approvedAt:null,scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-05T09:00:00Z"},
+    {id:"TRF-2006",sucursal:"Rioja",area:"",solicitante:"Paula Ríos",dniSolicitante:"56789012",destino:"Depósito Central",descripcion:"Equipos informáticos",cantidad:4,unidad:"Unidades",prioridad:"Alta",fechaRequerida:"2025-06-09",estado:"Rechazada",comentario:"Sin stock disponible en este momento.",recorrido:"",dniLogistica:"87654321",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-03T15:00:00Z",approvedAt:null,scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-04T10:00:00Z"},
+    {id:"TRF-2007",sucursal:"Compras",area:"Compras",solicitante:"Marta Vidal",dniSolicitante:"67890123",destino:"Administración",descripcion:"Archiveros metálicos",cantidad:6,unidad:"Unidades",prioridad:"Baja",fechaRequerida:"2025-06-20",estado:"En revisión",comentario:"",recorrido:"",dniLogistica:"",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-05T10:30:00Z",approvedAt:null,scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-05T10:30:00Z"},
+    {id:"TRF-2008",sucursal:"Edison",area:"",solicitante:"María Torres",dniSolicitante:"34567890",destino:"Paunero",descripcion:"Material de oficina",cantidad:8,unidad:"Cajas",prioridad:"Media",fechaRequerida:"2025-06-15",estado:"Aprobada",comentario:"Aprobado. Sale mañana.",recorrido:"SUR",dniLogistica:"87654321",dniRepartidor:"",nombreQuienLevanto:"",dniEntrega:"",nombreQuienEntrego:"",observaciones:"",createdAt:"2025-06-05T11:00:00Z",approvedAt:"2025-06-05T12:00:00Z",scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-05T12:00:00Z"},
+  ];
+}
+
+// ══════════════════════════════════════════════════════════
+//  RENDER PRINCIPAL
+// ══════════════════════════════════════════════════════════
+// Render con debounce para evitar reconstrucciones múltiples
+// en la misma tarea del event loop
+let _renderPending  = false;
+let _operacionEnCurso = false; // previene doble submit global
+function render(){
+  if(_renderPending) return;
+  _renderPending = true;
+  requestAnimationFrame(()=>{
+    _renderPending = false;
+    const el = $("app");
+    if(!el) return;
+    el.innerHTML = S.view==="login" ? renderLogin() : renderApp();
+  });
+}
+
+// render inmediato — para casos donde necesitamos ver el cambio YA
+// (ej: loading spinner antes de una operación async)
+function renderNow(){
+  _renderPending = false;
+  const el = $("app");
+  if(!el) return;
+  el.innerHTML = S.view==="login" ? renderLogin() : renderApp();
+}
+
+// ══════════════════════════════════════════════════════════
+//  LOGIN — pantalla única, sin re-render mientras se escribe
+// ══════════════════════════════════════════════════════════
+function renderLogin(){
+  // El campo contraseña se muestra/oculta con JS puro (sin rerenderizar)
+  // La detección de sucursal ocurre solo al hacer blur o al presionar Ingresar
+  return `
+  <div class="login-wrap">
+    <div class="login-box">
+      <div class="login-brand">
+        <div class="ico">🚚</div>
+        <h1>TransferLog</h1>
+        <p>Gestión de transferencias internas</p>
+      </div>
+      <div class="card">
+
+        <div class="field">
+          <label style="font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:5px">
+            Usuario / Sucursal <span class="req">*</span>
+          </label>
+          <input id="l-user" class="inp ${S.loginErr?"err":""}"
+            autocomplete="username"
+            placeholder="Ej: Paso · Logistica · Compras · Carlos"
+            value="${escH(S.loginUser)}"
+            onblur="checkIfSucursal()"
+            onkeydown="if(event.key==='Enter'){checkIfSucursal();setTimeout(doLogin,50);}"/>
+        </div>
+
+        <!-- Campo contraseña: se oculta si es sucursal (lo maneja checkIfSucursal) -->
+        <div id="pass-field" class="field" style="display:block">
+          <label style="font-size:12px;color:var(--muted);font-weight:500;display:block;margin-bottom:5px">
+            Contraseña <span class="req">*</span>
+          </label>
+          <input id="l-pass" class="inp ${S.loginErr?"err":""}"
+            type="password" autocomplete="current-password"
+            placeholder="••••••••"
+            onkeydown="if(event.key==='Enter')doLogin()"/>
+        </div>
+
+        <!-- Hint sucursal: se muestra si es sucursal (lo maneja checkIfSucursal) -->
+        <div id="suc-hint" class="hint-box" style="display:none;margin-bottom:14px">
+          🏪 Entrás como sucursal — sin contraseña.<br/>
+          Al crear una solicitud se te pedirá tu DNI.
+        </div>
+
+        ${S.loginErr?`<div class="alert-err">🔒 ${escH(S.loginErr)}</div>`:""}
+
+        <button class="btn btn-success btn-md btn-full" onclick="doLogin()" ${S.loginLoading?"disabled":""}>
+          ${S.loginLoading?`<span class="spinner"></span> Verificando...`:"Ingresar →"}
+        </button>
+      </div>
+      <p style="text-align:center;font-size:12px;margin-top:12px;color:${USE_SHEETS?"var(--teal)":"var(--amber)"}">
+        ${USE_SHEETS?"✅ Conectado a Google Sheets":"⚠️ Modo demo — los datos no persisten"}
+      </p>
+    </div>
+  </div>`;
+}
+
+// Se llama al salir del campo usuario (blur) o al presionar Ingresar
+// Oculta el campo contraseña si es sucursal O si el usuario no tiene pass configurada
+function checkIfSucursal(){
+  const val     = ($("l-user")?.value||"").trim().toLowerCase();
+  const esSuc   = getSucursales().find(s=>s.toLowerCase()===val);
+  const passField = $("pass-field");
+  const sucHint   = $("suc-hint");
+  if(!passField||!sucHint) return;
+
+  // Verificar si el usuario existe sin contraseña en la lista cargada
+  const lista     = USE_SHEETS ? S.usuarios : DEMO_USUARIOS;
+  const userMatch = lista.find(x=>x.usuario?.toLowerCase()===val&&x.activo!=="no");
+  const sinPass   = userMatch && (!userMatch.password || String(userMatch.password).trim()==="");
+
+  if(esSuc){
+    passField.style.display = "none";
+    sucHint.style.display   = "block";
+    sucHint.innerHTML = `🏪 Entrás como <strong>${escH(esSuc)}</strong> — sin contraseña.<br/>Al crear una solicitud se te pedirá tu DNI.`;
+  } else if(sinPass){
+    passField.style.display = "none";
+    sucHint.style.display   = "block";
+    sucHint.innerHTML = `✅ Usuario <strong>${escH(userMatch.nombre||val)}</strong> — sin contraseña requerida.`;
+  } else {
+    passField.style.display = "block";
+    sucHint.style.display   = "none";
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+//  APP SHELL
+// ══════════════════════════════════════════════════════════
+function renderApp(){
+  const u=S.user;
+  const tagClass = {logistica:"ntag-log",sucursal:"ntag-suc",area:"ntag-adm",repartidor:"ntag-rep",planificacion:"ntag-adm",recepcionista:"ntag-teal",tesoreria:"ntag-teal"}[u.rol]||"ntag-suc";
+  const tagLabel = {
+    logistica:     "LOGÍSTICA",
+    sucursal:      u.area||"SUCURSAL",
+    area:          u.area?.toUpperCase()||"ÁREA",
+    repartidor:    "REPARTIDOR",
+    // Para planificacion y derivados: mostrar el área real del usuario
+    // u.area viene de la columna "area" de Sheets, o del tipo si está vacío
+    planificacion: (u.area||u.nombre||"PLANIFICACIÓN").toUpperCase(),
+    recepcionista: "RECEPCIONISTA",
+    tesoreria:     "TESORERÍA",
+  }[u.rol]||u.area?.toUpperCase()||"";
+
+  const mainContent = S.loading ? `<div class="loading-center"><div class="spin-circle"></div><span>Cargando datos...</span></div>`
+    : u.rol==="logistica"      ? renderLogistica()
+    : u.rol==="repartidor"     ? renderRepartidor()
+    : u.rol==="planificacion"  ? renderPlanificacion()
+    : u.rol==="recepcionista"  ? renderRecepcionista()
+    : u.rol==="tesoreria"      ? renderTesoreria()
+    : renderSucursalArea();
+
+  const lastUpd = S.lastRefresh
+    ? "✓ " + new Date(S.lastRefresh).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})
+    : USE_SHEETS ? "Cargando..." : "Demo";
+
+  return `
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <span>🚚</span><span>TransferLog</span>
+      <span class="ntag ${tagClass}">${tagLabel}</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <!-- Hora última actualización — solo visible en desktop -->
+      <span style="font-size:11px;color:var(--faint);display:none" class="upd-time">${lastUpd}</span>
+      <style>.upd-time{display:none!important}@media(min-width:520px){.upd-time{display:inline!important}}</style>
+      <!-- Botón actualizar -->
+      <button class="btn btn-ghost btn-sm" onclick="doRefresh()"
+        title="Actualizar datos sin cerrar sesión"
+        style="display:inline-flex;align-items:center;gap:5px"
+        ${S.refreshing?"disabled":""}>
+        <span style="${S.refreshing?"animation:spin .7s linear infinite;display:inline-block":""}">🔄</span>
+        <span style="display:none" class="ref-lbl">Actualizar</span>
+        <style>@media(min-width:480px){.ref-lbl{display:inline!important}}</style>
+      </button>
+      <!-- Separador -->
+      <span style="color:var(--border);font-size:16px">|</span>
+      <!-- Nombre usuario -->
+      <span style="font-size:13px;color:var(--muted);display:none" class="usr-name">${escH(u.nombre||u.area||"")}</span>
+      <style>@media(min-width:400px){.usr-name{display:inline!important}}</style>
+      <!-- Cerrar sesión -->
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">
+        Salir
+      </button>
+    </div>
+  </nav>
+  <main>${mainContent}</main>
+  <footer>
+    <span>TransferLog v3.0</span>
+    <span style="color:var(--faint)">${lastUpd}</span>
+    <span>${S.requests.length} solicitudes</span>
+  </footer>
+  ${renderModals()}
+  ${S.toast?renderToast():""}`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  VISTA SUCURSAL / ÁREA
+// ══════════════════════════════════════════════════════════
+// ── PLANIFICACIÓN VIEW ───────────────────────────────────
+function renderPlanificacion(){
+  const u     = S.user;
+  // Ignora mayúsculas/minúsculas y tildes al comparar áreas (ej. "Compras" == "COMPRAS")
+  const norm2 = s=>(s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const areaN = norm2(u.area);
+
+  // Filtrar: r.area coincide con el área del usuario (normalizado).
+  // OJO: NO comparar por "tipo" (u.tipoReal) — el tipo es el permiso
+  // compartido por todo el grupo (Compras, RRHH, Administración, etc.),
+  // no identifica un área en particular. Si se usa como fallback, todas
+  // las áreas del grupo terminan viendo las mismas solicitudes.
+  // Solo el área real (usuario/área de Sheets) identifica a cada una.
+  const mine = S.requests.filter(r=>{
+    const rArea = norm2(r.area);
+    if(!rArea || !areaN) return false;
+    return rArea===areaN;
+  });
+  const open  = mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const hist  = mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const list  = S.tabSuc==="historial" ? hist : open;
+  const listF = S.fPlanFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fPlanFecha)) : list;
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">${escH(u.area||"Planificación")}</h2>
+        <p style="color:var(--muted);font-size:13px">Solicitudes entre cualquier origen y destino</p>
+      </div>
+      <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+    </div>
+    <div class="stats-grid">
+      ${statCard("📤","MIS PEDIDOS",mine.length,"var(--blue)")}
+      ${statCard("✅","APROBADAS",mine.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
+      ${statCard("🚚","EN CAMINO",mine.filter(r=>["En tránsito","En fábrica"].includes(r.estado)).length,"var(--amber)")}
+      ${statCard("📦","ENTREGADAS",mine.filter(r=>r.estado==="Entregada").length,"#1fa86a")}
+    </div>
+    <div class="tabs">
+      <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas (${open.length})</button>
+      <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${hist.length})</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <input type="date" class="inp" style="width:150px" value="${S.fPlanFecha}" onchange="S.fPlanFecha=this.value;render()"/>
+        ${S.fPlanFecha?`<button class="btn btn-ghost btn-sm" onclick="S.fPlanFecha='';render()">✕</button>`:""}
+      </div>
+    </div>
+    <div class="card-flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>N°</th><th>Fecha</th><th>Origen</th><th>Destino</th>
+            <th>Descripción</th><th>Cant.</th><th>Prioridad</th><th>Estado</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${listF.length===0?`<tr class="empty-row"><td colspan="9">${S.fPlanFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No hay solicitudes abiertas":"Sin historial"}</td></tr>`:""}
+            ${listF.map(r=>{
+              // Planificación/RRHH/etc puede confirmar recepción cuando destino es fábrica/depósito
+              const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
+              const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
+              return `<tr>
+              <td class="id-cell">${escH(r.id)}</td>
+              <td class="muted-cell">${fd(r.createdAt)}</td>
+              <td style="font-weight:500">${escH(origenLabel(r))}</td>
+              <td class="muted-cell">${escH(r.destino)}</td>
+              <td><div class="trunc">${escH(r.descripcion)}</div></td>
+              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
+              <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
+              <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+                ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
+                ${puedeRecibirFab?`<button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar en fábrica</button>`:""}
+                ${["Aprobada","Programada"].includes(r.estado)?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">✅ Lista</button>`:""}
+              </td>
+            </tr>`;}).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ── TESORERÍA VIEW ────────────────────────────────────────
+function renderTesoreria(){
+  const u = S.user;
+  const pendientes = S.requests.filter(r=>r.estado==="Pendiente Tesorería");
+
+  // Agrupar por loteId (solo lo que tiene tipoPedido="bolsin" y loteId)
+  const lotesMap = {};
+  S.requests.forEach(r=>{
+    if(r.tipoPedido!=="bolsin" || !r.loteId) return;
+    if(!lotesMap[r.loteId]) lotesMap[r.loteId] = [];
+    lotesMap[r.loteId].push(r);
+  });
+  const lotes = Object.entries(lotesMap)
+    .map(([loteId,filas])=>({
+      loteId, filas,
+      total: filas.length,
+      entregadas: filas.filter(f=>f.estado==="Entregada"||f.estado==="Entregada (sin confirmar)").length,
+      pendientesListo: filas.filter(f=>f.estado==="Aprobada").length,
+    }))
+    .sort((a,b)=> b.loteId.localeCompare(a.loteId));
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Tesorería</h2>
+        <p style="color:var(--muted);font-size:13px">Bolsines a sucursales</p>
+      </div>
+      <button class="btn btn-success btn-md" onclick="openNuevoLote()">📦 Nuevo lote de bolsines</button>
+    </div>
+
+    <div class="stats-grid">
+      ${statCard("🎒","PEDIDOS PENDIENTES",pendientes.length,"var(--amber)")}
+      ${statCard("📦","LOTES ACTIVOS",lotes.filter(l=>l.entregadas<l.total).length,"var(--blue)")}
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🎒 Pedidos de sucursales para aprobar</h3>
+      ${pendientes.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos pendientes.</p>`:`
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Sucursal</th><th>Cant.</th><th>Motivo</th><th>Pedido por</th><th></th></tr></thead>
+          <tbody>
+            ${pendientes.map(r=>`
+            <tr>
+              <td class="id-cell">${escH(r.id)}</td>
+              <td>${escH(r.destino)}</td>
+              <td>${escH(String(r.cantidad))}</td>
+              <td class="trunc">${escH(r.observaciones||"—")}</td>
+              <td class="muted-cell">${escH(r.solicitante||"—")}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-success btn-sm" onclick="openPedidoTesoreria('${escH(r.id)}','aprobar')">✅ Aprobar</button>
+                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openPedidoTesoreria('${escH(r.id)}','rechazar')">✕ Rechazar</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📦 Lotes de bolsines</h3>
+      ${lotes.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no creaste ningún lote.</p>`:`
+      <div style="display:flex;flex-direction:column;gap:10px">
+        ${lotes.map(l=>`
+          <div style="background:var(--s2);border-radius:8px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+            <div>
+              <strong>${escH(l.loteId)}</strong>
+              <span style="color:var(--muted);font-size:13px"> · ${l.total} sucursales · ${l.entregadas}/${l.total} entregadas</span>
+            </div>
+            ${l.pendientesListo>0?`
+            <button class="btn btn-success btn-sm" onclick="openLoteListo('${escH(l.loteId)}')">
+              ✅ Marcar ${l.pendientesListo} como Listas
+            </button>`:`<span style="font-size:12px;color:var(--muted)">Ya están todas listas o en camino</span>`}
+          </div>`).join("")}
+      </div>`}
+    </div>
+  </div>`;
+}
+
+// ── RECEPCIONISTA VIEW ───────────────────────────────────
+function renderRecepcionista(){
+  const u = S.user;
+
+  // ENTRANTES: destino = fábrica/depósito
+  const entrantes  = S.requests.filter(r=>esDestinoFabrica(r));
+  const entActivas = entrantes.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const entHist    = entrantes.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+
+  // SALIENTES: origen = fábrica/depósito
+  const salientes  = S.requests.filter(r=>esOrigenFabrica(r));
+  const salActivas = salientes.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const salHist    = salientes.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+
+  const tab  = S.tabSuc||"entrantes";
+  const list = tab==="entrantes" ? entActivas
+             : tab==="salientes" ? salActivas
+             : [...entHist,...salHist];
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="margin-bottom:20px">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Recepción — Fábrica / Depósito</h2>
+      <p style="color:var(--muted);font-size:13px">${escH(u.nombre)} · Gestión de transferencias en fábrica</p>
+    </div>
+    <div class="stats-grid">
+      ${statCard("📥","POR LLEGAR",entActivas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
+      ${statCard("📤","POR SALIR",salActivas.filter(r=>["Aprobada","Programada","Lista para retirar"].includes(r.estado)).length,"var(--teal)")}
+      ${statCard("🚚","EN CAMINO",salActivas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
+      ${statCard("📦","HOY",[...entHist,...salHist].filter(r=>r.deliveredAt&&r.deliveredAt.startsWith(new Date().toISOString().slice(0,10))).length,"#1fa86a")}
+    </div>
+    <div class="tabs">
+      <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes (${entActivas.length})</button>
+      <button class="tab ${tab==="salientes"?"active":""}" onclick="S.tabSuc='salientes';render()">📤 Salientes (${salActivas.length})</button>
+      <button class="tab ${tab==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${entHist.length+salHist.length})</button>
+    </div>
+    <div class="card-flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>N°</th><th>Origen</th><th>Destino</th><th>Descripción</th>
+            <th>Cant.</th><th>Solicitante</th><th>Estado</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${list.length===0?`<tr class="empty-row"><td colspan="8">Sin transferencias</td></tr>`:""}
+            ${list.map(r=>{
+              const esSaliente   = esOrigenFabrica(r);
+              const puedeRecibir = !esSaliente && r.estado==="En tránsito";
+              const puedeLista   = esSaliente && ["Aprobada","Programada"].includes(r.estado);
+              return `<tr>
+                <td class="id-cell">${escH(r.id)}</td>
+                <td style="font-weight:500">${escH(origenLabel(r))}</td>
+                <td class="muted-cell">${escH(r.destino)}</td>
+                <td><div class="trunc">${escH(r.descripcion)}</div></td>
+                <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
+                <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
+                <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+                <td style="white-space:nowrap">
+                  <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+                  ${puedeRecibir?`
+                  <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">
+                    🔑 Confirmar llegada
+                  </button>`:""}
+                  ${puedeLista?`
+                  <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">
+                    ✅ Lista para salir
+                  </button>`:""}
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div style="margin-top:16px;padding:12px 16px;background:var(--s2);border-radius:8px;font-size:13px;color:var(--muted);border-left:3px solid var(--teal)">
+      📥 <strong>Entrantes:</strong> tocá <strong>Confirmar llegada</strong> cuando llega un repartidor — ingresás tu DNI y aparece la palabra para darle.<br/>
+      📤 <strong>Salientes:</strong> tocá <strong>Lista para salir</strong> cuando tenés lista la mercadería para que retire el repartidor.
+    </div>
+  </div>`;
+}
+
+function renderSucursalArea(){
+  const u=S.user;
+  // Incluir solicitudes donde la sucursal es ORIGEN o DESTINO
+  // La sucursal que recibe también puede ver el estado de lo que le viene
+  const norm  = s => (s||"").trim().toLowerCase();
+  const areaU = norm(u.area);
+
+  // Construir lista de todos los nombres posibles de esta área/sucursal
+  // (el nombre puede estar escrito de formas ligeramente distintas)
+  const todosLosMios = new Set([areaU]);
+  // Agregar variantes desde la lista maestra de sucursales
+  getSucursales().forEach(s=>{ if(norm(s)===areaU) todosLosMios.add(norm(s)); });
+  getDestinos().forEach(d=>{ if(norm(d)===areaU) todosLosMios.add(norm(d)); });
+
+  const matchArea = s => { const n=norm(s); return !!n && todosLosMios.has(n); };
+
+  const mine = S.requests.filter(r=>{
+    const esOrigen  = matchArea(r.sucursal) || matchArea(r.area);
+    const esDestino = matchArea(r.destino);
+    return esOrigen || esDestino;
+  });
+
+  const miosPedidos    = mine.filter(r => matchArea(r.sucursal)||matchArea(r.area));
+  const miDestinoQ     = mine.filter(r => matchArea(r.destino) && !matchArea(r.sucursal) && !matchArea(r.area));
+  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const open=mine.filter(r=>!["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const hist=mine.filter(r=>["Entregada","Rechazada","No entregada"].includes(r.estado));
+  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado))
+             : S.tabSuc==="destino"  ? lleganActivas
+             : [...hist, ...lleganHistorial];
+  const listF = S.fSucFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fSucFecha)) : list;
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Mis Solicitudes</h2>
+        <p style="color:var(--muted);font-size:13px">${escH(u.area)} · ${escH(u.nombre)}</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+        <button class="btn btn-warn btn-md" onclick="openPedirBolsin()">🎒 Pedir bolsín</button>
+      </div>
+    </div>
+    <div class="stats-grid">
+      ${statCard("📤","MIS PEDIDOS",miosPedidos.length,"var(--blue)")}
+      ${statCard("📥","ME LLEGAN",miDestinoQ.length,"var(--teal)")}
+      ${statCard("✅","APROBADAS",mine.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
+      ${statCard("📦","ENTREGADAS",mine.filter(r=>r.estado==="Entregada").length,"#1fa86a")}
+    </div>
+    <div class="tabs">
+      <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas (${open.length})</button>
+      <button class="tab ${S.tabSuc==="destino"?"active":""}" onclick="S.tabSuc='destino';render()">📥 Me llegan (${lleganActivas.length})</button>
+      <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${hist.length})</button>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <input type="date" class="inp" style="width:150px" value="${S.fSucFecha}" onchange="S.fSucFecha=this.value;render()"/>
+        ${S.fSucFecha?`<button class="btn btn-ghost btn-sm" onclick="S.fSucFecha='';render()">✕</button>`:""}
+      </div>
+    </div>
+    <div class="card-flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>N°</th><th>Fecha</th><th>Rol</th><th>Descripción</th><th>Cant.</th>
+            <th>Origen/Destino</th><th>Prioridad</th><th>Estado</th><th>Recorrido</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${listF.length===0?`<tr class="empty-row"><td colspan="10">${S.fSucFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No tenés solicitudes abiertas":S.tabSuc==="destino"?"No hay transferencias entrantes":"Sin historial aún"}</td></tr>`:""}
+            ${listF.map(r=>{
+              const esOrigen = matchArea(r.sucursal)||matchArea(r.area);
+              const rolBadge = esOrigen
+                ? `<span style="font-size:11px;color:var(--muted)">📤 Origen</span>`
+                : `<span style="font-size:11px;color:var(--teal)">📥 Destino</span>`;
+              return `<tr>
+              <td class="id-cell">${escH(r.id)}</td>
+              <td class="muted-cell">${fd(r.createdAt)}</td>
+              <td>${rolBadge}</td>
+              <td><div class="trunc">${escH(r.descripcion)}</div></td>
+              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
+              <td class="muted-cell">${esOrigen?escH(r.destino):escH(origenLabel(r))}</td>
+              <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
+              <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+              <td class="muted-cell">${escH(r.recorrido||"—")}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+                ${esOrigen && ["Aprobada","Programada"].includes(r.estado)?`
+                <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">
+                  ✅ Lista
+                </button>`:""}
+                ${!esOrigen && r.estado==="En tránsito" && !esOtraDireccion(r.destino)?`
+                <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">
+                  🔑 Recibir
+                </button>`:""}
+                ${!esOrigen && r.estado==="Entregada (sin confirmar)"?`
+                <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openConfirmarCerrado('${escH(r.id)}')">
+                  ✅ Confirmar transferencia
+                </button>`:""}
+              </td>
+            </tr>`;}).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  VISTA LOGÍSTICA
+// ══════════════════════════════════════════════════════════
+function renderLogistica(){
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div class="tabs" style="margin-bottom:0">
+        <button class="tab ${S.tabLog==="solicitudes"?"active":""}" onclick="S.tabLog='solicitudes';render()">📋 Solicitudes</button>
+        <button class="tab ${S.tabLog==="metricas"?"active":""}" onclick="S.tabLog='metricas';render()">📊 Métricas</button>
+      </div>
+      <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+    </div>
+    ${S.tabLog==="solicitudes"?renderLogTabla():renderMetricas()}
+  </div>`;
+}
+
+function renderLogTabla(){
+  const f=S;
+  const filtered=S.requests.filter(r=>{
+    if(f.fEstado    && r.estado    !==f.fEstado)    return false;
+    if(f.fSucursal  && r.sucursal!==f.fSucursal && r.area!==f.fSucursal && origenLabel(r)!==f.fSucursal) return false;
+    if(f.fDestino   && r.destino   !==f.fDestino)   return false;
+    if(f.fPrioridad && r.prioridad !==f.fPrioridad) return false;
+    if(f.fFecha     && !r.createdAt.startsWith(f.fFecha)) return false;
+    if(f.fRecorrido && r.recorrido !==f.fRecorrido) return false;
+    if(f.fSolicitante && !(solicitanteLabel(r)||"").toLowerCase().includes(f.fSolicitante.trim().toLowerCase())) return false;
+    return true;
+  });
+  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fRecorrido||f.fSolicitante;
+  const reqs=S.requests;
+  const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
+
+  // Lotes de bolsines que ya están "Lista para retirar" pero todavía tienen
+  // filas sin recorrido asignado — acá logística asigna todo junto.
+  const lotesMap = {};
+  S.requests.forEach(r=>{
+    if(r.tipoPedido!=="bolsin" || !r.loteId) return;
+    if(!["Lista para retirar","Aprobada"].includes(r.estado)) return;
+    if(!lotesMap[r.loteId]) lotesMap[r.loteId]=[];
+    lotesMap[r.loteId].push(r);
+  });
+  const lotesPendRecorrido = Object.entries(lotesMap)
+    .map(([loteId,filas])=>({loteId, filas, sinRecorrido: filas.filter(f=>!f.recorrido).length}))
+    .filter(l=>l.sinRecorrido>0);
+
+  return `
+  ${lotesPendRecorrido.length?`
+  <div class="card" style="margin-bottom:20px;padding:14px 16px;border-left:3px solid var(--blue)">
+    <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">🚚 Lotes de bolsines esperando recorrido</h3>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${lotesPendRecorrido.map(l=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+          <span style="font-size:13px"><strong>${escH(l.loteId)}</strong> · ${l.sinRecorrido} de ${l.filas.length} sin recorrido</span>
+          <button class="btn btn-teal btn-sm" onclick="openLoteRecorrido('${escH(l.loteId)}')">🚚 Asignar recorridos</button>
+        </div>`).join("")}
+    </div>
+  </div>`:""}
+  <div class="stats-grid">
+    ${statCard("📋","PENDIENTES",reqs.filter(r=>r.estado==="Pendiente").length,"var(--muted)")}
+    ${statCard("✅","APROBADAS",reqs.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
+    ${statCard("📅","PROGRAMADAS",reqs.filter(r=>r.estado==="Programada").length,"var(--purple)")}
+    ${statCard("📦","ENTREGADAS",reqs.filter(r=>r.estado==="Entregada").length,"var(--teal)")}
+  </div>
+  <div class="card" style="margin-bottom:20px;padding:14px 16px">
+    <div class="filter-grid">
+      <div class="field" style="margin-bottom:0"><label>Estado</label>
+        <select onchange="S.fEstado=this.value;render()">
+          <option value="">Todos</option>${ESTADOS.map(s=>`<option ${f.fEstado===s?"selected":""}>${escH(s)}</option>`).join("")}
+        </select></div>
+      <div class="field" style="margin-bottom:0"><label>Origen</label>
+        <select onchange="S.fSucursal=this.value;render()">
+          <option value="">Todos los orígenes</option>
+          ${[...getSucursales(),...(S.destinos.length?S.destinos:["Compras","RRHH","Logística"])].filter((v,i,a)=>a.indexOf(v)===i).map(s=>`<option ${f.fSucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
+        </select></div>
+      <div class="field" style="margin-bottom:0"><label>Destino</label>
+        <select onchange="S.fDestino=this.value;render()">
+          <option value="">Todos los destinos</option>
+          ${getDestinos().map(s=>`<option ${f.fDestino===s?"selected":""}>${escH(s)}</option>`).join("")}
+        </select></div>
+      <div class="field" style="margin-bottom:0"><label>Prioridad</label>
+        <select onchange="S.fPrioridad=this.value;render()">
+          <option value="">Todas</option>${PRIORIDADES.map(p=>`<option ${f.fPrioridad===p?"selected":""}>${p}</option>`).join("")}
+        </select></div>
+      <div class="field" style="margin-bottom:0"><label>Recorrido</label>
+        <select onchange="S.fRecorrido=this.value;render()">
+          <option value="">Todos</option>${recOpts.map(r=>`<option ${f.fRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
+        </select></div>
+      <div class="field" style="margin-bottom:0"><label>Fecha</label>
+        <input type="date" class="inp" value="${f.fFecha}" onchange="S.fFecha=this.value;render()"/>
+      </div>
+      <div class="field" style="margin-bottom:0"><label>Solicitante</label>
+        <input type="text" id="f-solicitante" class="inp" placeholder="Buscar por nombre... (Enter)" value="${escH(f.fSolicitante)}"
+          onkeydown="if(event.key==='Enter'){S.fSolicitante=this.value;render();}"
+          onblur="S.fSolicitante=this.value;render();"/>
+      </div>
+    </div>
+    ${hasF?`<div class="filter-bar"><span>${filtered.length} resultado${filtered.length!==1?"s":""}</span><button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Limpiar</button></div>`:""}
+  </div>
+  <div class="card-flush">
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>N°</th><th>Fecha</th><th>Origen</th><th>Solicitante</th>
+          <th>Destino</th><th>Descripción</th><th>Cant.</th><th>F.Req.</th>
+          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>Acción</th>
+        </tr></thead>
+        <tbody>
+          ${filtered.length===0?`<tr class="empty-row"><td colspan="12">Sin resultados</td></tr>`:""}
+          ${filtered.map(r=>`<tr>
+            <td class="id-cell">${escH(r.id)}</td>
+            <td class="muted-cell">${fd(r.createdAt)}</td>
+            <td style="font-weight:500">${escH(origenLabel(r))}</td>
+            <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
+            <td class="muted-cell">${escH(r.destino)}</td>
+            <td><div class="trunc">${escH(r.descripcion)}</div></td>
+            <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
+            <td class="muted-cell">${fd(r.fechaRequerida)}</td>
+            <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
+            <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+            <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+              ${r.estado!=="Entregada"&&r.estado!=="Rechazada"?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
+            </td>
+          </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderMetricas(){
+  const reqs=S.requests; const total=reqs.length||1;
+  const byS={},byE={};
+  getDestinos().forEach(s=>{byS[s]=reqs.filter(r=>(r.sucursal||r.area)===s).length;});
+  ESTADOS.forEach(e=>{byE[e]=reqs.filter(r=>r.estado===e).length;});
+  const wa=reqs.filter(r=>r.approvedAt&&r.createdAt);
+  const avgR=wa.length?Math.round(wa.reduce((a,r)=>a+(dh(r.createdAt,r.approvedAt)||0),0)/wa.length):null;
+  const wd=reqs.filter(r=>r.deliveredAt&&r.scheduledAt);
+  const avgD=wd.length?Math.round(wd.reduce((a,r)=>a+(dh(r.scheduledAt,r.deliveredAt)||0),0)/wd.length):null;
+  return `
+  <div class="metrics-grid">
+    <div class="card">
+      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">KPIs</p>
+      <div class="kpi-mini-grid">
+        <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--blue)">${reqs.length}</div><div class="kpi-mini-lbl">Total</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--red)">${reqs.filter(r=>r.prioridad==="Urgente").length}</div><div class="kpi-mini-lbl">Urgentes</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--amber)">${reqs.filter(r=>r.estado==="Rechazada").length}</div><div class="kpi-mini-lbl">Rechazadas</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--teal)">${reqs.filter(r=>r.estado==="Entregada").length}</div><div class="kpi-mini-lbl">Entregadas</div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--border)">
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">⚡ T. prom. respuesta</span><span class="mono" style="color:var(--blue)">${avgR!=null?avgR+"h":"—"}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">🚚 T. prom. entrega</span><span class="mono" style="color:var(--green)">${avgD!=null?avgD+"h":"—"}</span></div>
+      </div>
+    </div>
+    <div class="card">
+      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR ESTADO</p>
+      ${ESTADOS.map(e=>bar(e,byE[e]||0,total,S_COLOR[e])).join("")}
+    </div>
+    <div class="card" style="grid-column:1/-1">
+      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR SUCURSAL / ÁREA</p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 32px">
+        ${Object.entries(byS).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).map(([s,v])=>bar(s,v,total,"var(--blue)")).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  VISTA REPARTIDOR
+// ══════════════════════════════════════════════════════════
+function renderRepartidor(){
+  const u=S.user;
+  const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
+  const VISIBLES=["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"];
+  const ACCION_COLOR={"Aprobada":"var(--green)","Programada":"var(--purple)","En tránsito":"var(--amber)","En fábrica":"var(--teal)","Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f"};
+
+  let list=S.requests.filter(r=>{
+    if(S.tabRep==="activas") return VISIBLES.includes(r.estado);
+    return ["Entregada","Entregada (sin confirmar)"].includes(r.estado);
+  });
+  if(S.fRepRecorrido) list=list.filter(r=>r.recorrido===S.fRepRecorrido);
+
+  const activas=S.requests.filter(r=>["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado));
+  const entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="margin-bottom:20px">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Panel de Reparto</h2>
+      <p style="color:var(--muted);font-size:13px">Hola <strong style="color:var(--text)">${escH(u.nombre)}</strong>
+        ${u.recorrido?`· Recorrido: ${badge(u.recorrido,"var(--teal)")}`:""}</p>
+    </div>
+    <div class="stats-grid">
+      ${statCard("✅","PARA LEVANTAR",activas.filter(r=>r.estado==="Aprobada"||r.estado==="Programada").length,"var(--green)")}
+      ${statCard("🚚","EN CAMINO",activas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
+      ${statCard("🏭","EN FÁBRICA",activas.filter(r=>r.estado==="En fábrica").length,"var(--teal)")}
+      ${statCard("📦","ENTREGADAS HOY",entregadas.filter(r=>r.deliveredAt&&r.deliveredAt.startsWith(new Date().toISOString().slice(0,10))).length,"#1fa86a")}
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <div class="tabs" style="margin-bottom:0">
+        <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${activas.length})</button>
+        <button class="tab ${S.tabRep==="entregadas"?"active":""}" onclick="S.tabRep='entregadas';render()">Entregadas (${entregadas.length})</button>
+      </div>
+      <div class="field" style="margin-bottom:0;min-width:160px">
+        <select onchange="S.fRepRecorrido=this.value;render()">
+          <option value="">Todos los recorridos</option>
+          ${recOpts.map(r=>`<option ${S.fRepRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <div class="del-grid">
+      ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="activas"?"No hay transferencias activas":"Sin entregas registradas"}</div>`:""}
+      ${list.map(r=>{
+        const ac = ACCION_COLOR[r.estado]||"var(--muted)";
+        const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
+        const estaEnTransito = r.estado === "En tránsito";
+        // yaEsSegundaEtapa: pasó por fábrica (fabricaAt) y ahora está en tránsito de nuevo
+        const yaEsSegundaEtapa = pasaPorFabrica && !!r.fabricaAt;
+        // Para Otra dirección o cuando el origen es fábrica/depósito: puede tomar directo
+        const esOtraDir      = esOtraDireccion(r.destino);
+        const origenEsFab    = esOrigenFabrica(r);
+        const puedeTomar     = ["Lista para retirar","En fábrica"].includes(r.estado) ||
+                               ((esOtraDir||origenEsFab) && ["Aprobada","Programada"].includes(r.estado));
+        // Dejar en fábrica solo si: en tránsito + pasa por fábrica + AÚN no llegó a fábrica
+        const puedDejarFab   = estaEnTransito && pasaPorFabrica && !r.fabricaAt;
+        // Entregar: tránsito directo O segunda etapa (ya salió de fábrica)
+        const puedeEntregar  = estaEnTransito && (!pasaPorFabrica || yaEsSegundaEtapa);
+        const puedeTomarFab  = r.estado === "En fábrica";
+        const tomadaPor      = r.nombreQuienLevanto && estaEnTransito && !yaEsSegundaEtapa ? r.nombreQuienLevanto : "";
+        const llevadoPor     = r.nombreQuienEntrego && yaEsSegundaEtapa ? r.nombreQuienEntrego : "";
+        return `
+        <div class="del-card">
+          <div class="del-stripe" style="background:${ac}"></div>
+          <div class="del-body">
+
+            <!-- Header -->
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+              <div>
+                <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
+                <div style="font-weight:600">${escH(origenLabel(r))}</div>
+              </div>
+              ${badge(r.estado,S_COLOR[r.estado])}
+            </div>
+
+            <!-- Ruta -->
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px">
+              <span style="color:var(--muted)">${escH(origenLabel(r))}</span>
+              <span style="color:var(--faint)">→</span>
+              <span style="font-weight:500">${escH(r.destino)}</span>
+            </div>
+
+            <!-- Descripción -->
+            <div style="font-size:14px;color:var(--muted);margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(r.descripcion)}</div>
+
+            <!-- Info chips -->
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:10px">
+              <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
+                <div style="color:var(--faint);margin-bottom:2px">Cantidad</div>
+                <div style="font-weight:600;font-family:var(--mono)">${escH(String(r.cantidad))} ${escH(r.unidad)}</div>
+              </div>
+              <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
+                <div style="color:var(--faint);margin-bottom:2px">Recorrido</div>
+                <div style="font-weight:600;color:var(--teal)">${escH(r.recorrido||"—")}</div>
+              </div>
+              ${r.scheduledAt?`
+              <div style="background:var(--s2);border-radius:6px;padding:7px 10px;grid-column:1/-1">
+                <div style="color:var(--faint);margin-bottom:2px">📅 Fecha programada</div>
+                <div style="font-weight:600">${fd(r.scheduledAt)}</div>
+              </div>`:""}
+            </div>
+
+            <!-- Comentario logística -->
+            ${r.comentario?`
+            <div style="margin-bottom:10px;padding:7px 10px;background:var(--s2);border-radius:6px;font-size:12px;border-left:3px solid var(--blue)">
+              <span style="color:var(--muted)">Logística: </span>${escH(r.comentario)}
+            </div>`:""}
+            ${r.aclaracionListo?`
+            <div style="margin-bottom:10px;padding:7px 10px;background:#34d39912;border-radius:6px;font-size:12px;border-left:3px solid #34d399">
+              <span style="color:var(--muted)">Sucursal: </span>${escH(r.aclaracionListo)}
+            </div>`:""}
+
+            <!-- Quién la tiene (si está en tránsito) -->
+            ${tomadaPor?`
+            <div style="margin-bottom:10px;padding:7px 10px;background:#f5a62312;border-radius:6px;font-size:12px;border-left:3px solid var(--amber)">
+              🚚 En camino a fábrica — <strong>${escH(tomadaPor)}</strong>
+            </div>`:""}
+            ${llevadoPor?`
+            <div style="margin-bottom:10px;padding:7px 10px;background:#f5a62312;border-radius:6px;font-size:12px;border-left:3px solid var(--amber)">
+              🚚 Llevando al destino — <strong>${escH(llevadoPor)}</strong>
+            </div>`:""}
+            ${r.estado==="En fábrica"?`
+            <div style="margin-bottom:10px;padding:7px 10px;background:#2de0c412;border-radius:6px;font-size:12px;border-left:3px solid var(--teal)">
+              🏭 En fábrica — esperando recorrido de salida${r.recorridoSalida?" ("+escH(r.recorridoSalida)+")":""}
+            </div>`:""}
+
+            <!-- Acciones -->
+            <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+              <button class="btn btn-ghost btn-sm" style="flex:1;min-width:60px" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+              ${puedeTomar && r.estado==="Lista para retirar"?`
+              <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
+                🤲 Tomar
+              </button>
+              <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoLevanta('${escH(r.id)}')">
+                ✕ No levanté
+              </button>`:""}
+              ${puedeTomar && r.estado==="En fábrica"?`
+              <button class="btn btn-success btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
+                🤲 Llevar a destino
+              </button>`:""}
+              ${(()=>{
+                // Solo se saltea la espera de "Lista" cuando el ORIGEN es
+                // "Otra dirección" — ahí no hay ninguna cuenta (sucursal,
+                // área o recepcionista) que pueda confirmarla desde la app.
+                // Si el origen es fábrica/depósito SÍ hace falta esperar:
+                // la confirma el área que la pidió o el recepcionista de
+                // fábrica/depósito, igual que cualquier sucursal.
+                const origenSinApp = esOtraDireccion(r.sucursal||r.area);
+                if(["Aprobada","Programada"].includes(r.estado) && !origenSinApp) return `
+              <div style="flex:2;background:var(--s2);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--muted);text-align:center;border:1px solid var(--border)">
+                ⏳ Esperando que la sucursal confirme que está lista
+              </div>`;
+                if(["Aprobada","Programada"].includes(r.estado) && origenSinApp) return `
+              <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
+                🤲 Tomar
+              </button>`;
+                return "";
+              })()}
+              ${puedDejarFab?`
+              <button class="btn btn-primary btn-sm" style="flex:2" onclick="openDejarEnFabrica('${escH(r.id)}')">
+                🏭 Dejar en fábrica
+              </button>`:""}
+              ${puedeEntregar?`
+              <button class="btn btn-teal btn-sm" style="flex:1" onclick="openConfirmarEntrega('${escH(r.id)}')">
+                📦 Entregar
+              </button>
+              <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoEntrega('${escH(r.id)}')">
+                ✕ No entregué
+              </button>`:""}
+            </div>
+
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  MODALES
+// ══════════════════════════════════════════════════════════
+function renderModals(){
+  if(!S.modal) return "";
+  const wrapModal=(id,title,body,width=580)=>`
+    <div class="modal-bg" id="modal-bg" onclick="handleBg(event)">
+      <div class="modal-box" style="max-width:${width}px">
+        <div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+        <div class="modal-body">${body}</div>
+      </div>
+    </div>`;
+
+  if(S.modal==="nuevaSol")  return wrapModal("m","Nueva Solicitud de Transferencia",renderFormNueva(),620);
+  if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
+  if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
+  if(S.modal==="dniConfirm")return wrapModal("m",escH(S.dniModal.title),renderDniModal(),400);
+  if(S.modal==="tomar")     return wrapModal("m","Tomar transferencia",renderTomarModal(),420);
+  if(S.modal==="fabrica")   return wrapModal("m","Dejar en fábrica",renderFabricaModal(),420);
+  if(S.modal==="entrega")   return wrapModal("m","Confirmar entrega",renderEntregaModal(),420);
+  if(S.modal==="codigo")    return wrapModal("m","Confirmar recepción — Sucursal",renderCodigoModal(),420);
+  if(S.modal==="palabra")    return wrapModal("m","Ingresar palabra de entrega",renderPalabraModal(),420);
+  if(S.modal==="noEntrega")   return wrapModal("m","Reportar problema de entrega",renderNoEntregaModal(),480);
+  if(S.modal==="noLevanta")   return wrapModal("m","Reportar que no pude levantar",renderNoLevantaModal(),480);
+  if(S.modal==="listo")      return wrapModal("m","Transferencia lista para retirar",renderListoModal(),420);
+  if(S.modal==="cerrado")    return wrapModal("m","Dejar en sucursal cerrada",renderDejarCerradoModal(),420);
+  if(S.modal==="confirmarCerrado") return wrapModal("m","Confirmar transferencia recibida",renderConfirmarCerradoModal(),420);
+  if(S.modal==="editar")     return wrapModal("m","Editar solicitud",renderEditarModal(),460);
+  if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
+  if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
+  if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
+  if(S.modal==="loteListo")     return wrapModal("m","Marcar lote como Listo",renderLoteListoModal(),420);
+  if(S.modal==="loteRecorrido") return wrapModal("m","Asignar recorridos del lote",renderLoteRecorridoModal(),680);
+  return "";
+}
+
+// ── Formulario nueva solicitud ────────────────────────────
+// IMPORTANTE: los campos tienen IDs únicos y NO usan oninput/onchange
+// que modifiquen el estado global — eso causaba re-renders mientras escribías.
+// El submit lee los valores directamente del DOM en el momento de enviar.
+function renderFormNueva(){
+  const e=S.formErr; const u=S.user;
+  const allDests       = [...getDestinos(), "Otra dirección"].filter(d=>d!==(u.area));
+  const esLogForm      = u.rol==="logistica";
+  const esPlanForm     = u.rol==="planificacion";
+  const eligeOrigen    = esLogForm || esPlanForm;
+  const origenOptions  = [...getSucursales(),...(S.destinos.length?S.destinos:["Depósito Central","Casa Central","Compras","RRHH","Planificación"]),"Otra dirección"].filter((v,i,a)=>a.indexOf(v)===i);
+  return `
+  ${divider("DATOS DEL PEDIDO")}
+  ${eligeOrigen ? `
+  <div class="field">
+    <label>Origen <span class="req">*</span>
+      <span style="color:var(--faint);font-size:11px;margin-left:4px">— sucursal o área que hace el pedido</span>
+    </label>
+    <select id="f-origen" onchange="checkOtraDireccion()">
+      <option value="">— Seleccioná origen —</option>
+      ${origenOptions.map(d=>`<option>${escH(d)}</option>`).join("")}
+    </select>
+  </div>` : `
+  <div class="field field-disabled">
+    <label>${u.rol==="area"?"Área solicitante":"Sucursal solicitante"}</label>
+    <input class="inp" value="${escH(u.area)}" disabled style="opacity:.5"/>
+  </div>`}
+  <div class="alert-info" style="margin-bottom:14px;font-size:13px">
+    🔒 Al enviar se pedirá tu <strong>DNI</strong>. Tu nombre se registra automáticamente.<br/>
+    <span style="color:var(--faint);font-size:12px">Si el pedido es urgente, aclaralo en la descripción.</span>
+  </div>
+  ${divider("DETALLE DEL PEDIDO")}
+  <div class="field">
+    <label>Destino <span class="req">*</span></label>
+    <select id="f-dest" class="${e.dest?"err":""}" onchange="checkOtraDireccion()">
+      <option value="">— Seleccioná —</option>
+      ${allDests.map(d=>`<option>${escH(d)}</option>`).join("")}
+    </select>
+    ${e.dest?`<span class="err-msg">${e.dest}</span>`:""}
+  </div>
+  <div class="field">
+    <label>Descripción del pedido <span class="req">*</span></label>
+    <textarea id="f-desc" class="${e.desc?"err":""}" rows="3"
+      placeholder="Describí qué necesitás..."></textarea>
+    ${e.desc?`<span class="err-msg">${e.desc}</span>`:""}
+  </div>
+  <div class="g3">
+    <div class="field">
+      <label>Cantidad <span class="req">*</span></label>
+      <input id="f-cant" type="number" min="1" class="inp ${e.cant?"err":""}" placeholder="0"/>
+      ${e.cant?`<span class="err-msg">${e.cant}</span>`:""}
+    </div>
+    <div class="field">
+      <label>Unidad</label>
+      <select id="f-unit">
+        ${UNIDADES.map(u=>`<option>${u}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field">
+      <label>Fecha requerida</label>
+      <input id="f-fecha" type="date" class="inp" value="${new Date().toISOString().slice(0,10)}"/>
+    </div>
+  </div>
+  <!-- Aviso Otra dirección — se muestra dinámicamente -->
+  <div id="otra-dir-aviso" style="display:none;background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    📍 <strong>Otra dirección:</strong> es obligatorio aclarar la dirección exacta en Observaciones.
+    En este caso no se requerirá código de entrega ya que el destinatario no tiene la app.
+  </div>
+  <div class="field">
+    <label>Observaciones<span id="obs-req-mark" style="display:none" class="req"> *</span></label>
+    <textarea id="f-obs" class="${e.obs?"err":""}" rows="2" placeholder="Horarios, contacto, dirección exacta si es 'Otra dirección'..."></textarea>
+    ${e.obs?`<span class="err-msg">${e.obs}</span>`:""}
+  </div>
+  ${Object.keys(e).length?`<div class="alert-err">⚠️ Completá los campos marcados en rojo.</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:4px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button id="btn-submit-nueva" class="btn btn-success btn-md" onclick="submitNueva()" ${S.saving?"disabled":""}>
+      ${S.saving?`<span class="spinner"></span> Guardando...`:"✓ Enviar solicitud"}
+    </button>
+  </div>`;
+}
+
+// ── Detalle / Trazabilidad ────────────────────────────────
+function renderDetalle(){
+  const r=S.requests.find(x=>x.id===S.selId);
+  if(!r) return "<p>No encontrado</p>";
+
+  // Solo logística ve los DNI completos y horas internas
+  const esLogistica   = S.user?.rol === "logistica";
+  // Sucursal destino ve la hora de entrega (les corresponde saberla)
+  const esDestinoView = !esLogistica && S.user?.area &&
+    (r.destino||"").trim().toLowerCase() === (S.user.area||"").trim().toLowerCase();
+
+  // Construir trazabilidad según el perfil
+  const steps=[];
+
+  // Paso 1: Creación
+  const metaCreacion = esLogistica
+    ? `${fdt(r.createdAt)} · ${solicitanteLabel(r)} · DNI: ${r.dniSolicitante||"—"}`
+    : `${fd(r.createdAt)} · ${solicitanteLabel(r)}`;
+  steps.push({dot:S_COLOR["Pendiente"], title:"Solicitud creada", meta:metaCreacion});
+
+  // Paso 2: Acción de Logística (aprobación, rechazo, o marcado pasa por fábrica)
+  // ── PASO 2: Acción de Logística ─────────────────────────
+  if(r.dniLogistica || r.approvedAt || r.estado==="Rechazada"){
+    const esRechazada    = r.estado==="Rechazada";
+    const esFabricaFlow2 = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
+    const tituloLog = esRechazada ? "Rechazada por Logística"
+                    : esFabricaFlow2 ? "Aprobada — pasa por fábrica"
+                    : "Aprobada por Logística";
+    const nombreLog = r.nombreLogistica || "Logística";
+    const metaLog = esLogistica
+      // Logística: hora + quién aprobó + DNI + comentario
+      ? `${fdt(r.approvedAt||r.updatedAt)} · ${nombreLog} · DNI: ${r.dniLogistica||"—"}${r.comentario?" · "+r.comentario:""}`
+      // Repartidor: SOLO la instrucción específica para ellos, nada más
+      : S.user?.rol==="repartidor"
+        ? r.comentarioRepartidor || ""
+        // Sucursal/Planificación: solo el comentario de logística para ellos
+        : r.comentario || "";
+    steps.push({dot:esRechazada?S_COLOR["Rechazada"]:S_COLOR["Aprobada"], title:tituloLog, meta:metaLog});
+  }
+
+  // ── PASO 3: Recorridos (ingreso / egreso separados) ─────
+  const esFabFlow = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
+  if(r.recorrido && r.estado!=="Rechazada"){
+    const titleRec = esFabFlow ? `Recorrido de ingreso: ${r.recorrido}` : `Asignada a recorrido ${r.recorrido}`;
+    steps.push({dot:S_COLOR["Programada"], title:titleRec,
+      meta:r.scheduledAt?`Programado para ${fd(r.scheduledAt)}`:""});
+  }
+  // Recorrido de EGRESO — se guarda cuando logística asigna el recorrido de salida desde fábrica
+  if(esFabFlow && r.recorridoEgreso && r.estado!=="Rechazada"){
+    steps.push({dot:S_COLOR["Programada"], title:`Recorrido de egreso: ${r.recorridoEgreso}`,
+      meta:"Recorrido asignado para llevar al destino final"});
+  }
+
+  // ── PASO 3b: Sucursal origen confirmó que está lista ────
+  if(r.listoAt || r.nombreListoPor || r.estado==="Lista para retirar"){
+    const quienListo = r.nombreListoPor || "";
+    const aclaracion = r.aclaracionListo ? ` · "${r.aclaracionListo}"` : "";
+    const metaListo = esLogistica
+      ? `${r.listoAt?fdt(r.listoAt)+" · ":""}${quienListo||"—"}${r.dniListoPor?" · DNI: "+r.dniListoPor:""}${aclaracion}`
+      // Repartidor ve el nombre para poder llamar
+      : quienListo ? `${quienListo}${aclaracion}`
+      : `Confirmada lista${aclaracion}`;
+    steps.push({dot:"#34d399", title:"✅ Lista para retirar", meta:metaListo});
+  }
+
+  // ── PASO 4a: Primer levantamiento ───────────────────────
+  // NO mostrar si no se levantó nunca (estado No levantada sin nombreQuienLevanto)
+  const estadosActivos = ["En tránsito","En fábrica","Entregada","No entregada"];
+  if(r.nombreQuienLevanto || estadosActivos.includes(r.estado)){
+    const quien    = r.nombreQuienLevanto || "";
+    const tsLev    = r.levantadoAt || "";
+    const titleLev = esFabFlow ? "🚚 Levantado — viene a fábrica" : "🚚 Levantado — va al destino";
+    const metaLev  = esLogistica
+      ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"} · DNI: ${r.dniRepartidor||"—"}`
+      : quien ? `Por ${quien}` : "En camino";
+    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev});
+  }
+
+  // ── PASO 4b: Llegó a fábrica ────────────────────────────
+  if(esFabFlow && (r.fabricaAt || r.estado==="En fábrica")){
+    const ts      = r.fabricaAt || r.updatedAt;
+    const quien   = r.nombreQuienLevanto || "";
+    const metaFab = esLogistica
+      ? `${fdt(ts)} · ${quien||"—"} · DNI: ${r.dniRepartidor||"—"}`
+      : quien || "";
+    steps.push({dot:S_COLOR["En fábrica"], title:"🏭 Llegó a fábrica", meta:metaFab});
+  }
+
+  // ── PASO 4c: Salió de fábrica hacia destino ─────────────
+  if(esFabFlow && r.nombreQuienEntrego){
+    const tsSal   = r.salidaFabricaAt || "";
+    const metaSal = esLogistica
+      ? `${tsSal?fdt(tsSal)+" · ":""}${r.nombreQuienEntrego} · DNI: ${r.dniEntrega||"—"}`
+      : `Por ${r.nombreQuienEntrego}`;
+    steps.push({dot:S_COLOR["En tránsito"], title:"🚚 Salió de fábrica → destino final", meta:metaSal});
+  }
+
+  // ── PASO 5a: No levantada ───────────────────────────────
+  if(r.estado==="No levantada"){
+    const meta = esLogistica
+      ? `${fdt(r.updatedAt)} · DNI: ${r.dniRepartidor||"—"} · ${r.comentario||""}`
+      : r.comentario || "El repartidor no pudo levantar la transferencia";
+    steps.push({dot:"#ff6b35", title:"⚠️ No pudo levantarse", meta});
+  }
+
+  // ── PASO 5b: No entregada ───────────────────────────────
+  if(r.estado==="No entregada"){
+    const meta = esLogistica
+      ? `${fdt(r.updatedAt)} · DNI: ${r.dniRepartidor||"—"} · ${r.comentario||""}`
+      : r.comentario || "No se pudo entregar";
+    steps.push({dot:S_COLOR["No entregada"], title:"⚠️ No pudo entregarse", meta});
+  }
+
+  // ── PASO 5c: Dejada con sucursal cerrada (pendiente de confirmar) ──
+  if(r.estado==="Entregada (sin confirmar)"){
+    const quienDejo = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
+    const metaDejo = esLogistica
+      ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"} · DNI: ${r.dniEntrega||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
+      : `${quienDejo?"Por "+quienDejo:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
+    steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+  }
+
+  // ── PASO 5d: Entregada ──────────────────────────────────
+  if(r.estado==="Entregada"){
+    const quienEntrego = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
+    // Si vino del flujo "sucursal cerrada", separamos en dos pasos: cuándo
+    // la dejó el repartidor y cuándo la sucursal confirmó que la recibió.
+    if(r.confirmadaSucursalAt){
+      const metaDejo = esLogistica
+        ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"} · DNI: ${r.dniEntrega||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
+        : `${quienEntrego?"Por "+quienEntrego:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
+      steps.push({dot:"#c98a1f", title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+      const metaConf = esLogistica
+        ? `${fdt(r.confirmadaSucursalAt)} · ${r.nombreQuienRecibio||"—"} · DNI: ${r.dniQuienRecibio||"—"}`
+        : esDestinoView
+          ? `${fdt(r.confirmadaSucursalAt)}${r.nombreQuienRecibio?" · "+r.nombreQuienRecibio:""}`
+          : `Confirmada${r.nombreQuienRecibio?" por "+r.nombreQuienRecibio:""}`;
+      steps.push({dot:"#34d399", title:"✅ Confirmada por la sucursal", meta:metaConf});
+    } else {
+      const metaEntr = esLogistica
+        ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"} · DNI: ${r.dniEntrega||r.dniRepartidor||"—"}`
+        : esDestinoView
+          ? `${fdt(r.deliveredAt)}${quienEntrego?" · "+quienEntrego:""}`
+          : `Entregada${quienEntrego?" por "+quienEntrego:""}`;
+      steps.push({dot:S_COLOR["Entregada"], title:"✅ Entregada en destino", meta:metaEntr});
+      // Quién recibió con DNI (sucursal destino)
+      if(r.nombreQuienRecibio){
+        const metaRec = esLogistica
+          ? `${r.nombreQuienRecibio} · DNI: ${r.dniQuienRecibio||"—"}`
+          : `Recibido por ${r.nombreQuienRecibio}`;
+        steps.push({dot:"#a371f7", title:"🔑 Confirmado por la sucursal destino", meta:metaRec});
+      }
+      if(r.codigoEntrega && esLogistica){
+        steps.push({dot:"#a371f7", title:"Código de recepción", meta:`Palabra: ${r.codigoEntrega}`});
+      }
+    }
+  }
+
+  // El botón "Confirmar entrega" aparece en el detalle para repartidores
+  // cuando la solicitud está Aprobada o Programada (no solo En tránsito)
+  const pasaFab2         = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
+  const yaSegundaEtapa2  = pasaFab2 && !!r.fabricaAt;
+  const puedeTomar2      = S.user?.rol==="repartidor" && ["Lista para retirar","En fábrica"].includes(r.estado);
+  const puedeDejarFab2   = S.user?.rol==="repartidor" && r.estado==="En tránsito" && pasaFab2 && !r.fabricaAt;
+  const puedeConfirmar   = S.user?.rol==="repartidor" && r.estado==="En tránsito" && (!pasaFab2 || yaSegundaEtapa2);
+  // Dejar en sucursal cerrada: solo tiene sentido si el destino es una sucursal
+  // real (con su propia app) que después va a poder entrar a confirmar.
+  // Si el destino es "Otra dirección" no aplica (nadie va a entrar a confirmar).
+  const puedeDejarCerrado = puedeConfirmar && !esOtraDireccion(r.destino);
+
+  return `
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
+    ${badge(r.estado,S_COLOR[r.estado])} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
+    ${r.recorrido?badge(r.recorrido,"var(--teal)"):""}
+  </div>
+  ${drow("Origen",origenLabel(r))}
+  ${drow("Solicitante",solicitanteLabel(r))}
+  ${esLogistica?drow("DNI Solicitante",r.dniSolicitante||"—",true):""}
+  ${drow("Destino",r.destino)}
+  ${(r.pasaPorFabrica===true||r.pasaPorFabrica==="true")?`
+  <div style="background:#2de0c412;border-radius:6px;padding:8px 12px;margin:6px 0;font-size:13px;border-left:3px solid var(--teal)">
+    🏭 Esta transferencia pasa por fábrica antes de llegar al destino.
+    ${r.estado==="En fábrica"?" Actualmente en fábrica — esperando salida.":""}
+  </div>`:""}
+  ${drow("Descripción",r.descripcion)}
+  ${drow("Cantidad",r.cantidad+" "+r.unidad,true)}
+  ${drow("Fecha requerida",fd(r.fechaRequerida),true)}
+  ${r.observaciones?drow("Observaciones",r.observaciones):""}
+  ${r.comentario&&!esLogistica?`<div class="alert-info" style="margin-top:8px"><strong>💬 Logística:</strong> ${escH(r.comentario)}</div>`:""}
+  ${divider("TRAZABILIDAD")}
+  ${steps.map((s,i)=>`
+    <div class="trace-step">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="trace-dot" style="background:${s.dot}"></div>
+        ${i<steps.length-1?`<div class="trace-line" style="height:30px"></div>`:""}
+      </div>
+      <div class="trace-body">
+        <div class="trace-title">${escH(s.title)}</div>
+        <div class="trace-meta">${escH(s.meta)}</div>
+      </div>
+    </div>`).join("")}
+  ${puedeTomar2?`
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-warn btn-md btn-full" onclick="closeModal();openTomarTransferencia('${escH(r.id)}')">
+        🤲 ${r.estado==="En fábrica"?"Llevar a destino final":"Tomar transferencia"}
+      </button>
+    </div>`:""}
+  ${puedeDejarFab2?`
+    <div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-primary btn-md btn-full" onclick="closeModal();openDejarEnFabrica('${escH(r.id)}')">
+        🏭 Dejar en fábrica
+      </button>
+    </div>`:""}
+  ${puedeConfirmar?`
+    <div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--border)">
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-teal btn-md" style="flex:2" onclick="closeModal();openConfirmarEntrega('${escH(r.id)}')">
+          📦 Confirmar entrega
+        </button>
+        <button class="btn btn-danger btn-md" style="flex:1" onclick="closeModal();openNoEntrega('${escH(r.id)}')">
+          ✕ No entregué
+        </button>
+      </div>
+      ${puedeDejarCerrado?`
+      <button class="btn btn-ghost btn-md btn-full" style="margin-top:8px" onclick="closeModal();openDejarCerrado('${escH(r.id)}')">
+        🔒 Sucursal cerrada — dejar igual
+      </button>`:""}
+    </div>`:""}`;
+}
+
+// ── Gestionar (Logística) ────────────────────────────────
+function renderGestionar(){
+  const r=S.requests.find(x=>x.id===S.selId);
+  if(!r) return "";
+  const a=S.action;
+  const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
+  const showDate=a.estado==="Programada"||a.estado==="Reprogramada";
+
+  return `
+  <div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+      ${badge(r.estado,S_COLOR[r.estado])} ${badge(r.prioridad,P_COLOR[r.prioridad])}
+    </div>
+    <div style="line-height:1.8;color:var(--muted)">
+      <strong style="color:var(--text)">${escH(origenLabel(r))}</strong> → ${escH(r.destino)}<br/>
+      ${escH(r.descripcion)} · <span class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</span><br/>
+      ${escH(solicitanteLabel(r))}${r.fechaRequerida?` · F.req: <strong style="color:var(--amber)">${fd(r.fechaRequerida)}</strong>`:""}
+    </div>
+  </div>
+  ${divider("ACCIONES RÁPIDAS")}
+  <div class="action-row">
+    ${[
+    ["Aprobada",          "✓ Aprobar",         "btn-success"],
+    ["Rechazada",         "✕ Rechazar",        "btn-danger"],
+    ["Programada",        "📅 Programar",       "btn-purple"],
+    ["Lista para retirar","🟢 Lista",           "btn-teal"],
+    ["En tránsito",       "🚚 En tránsito",    "btn-warn"],
+    ["Entregada",         "📦 Entregada",       "btn-teal"],
+  ].map(([v,l,cls])=>`
+      <button class="btn ${cls} btn-sm" style="opacity:${a.estado===v?1:.5}" onclick="S.action.estado='${v}';render()">${l}</button>`).join("")}
+  </div>
+  <div class="field">
+    <label>Estado manual</label>
+    <select onchange="S.action.estado=this.value;render()">
+      <option value="">— Sin cambio —</option>
+      ${ESTADOS.map(s=>`<option ${a.estado===s?"selected":""}>${escH(s)}</option>`).join("")}
+    </select>
+  </div>
+  <!-- Checkbox pasa por fábrica -->
+  <div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:14px">
+    <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px">
+      <input type="checkbox" id="chk-fabrica"
+        ${(a.pasaPorFabrica||r.pasaPorFabrica)?"checked":""}
+        onchange="S.action.pasaPorFabrica=this.checked;render()"
+        style="width:16px;height:16px;accent-color:var(--teal);cursor:pointer"/>
+      <span>🏭 <strong>Pasa por fábrica</strong> — el repartidor la trae a fábrica antes de ir al destino</span>
+    </label>
+    ${(a.pasaPorFabrica||r.pasaPorFabrica)?`
+    <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)">
+      ${r.estado==="En fábrica"
+        ? "✅ Ya está en fábrica — asigná el recorrido de salida abajo"
+        : r.fabricaAt
+          ? "🏭 Llegó a fábrica: "+fdt(r.fabricaAt)+" — asigná el recorrido de salida"
+          : "El repartidor verá el botón 'Dejar en fábrica' al llegar."}
+    </div>`:""}
+  </div>
+
+  <!-- Recorrido: si pasa por fábrica y ya llegó, es el recorrido de salida -->
+  <div class="field">
+    <label>Prioridad</label>
+    <select onchange="S.action.prioridad=this.value">
+      ${PRIORIDADES.map(p=>`<option ${(S.action.prioridad||r.prioridad)===p?"selected":""}>${escH(p)}</option>`).join("")}
+    </select>
+  </div>
+
+  <div class="field">
+    <label>${(a.pasaPorFabrica||r.pasaPorFabrica)&&r.fabricaAt
+      ? "Recorrido de salida (segunda etapa)"
+      : "Asignar recorrido"}</label>
+    <select onchange="S.action.recorrido=this.value">
+      <option value="${escH(r.recorrido||"")}">— ${escH(r.recorrido||"Sin recorrido")} —</option>
+      ${recOpts.filter(x=>x!==r.recorrido).map(x=>`<option value="${escH(x)}">${escH(x)}</option>`).join("")}
+    </select>
+  </div>
+  ${showDate?`<div class="field"><label>Fecha programada</label><input type="date" class="inp" value="${escH(a.scheduledAt)}" onchange="S.action.scheduledAt=this.value"/></div>`:""}
+  <div class="field">
+    <label>Comentario para la sucursal</label>
+    <textarea placeholder="Ej: Aprobado, sale el martes. / Rechazado por falta de stock." oninput="S.action.comentario=this.value">${escH(a.comentario)}</textarea>
+  </div>
+  <div class="field">
+    <label>Instrucción para el repartidor <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <textarea id="g-coment-rep" rows="2"
+      placeholder="Ej: Llamar antes de llegar, entregar en portería..."
+      oninput="S.action.comentarioRepartidor=this.value">${escH(a.comentarioRepartidor||"")}</textarea>
+  </div>
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    🔒 Al guardar se te pedirá tu <strong>DNI</strong> para registrar la aprobación.
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitGestionar()" ${S.saving?"disabled":""}>
+      ${S.saving?`<span class="spinner"></span> Guardando...`:"Guardar y firmar →"}
+    </button>
+  </div>`;
+}
+
+// ── Modal DNI confirmación ────────────────────────────────
+function renderDniModal(){
+  const d=S.dniModal;
+  return `
+  <p style="color:var(--muted);font-size:13px;margin-bottom:16px">${escH(d.title)}</p>
+
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;font-size:15px;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Identidad verificada</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="dni-inp" class="inp ${d.err?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.val)}"
+        oninput="S.dniModal.val=this.value;S.dniModal.err='';S.dniModal.nombreOk=''"
+        onkeydown="if(event.key==='Enter')submitDni()"/>
+      ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    ${d.err?`<div class="alert-err">🔒 ${escH(d.err)}</div>`:""}
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success btn-md" onclick="submitDni()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Verificando...`:"Confirmar →"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal dejar en fábrica (repartidor deposita) ────────────
+function renderFabricaModal(){
+  const d = S.fabricaModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      ${badge(r.id,"var(--blue)")} ${badge(r.prioridad,P_COLOR[r.prioridad])}
+    </div>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
+    🏭 Al confirmar, la transferencia queda <strong>En fábrica</strong> esperando el recorrido de salida.<br/>
+    <span style="color:var(--faint);font-size:11px">Logística asignará el recorrido y el próximo repartidor la llevará al destino final.</span>
+  </div>
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="fabrica-dni" class="inp ${d.err?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.fabricaModal.dni=this.value;S.fabricaModal.err='';S.fabricaModal.nombreOk=''"
+        onkeydown="if(event.key==='Enter')submitDejarEnFabrica()"/>
+      ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary btn-md" onclick="submitDejarEnFabrica()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"🏭 Confirmar depósito"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal: repartidor deja la transferencia porque la sucursal está cerrada ──
+function renderDejarCerradoModal(){
+  const d = S.cerradoModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      ${badge(r.id,"var(--blue)")} ${badge(r.prioridad,P_COLOR[r.prioridad])}
+    </div>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+  <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    🔒 Vas a dejar la transferencia en <strong>${escH(r?.destino||"la sucursal")}</strong> aunque esté cerrada.
+    Queda como <strong>"Entregada (sin confirmar)"</strong> hasta que alguien de la sucursal entre a la app y confirme que la recibió.
+  </div>
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="cerrado-dni" class="inp ${d.err?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.cerradoModal.dni=this.value;S.cerradoModal.err=''"
+        onkeydown="if(event.key==='Enter')submitDejarCerrado()"/>
+      ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>Aclaración <span style="color:var(--faint);font-size:12px">(opcional, ej. "quedó en la puerta con el sereno")</span></label>
+      <textarea id="cerrado-aclaracion" rows="2"
+        oninput="S.cerradoModal.aclaracion=this.value">${escH(d.aclaracion||"")}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-warn btn-md" onclick="submitDejarCerrado()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"🔒 Confirmar que la dejé"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal: la sucursal confirma una transferencia que quedó "sin confirmar" ──
+function renderConfirmarCerradoModal(){
+  const d = S.confirmarCerradoModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      ${badge(r.id,"var(--blue)")}
+    </div>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span><br/>
+    <span style="color:var(--muted)">Dejada por ${escH(r.nombreQuienEntrego||"—")} el ${fdt(r.deliveredAt)}${r.aclaracionListo?` · "${escH(r.aclaracionListo)}"`:""}</span>
+  </div>`:""}
+  <div style="background:#34d39918;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid #34d399">
+    ✅ Confirmás que encontraste esta transferencia y que la estás recibiendo ahora.
+  </div>
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="confcerrado-dni" class="inp ${d.err?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.confirmarCerradoModal.dni=this.value;S.confirmarCerradoModal.err=''"
+        onkeydown="if(event.key==='Enter')submitConfirmarCerrado()"/>
+      ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success btn-md" onclick="submitConfirmarCerrado()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"✅ Confirmar transferencia"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal tomar transferencia (repartidor levanta) ──────────
+function renderTomarModal(){
+  const d = S.tomarModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      ${badge(r.id,"var(--blue)")} ${badge(r.prioridad,P_COLOR[r.prioridad])}
+    </div>
+    <strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino)}<br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+    ${r.recorrido?`<br/><span style="color:var(--teal);font-weight:600">Recorrido: ${escH(r.recorrido)}</span>`:""}
+  </div>`:""}
+
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    🤲 Al tomar esta transferencia, quedará registrado tu nombre y pasará a <strong>En tránsito</strong>.
+    <br/><span style="color:var(--faint);font-size:11px">Logística verá en tiempo real quién la tiene.</span>
+  </div>
+
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="tomar-dni" class="inp ${d.err?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.tomarModal.dni=this.value;S.tomarModal.err='';S.tomarModal.nombreOk=''"
+        onkeydown="if(event.key==='Enter')submitTomar()"/>
+      ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-warn btn-md" onclick="submitTomar()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"🤲 Confirmar que la tomé"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal código de entrega — lo abre la SUCURSAL DESTINO ──
+// La sucursal ve la palabra generada y se la dice al repartidor
+function renderCodigoModal(){
+  const d = S.codigoModal;
+  const r = S.requests.find(x=>x.id===d.id);
+
+  if(d.confirmada){
+    return `
+    <div class="alert-ok" style="text-align:center;padding:20px">
+      ✅ <strong>Recepción confirmada</strong><br/>
+      <span style="font-size:13px;color:var(--muted);margin-top:4px;display:block">
+        La transferencia fue registrada como entregada.
+      </span>
+    </div>`;
+  }
+
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+
+  ${!d.dniConfirmado ? `
+  <!-- PASO 1: pedir DNI primero, antes de mostrar la palabra -->
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:16px;font-size:13px;border-left:3px solid var(--blue)">
+    🔒 Ingresá tu DNI para confirmar que recibiste la mercadería. Luego verás la palabra para el repartidor.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="codigo-dni-recibe" class="inp ${d.err?"err":""}"
+      type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni||"")}"
+      oninput="S.codigoModal.dni=this.value;S.codigoModal.err=''"
+      onkeydown="if(event.key==='Enter')confirmarRecepcionConDni()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="confirmarRecepcionConDni()">Continuar →</button>
+  </div>
+  ` : `
+  <!-- PASO 2: DNI validado → mostrar la palabra -->
+  <div class="alert-ok" style="margin-bottom:14px">✅ <strong>${escH(d.nombreOk)}</strong> — DNI registrado</div>
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:16px;font-size:13px;border-left:3px solid var(--blue)">
+    📋 Decile esta palabra al repartidor para confirmar la recepción:
+  </div>
+  <div style="text-align:center;padding:24px 16px;background:var(--s3);border-radius:var(--r);margin-bottom:16px;border:2px solid var(--blue)">
+    <div style="font-size:11px;color:var(--muted);letter-spacing:1.5px;margin-bottom:8px">PALABRA DE ENTREGA</div>
+    <div style="font-size:42px;font-weight:700;color:var(--blue);letter-spacing:4px;font-family:var(--mono)">
+      ${escH(d.palabraGenerada)}
+    </div>
+    <div style="font-size:12px;color:var(--faint);margin-top:8px">Decile esta palabra al repartidor</div>
+  </div>
+  <div style="display:flex;gap:10px">
+    <button class="btn btn-ghost btn-md" style="flex:1" onclick="closeModal()">Cerrar</button>
+    <button class="btn btn-ghost btn-sm" onclick="nuevaPalabra('${escH(d.id)}')">🔄 Nueva palabra</button>
+  </div>
+  <p style="text-align:center;font-size:12px;color:var(--faint);margin-top:12px">
+    La entrega se confirma cuando el repartidor ingresa esta palabra en su app.
+  </p>
+  `}`;
+}
+
+// ── Modal palabra — lo abre el REPARTIDOR ──────────────────
+// El repartidor ingresa la palabra que le dio la sucursal
+function renderPalabraModal(){
+  const d = S.palabraModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
+    🔑 Pedile a la sucursal la <strong>palabra de entrega</strong> e ingresala abajo.
+  </div>
+
+  <div class="field">
+    <label>Palabra de entrega <span class="req">*</span></label>
+    <input id="inp-palabra" class="inp ${d.err?"err":""}"
+      placeholder="Ej: TIGRE"
+      value="${escH(d.palabraIngresada)}"
+      oninput="S.palabraModal.palabraIngresada=this.value.toUpperCase().trim();S.palabraModal.err=''"
+      onkeydown="if(event.key==='Enter')submitPalabra()"
+      style="text-transform:uppercase;letter-spacing:3px;font-size:20px;font-weight:700;text-align:center;font-family:var(--mono)"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="submitPalabra()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Verificando...`:"✓ Confirmar entrega"}
+    </button>
+  </div>`;
+}
+
+// ── Modal editar solicitud (planificación/área, solo Pendiente/En revisión) ──
+function renderEditarModal(){
+  const d = S.editarModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    ${badge(r.id,"var(--blue)")} ${badge(r.estado,S_COLOR[r.estado])}<br/><br/>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong>
+  </div>`:""}
+  <div class="field">
+    <label>Descripción</label>
+    <textarea id="ed-desc" rows="2">${escH(d.descripcion||r?.descripcion||"")}</textarea>
+  </div>
+  <div class="g2">
+    <div class="field">
+      <label>Cantidad</label>
+      <input id="ed-cant" type="number" class="inp" value="${escH(String(d.cantidad||r?.cantidad||""))}"/>
+    </div>
+    <div class="field">
+      <label>Fecha requerida</label>
+      <input id="ed-fecha" type="date" class="inp" value="${escH(r?.fechaRequerida||"")}"/>
+    </div>
+  </div>
+  <div class="field">
+    <label>Observaciones</label>
+    <textarea id="ed-obs" rows="2">${escH(d.observaciones||r?.observaciones||"")}</textarea>
+  </div>
+  ${d.err?`<div class="alert-err">⚠️ ${escH(d.err)}</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:space-between;margin-top:4px;flex-wrap:wrap">
+    <button class="btn btn-danger btn-md" onclick="cancelarSolicitud('${escH(d.id)}')">
+      🗑 Cancelar solicitud
+    </button>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Volver</button>
+      <button class="btn btn-success btn-md" onclick="submitEditar()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Guardando...`:"Guardar cambios"}
+      </button>
+    </div>
+  </div>`;
+}
+
+function openEditar(id){
+  const r = S.requests.find(x=>x.id===id);
+  if(!r) return;
+  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", err:"", loading:false};
+  S.modal = "editar";
+  render();
+}
+
+async function submitEditar(){
+  const d = S.editarModal;
+  if(d.loading) return;
+  const desc    = ($("ed-desc")?.value||"").trim();
+  const cant    = ($("ed-cant")?.value||"").trim();
+  const fecha   = ($("ed-fecha")?.value||"").trim();
+  const obs     = ($("ed-obs")?.value||"").trim();
+  if(!desc){ S.editarModal.err="La descripción es obligatoria."; render(); return; }
+  if(!cant||isNaN(+cant)||+cant<=0){ S.editarModal.err="Cantidad inválida."; render(); return; }
+  S.editarModal.loading = true; renderNow();
+  const changes = { descripcion:desc, cantidad:+cant, fechaRequerida:fecha||null, observaciones:obs, updatedAt:now() };
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast("Solicitud actualizada");
+  sheetsUpdate(d.id, changes);
+}
+
+async function cancelarSolicitud(id){
+  if(!confirm("¿Cancelar esta solicitud? No se puede deshacer.")) return;
+  const changes = { estado:"Rechazada", comentario:"Cancelada por el solicitante", updatedAt:now() };
+  S.requests = S.requests.map(x=>x.id===id?{...x,...changes}:x);
+  S.modal = null;
+  toast("Solicitud cancelada");
+  sheetsUpdate(id, changes);
+}
+
+// ── Modal "lista para retirar" — sucursal origen confirma ───
+function renderListoModal(){
+  const d = S.listoModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    ${badge(r.id,"var(--blue)")}<br/><br/>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+
+  <div style="background:#34d39918;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid #34d399">
+    ✅ Confirmás que la transferencia está <strong>embalada y lista</strong> para que el repartidor la retire.<br/>
+    <span style="color:var(--faint);font-size:12px;margin-top:4px;display:block">Logística verá el estado "Lista para retirar" y el repartidor podrá levantarla.</span>
+  </div>
+
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="listo-dni" class="inp ${d.err?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.listoModal.dni=this.value;S.listoModal.err=''"
+        onkeydown="if(event.key==='Enter')submitListo()"/>
+      ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div class="field" style="margin-top:12px">
+      <label>Aclaración para el repartidor <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+      <textarea id="listo-aclaracion" rows="2"
+        placeholder="Ej: Está en la puerta trasera, preguntar por María..."
+        oninput="S.listoModal.aclaracion=this.value">${escH(d.aclaracion||"")}</textarea>
+    </div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success btn-md" onclick="submitListo()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"✅ Confirmar que está lista"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal no levantó — repartidor no pudo levantar ──────────
+function renderNoLevantaModal(){
+  const d = S.noLevantaModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  const motivos = [
+    "La sucursal estaba cerrada",
+    "No había nadie disponible para entregar",
+    "La mercadería no estaba preparada",
+    "Problema con el vehículo",
+    "No encontré la sucursal / dirección incorrecta",
+    "Otro (aclarar abajo)",
+  ];
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    ${badge(r.id,"var(--blue)")} ${badge(r.prioridad,P_COLOR[r.prioridad])}<br/><br/>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+  <div style="background:#ff6b3518;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid #ff6b35">
+    ⚠️ Registrá por qué no pudiste levantar. El estado pasará a <strong>"No levantada"</strong> y Logística podrá reasignar.
+  </div>
+  ${d.nombreOk && d.loading?`
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  `:`
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="nolev-dni" class="inp ${d.err&&!d.motivo?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.noLevantaModal.dni=this.value;S.noLevantaModal.err=''"/>
+      ${d.err&&!d.motivo?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div class="field">
+      <label>Motivo <span class="req">*</span></label>
+      <select id="nolev-motivo" class="${d.err&&d.dni?"err":""}"
+        onchange="S.noLevantaModal.motivo=this.value;S.noLevantaModal.err=''">
+        <option value="">— Seleccioná el motivo —</option>
+        ${motivos.map(m=>`<option ${d.motivo===m?"selected":""}>${escH(m)}</option>`).join("")}
+      </select>
+      ${d.err&&d.dni?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+    <div class="field">
+      <label>Detalle adicional</label>
+      <textarea id="nolev-detalle" rows="2"
+        placeholder="Aclará lo que pasó..."
+        oninput="S.noLevantaModal.detalle=this.value">${escH(d.detalle||"")}</textarea>
+    </div>
+    ${d.err?`<div class="alert-err">⚠️ ${escH(d.err)}</div>`:""}
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger btn-md" onclick="submitNoLevanta()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"⚠️ Registrar que no levanté"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal no entrega — repartidor reporta problema ──────────
+function renderNoEntregaModal(){
+  const d = S.noEntregaModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  const motivos = [
+    "Sucursal cerrada",
+    "No había nadie para recibir",
+    "Dirección incorrecta",
+    "Mercadería dañada — no aceptaron",
+    "Problema con el vehículo",
+    "Otro (aclarar abajo)",
+  ];
+
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    ${badge(r.id,"var(--blue)")} ${badge(r.prioridad,P_COLOR[r.prioridad])}<br/><br/>
+    <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+
+  <div style="background:#f0525210;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--red)">
+    ⚠️ Esta acción registra que la entrega <strong>no pudo realizarse</strong>. El estado pasará a
+    <strong>"No entregada"</strong> y logística será notificada para reasignar.
+  </div>
+
+  ${d.nombreOk && d.loading ? `
+    <div class="alert-ok" style="text-align:center;padding:14px">
+      ✅ <strong>${escH(d.nombreOk)}</strong><br/>
+      <span style="font-size:12px;color:var(--muted)">Registrando...</span>
+    </div>
+  ` : `
+    <div class="field">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="noent-dni" class="inp ${d.err&&!d.motivo?"err":""}"
+        type="number" placeholder="Ej: 30123456"
+        value="${escH(d.dni)}"
+        oninput="S.noEntregaModal.dni=this.value;S.noEntregaModal.err=''"/>
+      ${d.err&&!d.motivo?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+
+    <div class="field">
+      <label>Motivo <span class="req">*</span></label>
+      <select id="noent-motivo" class="${d.err&&d.dni?"err":""}"
+        onchange="S.noEntregaModal.motivo=this.value;S.noEntregaModal.err=''">
+        <option value="">— Seleccioná el motivo —</option>
+        ${motivos.map(m=>`<option ${d.motivo===m?"selected":""}>${escH(m)}</option>`).join("")}
+      </select>
+      ${d.err&&d.dni?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    </div>
+
+    <div class="field">
+      <label>Detalle adicional</label>
+      <textarea id="noent-detalle" rows="2"
+        placeholder="Aclará lo que pasó..."
+        oninput="S.noEntregaModal.detalle=this.value">${escH(d.detalle||"")}</textarea>
+    </div>
+
+    ${d.err?`<div class="alert-err">⚠️ ${escH(d.err)}</div>`:""}
+
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger btn-md" onclick="submitNoEntrega()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Registrando...`:"⚠️ Registrar no entrega"}
+      </button>
+    </div>
+  `}`;
+}
+
+// ── Modal confirmar entrega (repartidor) ──────────────────
+function renderEntregaModal(){
+  const d=S.delivModal;
+  const r=S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    <strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino)}<br/>
+    <span style="color:var(--muted)">${escH(r.descripcion)} · ${escH(String(r.cantidad))} ${escH(r.unidad)}</span>
+  </div>`:""}
+  <div style="background:var(--s2);border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
+    📦 Ingresá tu DNI para confirmar. Tu nombre quedará registrado en la trazabilidad.
+    <br/><span style="color:var(--faint);font-size:11px">Logística podrá ver quién levantó y entregó cada transferencia.</span>
+  </div>
+  <div class="field">
+    <label>Tu DNI <span class="req">*</span></label>
+    <input id="del-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456" value="${escH(d.dni)}"
+      oninput="S.delivModal.dni=this.value;S.delivModal.err=''"
+      onkeydown="if(event.key==='Enter')submitEntrega()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="submitEntrega()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Registrando...`:"✓ Confirmar entrega"}
+    </button>
+  </div>`;
+}
+
+// ── Toast ──────────────────────────────────────────────────
+function renderToast(){
+  const t=S.toast;
+  const c=t.type==="error"?"var(--red)":t.type==="warn"?"var(--amber)":"var(--green)";
+  const i=t.type==="error"?"❌":t.type==="warn"?"⚠️":"✅";
+  return `<div class="toast" style="border-left:4px solid ${c}">${i} <span>${escH(t.msg)}</span></div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+//  ACCIONES
+// ══════════════════════════════════════════════════════════
+// Mostrar aviso y marcar Observaciones como obligatorio cuando el
+// origen O el destino elegido es "Otra dirección"
+function checkOtraDireccion(){
+  const esOtraOrig = ($("f-origen")?.value||"")==="Otra dirección";
+  const esOtraDest = ($("f-dest")?.value||"")==="Otra dirección";
+  const show = esOtraOrig || esOtraDest;
+  const aviso = $("otra-dir-aviso");
+  if(aviso) aviso.style.display = show ? "block" : "none";
+  const mark = $("obs-req-mark");
+  if(mark) mark.style.display = show ? "inline" : "none";
+}
+
+function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fRecorrido=S.fSolicitante=""; render(); }
+function closeModal(){ S.modal=null; S.selId=null; render(); }
+function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
+function openModal(m){ S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
+function openDetalle(id){ S.selId=id; S.modal="detalle"; render(); }
+function openGestionar(id){
+  // Buscar la solicitud con su id exacto
+  const r=S.requests.find(x=>x.id===id);
+  if(!r){ console.warn("No se encontró solicitud:",id); return; }
+  S.selId=id;
+  // Copiar valores primitivos — nunca referencia al objeto r
+  S.action={
+    estado:               String(r.estado||""),
+    comentario:           String(r.comentario||""),
+    comentarioRepartidor: String(r.comentarioRepartidor||""),
+    scheduledAt:          String(r.scheduledAt||""),
+    recorrido:            String(r.recorrido||""),
+    prioridad:            String(r.prioridad||"Media"),
+    pasaPorFabrica:       r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si",
+  };
+  S.modal="gestionar";
+  render();
+}
+function openDejarEnFabrica(id){
+  S.fabricaModal = {id, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "fabrica";
+  render();
+}
+
+async function submitDejarEnFabrica(){
+  const d   = S.fabricaModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.fabricaModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.fabricaModal.err=check.msg; render(); return; }
+
+  const cb = check; // capture
+  S.fabricaModal.loading  = true;
+  S.fabricaModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,450));
+
+  const changes = {
+    estado:               "En fábrica",
+    nombreQuienLevanto:   check.nombre,
+    dniRepartidor:        dni,
+    fabricaAt:            now(),
+    pasaPorFabrica:       true,          // confirma el flag
+    updatedAt:            now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
+  S.modal = null;
+  toast(`🏭 ${check.nombre} dejó la ${d.id} en fábrica`);
+  sheetsUpdate(d.id, changes);
+}
+
+// ── Repartidor deja la transferencia porque la sucursal está cerrada ──
+function openDejarCerrado(id){
+  S.cerradoModal = {id, dni:"", aclaracion:"", err:"", loading:false, nombreOk:""};
+  S.modal = "cerrado";
+  render();
+}
+
+async function submitDejarCerrado(){
+  const d = S.cerradoModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.cerradoModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.cerradoModal.err=check.msg; render(); return; }
+
+  S.cerradoModal.loading  = true;
+  S.cerradoModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,450));
+
+  const aclaracion = ($("cerrado-aclaracion")?.value||S.cerradoModal.aclaracion||"").trim();
+  const changes = {
+    estado:             "Entregada (sin confirmar)",
+    nombreQuienEntrego: check.nombre,
+    dniEntrega:         dni,
+    deliveredAt:        now(),
+    aclaracionCerrado:  aclaracion,
+    updatedAt:          now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
+  S.modal = null;
+  toast(`🔒 ${check.nombre} dejó la ${d.id} — sucursal cerrada. Queda pendiente de confirmar.`, "warn");
+  sheetsUpdate(d.id, changes);
+}
+
+// ── Sucursal confirma una transferencia que quedó "sin confirmar" (cerrada) ──
+function openConfirmarCerrado(id){
+  S.confirmarCerradoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "confirmarCerrado";
+  render();
+}
+
+async function submitConfirmarCerrado(){
+  const d = S.confirmarCerradoModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.confirmarCerradoModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.confirmarCerradoModal.err=check.msg; render(); return; }
+
+  S.confirmarCerradoModal.loading  = true;
+  S.confirmarCerradoModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,450));
+
+  const changes = {
+    estado:               "Entregada",
+    nombreQuienRecibio:   check.nombre,
+    dniQuienRecibio:      dni,
+    confirmadaSucursalAt: now(),
+    updatedAt:            now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
+  S.modal = null;
+  toast(`✅ ${check.nombre} confirmó la recepción de ${d.id}`);
+  sheetsUpdate(d.id, changes);
+}
+
+// ══════════════════════════════════════════════════════════
+//  BOLSINES — pedido individual de una sucursal (excepción)
+// ══════════════════════════════════════════════════════════
+function openPedirBolsin(){
+  S.pedirBolsinModal = {cantidad:"", motivo:"", err:"", loading:false};
+  S.modal = "pedirBolsin";
+  render();
+}
+
+function renderPedirBolsinModal(){
+  const d = S.pedirBolsinModal;
+  return `
+  <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    🎒 Este pedido lo tiene que aprobar Tesorería antes de pasar a logística. Usalo solo para excepciones puntuales — el envío diario de bolsines a todas las sucursales ya sale aprobado automáticamente.
+  </div>
+  <div class="field">
+    <label>Cantidad de bolsines <span class="req">*</span></label>
+    <input id="pb-cant" type="number" min="1" max="10" class="inp ${d.err&&d.err.cant?"err":""}" placeholder="Ej: 2" value="${escH(d.cantidad)}"/>
+    ${d.err&&d.err.cant?`<span class="err-msg">${escH(d.err.cant)}</span>`:""}
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Motivo <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <textarea id="pb-motivo" rows="2" placeholder="Ej: se rompió uno, falta cambio...">${escH(d.motivo||"")}</textarea>
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-warn btn-md" onclick="submitPedirBolsin()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Enviando...`:"🎒 Pedir bolsín"}
+    </button>
+  </div>`;
+}
+
+async function submitPedirBolsin(){
+  if(S.saving) return;
+  const cantidad = ($("pb-cant")?.value||"").trim();
+  const motivo   = ($("pb-motivo")?.value||"").trim();
+  const e={};
+  if(!cantidad||isNaN(+cantidad)||+cantidad<=0||+cantidad>10) e.cant="Ingresá una cantidad entre 1 y 10";
+  if(Object.keys(e).length){ S.pedirBolsinModal.err=e; render(); return; }
+
+  const u = S.user;
+  S.dniModal = {
+    title:"Ingresá tu DNI para registrar el pedido",
+    field:"solicitante",
+    val:"", err:"", loading:false, nombreOk:"",
+    cb: async (dniVal, usuarioEncontrado)=>{
+      if(S.saving) return;
+      const nombreSolicitante = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
+      S.saving = true; S.modal = null; renderNow();
+      const nueva = {
+        id: genId(),
+        sucursal: "Fábrica",
+        area: "",
+        solicitante: nombreSolicitante,
+        dniSolicitante: dniVal,
+        destino: u.area,
+        descripcion: "Bolsines" + (motivo?` — ${motivo}`:""),
+        cantidad: +cantidad,
+        unidad: "Bolsines",
+        prioridad: "Media",
+        fechaRequerida: null,
+        observaciones: motivo,
+        estado: "Pendiente Tesorería",
+        tipoPedido: "bolsin",
+        comentario:"", recorrido:"",
+        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
+        createdAt: now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt: now(),
+      };
+      S.requests = [nueva, ...S.requests];
+      S.saving = false;
+      toast(`🎒 Pedido ${nueva.id} enviado a Tesorería`);
+      sheetsAdd(nueva);
+    }
+  };
+  S.modal = "dniConfirm"; render();
+}
+
+// ══════════════════════════════════════════════════════════
+//  TESORERÍA — aprobar / rechazar un pedido de excepción
+// ══════════════════════════════════════════════════════════
+function openPedidoTesoreria(id, accion){
+  S.pedidoTesoreriaModal = {id, accion, dni:"", motivo:"", err:"", loading:false, nombreOk:""};
+  S.modal = "pedidoTesoreria";
+  render();
+}
+
+function renderPedidoTesoreriaModal(){
+  const d = S.pedidoTesoreriaModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  const esAprobar = d.accion==="aprobar";
+  return `
+  ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
+    ${badge(r.id,"var(--blue)")}<br/><br/>
+    <strong>Destino:</strong> ${escH(r.destino)}<br/>
+    <strong>Cantidad:</strong> ${escH(String(r.cantidad))} bolsines<br/>
+    ${r.observaciones?`<strong>Motivo:</strong> ${escH(r.observaciones)}<br/>`:""}
+    <strong>Pedido por:</strong> ${escH(r.solicitante||"—")}
+  </div>`:""}
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="pt-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.pedidoTesoreriaModal.dni=this.value;S.pedidoTesoreriaModal.err=''"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  ${!esAprobar?`
+  <div class="field" style="margin-top:12px">
+    <label>Motivo del rechazo <span class="req">*</span></label>
+    <textarea id="pt-motivo" rows="2" oninput="S.pedidoTesoreriaModal.motivo=this.value">${escH(d.motivo||"")}</textarea>
+  </div>`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn ${esAprobar?"btn-success":"btn-danger"} btn-md" onclick="submitPedidoTesoreria()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Guardando...`:esAprobar?"✅ Aprobar":"✕ Rechazar"}
+    </button>
+  </div>`;
+}
+
+async function submitPedidoTesoreria(){
+  const d = S.pedidoTesoreriaModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.pedidoTesoreriaModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.pedidoTesoreriaModal.err=check.msg; render(); return; }
+  const esAprobar = d.accion==="aprobar";
+  const motivo = ($("pt-motivo")?.value||d.motivo||"").trim();
+  if(!esAprobar && !motivo){ S.pedidoTesoreriaModal.err="Ingresá el motivo del rechazo."; render(); return; }
+
+  d.loading = true; renderNow();
+  await new Promise(r=>setTimeout(r,400));
+
+  const changes = esAprobar
+    ? {estado:"Pendiente", comentario:`Aprobado por Tesorería (${check.nombre})`, updatedAt:now()}
+    : {estado:"Rechazada", comentario:`Rechazado por Tesorería (${check.nombre}): ${motivo}`, updatedAt:now()};
+  S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
+  S.modal = null;
+  toast(esAprobar?`✅ Pedido ${d.id} aprobado — pasa a logística`:`✕ Pedido ${d.id} rechazado`);
+  sheetsUpdate(d.id, changes);
+}
+
+// ══════════════════════════════════════════════════════════
+//  TESORERÍA — lote diario de bolsines (todas las sucursales)
+// ══════════════════════════════════════════════════════════
+function openNuevoLote(){
+  S.nuevoLoteModal = {cantidades:{}, err:"", loading:false};
+  S.modal = "nuevoLote";
+  render();
+}
+
+function renderNuevoLoteModal(){
+  const d = S.nuevoLoteModal;
+  const sucursales = getSucursales();
+  return `
+  <div style="background:#4f9eff18;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--blue)">
+    📦 Cargá la cantidad de bolsines para cada sucursal. Se van a crear ${sucursales.length} solicitudes ya aprobadas (origen: Fábrica), agrupadas en un mismo lote. Dejá en 0 o vacío las que no correspondan hoy.
+  </div>
+  ${d.err?`<div class="err-msg" style="margin-bottom:10px">${escH(d.err)}</div>`:""}
+  <div style="max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+    ${sucursales.map((s,i)=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid var(--border)">
+        <span style="flex:1;font-size:13px">${escH(s)}</span>
+        <input id="lote-cant-${i}" type="number" min="0" class="inp" style="width:80px" placeholder="0"
+          value="${escH(d.cantidades[s]||"")}"
+          oninput="S.nuevoLoteModal.cantidades['${escH(s).replace(/'/g,"\\'")}'] = this.value"/>
+      </div>`).join("")}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitNuevoLote()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Creando lote...`:"📦 Crear lote"}
+    </button>
+  </div>`;
+}
+
+async function submitNuevoLote(){
+  if(S.saving) return;
+  const d = S.nuevoLoteModal;
+  const sucursales = getSucursales();
+  // Leer las cantidades directo del DOM (por si no pasaron por oninput)
+  const items = [];
+  sucursales.forEach((s,i)=>{
+    const v = ($(`lote-cant-${i}`)?.value ?? d.cantidades[s] ?? "").toString().trim();
+    if(v && +v > 0) items.push({sucursal:s, cantidad:+v});
+  });
+  if(!items.length){ S.nuevoLoteModal.err = "Cargá al menos una cantidad."; render(); return; }
+
+  const u = S.user;
+  S.dniModal = {
+    title:"Ingresá tu DNI para crear el lote",
+    field:"tesoreria",
+    val:"", err:"", loading:false, nombreOk:"",
+    cb: async (dniVal, usuarioEncontrado)=>{
+      if(S.saving) return;
+      const nombre = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
+      S.saving = true; S.modal = null; renderNow();
+      const loteId = "LOTE-" + fechaCorta();
+      const nuevas = items.map(it => ({
+        id: genId(),
+        sucursal: "Fábrica",
+        area: "",
+        solicitante: nombre,
+        dniSolicitante: dniVal,
+        destino: it.sucursal,
+        descripcion: "Bolsines",
+        cantidad: it.cantidad,
+        unidad: "Bolsines",
+        prioridad: "Media",
+        fechaRequerida: null,
+        observaciones: "",
+        estado: "Aprobada",
+        tipoPedido: "bolsin",
+        loteId,
+        comentario: `Lote diario — creado por Tesorería (${nombre})`,
+        recorrido:"",
+        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
+        createdAt: now(), approvedAt: now(), scheduledAt:null, deliveredAt:null, updatedAt: now(),
+      }));
+      S.requests = [...nuevas, ...S.requests];
+      S.saving = false;
+      toast(`📦 Lote ${loteId} creado — ${nuevas.length} sucursales`);
+      nuevas.forEach(n => sheetsAdd(n)); // en background, una por una
+    }
+  };
+  S.modal = "dniConfirm"; render();
+}
+
+// ── Marcar TODO un lote como "Lista para retirar" de una sola vez ──
+function openLoteListo(loteId){
+  S.loteListoModal = {loteId, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "loteListo";
+  render();
+}
+
+function renderLoteListoModal(){
+  const d = S.loteListoModal;
+  const filas = S.requests.filter(r=>r.loteId===d.loteId && r.estado==="Aprobada");
+  return `
+  <div style="background:#34d39918;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid #34d399">
+    ✅ Vas a marcar <strong>${filas.length} solicitudes</strong> del lote <strong>${escH(d.loteId)}</strong> como "Lista para retirar" de una sola vez.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="ll-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.loteListoModal.dni=this.value;S.loteListoModal.err=''"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitLoteListo()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Registrando...`:`✅ Marcar ${filas.length} como Listas`}
+    </button>
+  </div>`;
+}
+
+async function submitLoteListo(){
+  const d = S.loteListoModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.loteListoModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.loteListoModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+  await new Promise(r=>setTimeout(r,400));
+
+  const filas = S.requests.filter(r=>r.loteId===d.loteId && r.estado==="Aprobada");
+  const changes = {
+    estado: "Lista para retirar",
+    listoAt: now(),
+    dniListoPor: dni,
+    nombreListoPor: check.nombre,
+    updatedAt: now(),
+  };
+  S.requests = S.requests.map(x => (x.loteId===d.loteId && x.estado==="Aprobada") ? {...x,...changes} : x);
+  S.modal = null;
+  toast(`✅ ${check.nombre} marcó ${filas.length} solicitudes del lote ${d.loteId} como Listas`);
+  filas.forEach(f => sheetsUpdate(f.id, changes)); // en background
+}
+
+// ── Logística: asignar recorrido a todas las sucursales de un lote ──
+function openLoteRecorrido(loteId){
+  const filas = S.requests.filter(r=>r.loteId===loteId);
+  const asignaciones = {};
+  const sucInfo = S.sucursalesInfo||{};
+  filas.forEach(r=>{ asignaciones[r.id] = r.recorrido || sucInfo[(r.destino||"").trim().toLowerCase()]?.recorridoDefault || ""; });
+  S.loteRecorridoModal = {loteId, asignaciones, err:"", loading:false};
+  S.modal = "loteRecorrido";
+  render();
+}
+
+function renderLoteRecorridoModal(){
+  const d = S.loteRecorridoModal;
+  const filas = S.requests.filter(r=>r.loteId===d.loteId);
+  const recorridos = S.recorridos||[];
+  return `
+  <div style="background:#4f9eff18;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--blue)">
+    🚚 Ya viene precargado con el recorrido habitual de cada sucursal (cuando está cargado). Solo tocá las excepciones y confirmá todo junto.
+  </div>
+  <div style="max-height:360px;overflow-y:auto;display:flex;flex-direction:column;gap:6px">
+    ${filas.map(r=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:6px 4px;border-bottom:1px solid var(--border)">
+        <span style="flex:1;font-size:13px">${escH(r.destino)}</span>
+        <select id="lr-${escH(r.id)}" class="inp" style="width:160px"
+          onchange="S.loteRecorridoModal.asignaciones['${escH(r.id)}']=this.value">
+          <option value="">— Sin asignar —</option>
+          ${recorridos.map(rc=>`<option ${d.asignaciones[r.id]===rc?"selected":""}>${escH(rc)}</option>`).join("")}
+        </select>
+      </div>`).join("")}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitLoteRecorrido()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Asignando...`:"🚚 Asignar recorridos"}
+    </button>
+  </div>`;
+}
+
+async function submitLoteRecorrido(){
+  const d = S.loteRecorridoModal;
+  if(d.loading) return;
+  const filas = S.requests.filter(r=>r.loteId===d.loteId);
+  const updates = filas.map(r=>({
+    id: r.id,
+    recorrido: ($(`lr-${r.id}`)?.value ?? d.asignaciones[r.id] ?? "").trim(),
+  })).filter(u=>u.recorrido);
+  if(!updates.length){ S.loteRecorridoModal.err="Asigná al menos un recorrido."; render(); return; }
+
+  d.loading = true; renderNow();
+  await new Promise(r=>setTimeout(r,400));
+
+  const nowTs = now();
+  S.requests = S.requests.map(x=>{
+    const u = updates.find(u=>u.id===x.id);
+    return u ? {...x, recorrido:u.recorrido, updatedAt:nowTs} : x;
+  });
+  S.modal = null;
+  toast(`🚚 Recorridos asignados a ${updates.length} solicitudes del lote ${d.loteId}`);
+  updates.forEach(u => sheetsUpdate(u.id, {recorrido:u.recorrido, updatedAt:nowTs}));
+}
+
+function openTomarTransferencia(id){
+  S.tomarModal = {id, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "tomar";
+  render();
+}
+// Sucursal origen confirma que la transferencia está lista para retirar
+function openListo(id){
+  S.listoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "listo";
+  render();
+}
+
+async function submitListo(){
+  const d = S.listoModal;
+  if(d.loading) return;
+  const dni = String($("listo-dni")?.value||d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.listoModal.err="Ingresá tu DNI."; render(); return; }
+
+  const check = validarDNI(dni);
+  if(!check.ok){ S.listoModal.err=check.msg; render(); return; }
+
+  const cb = check;
+  S.listoModal.loading  = true;
+  S.listoModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,450));
+
+  const aclaracion = ($("listo-aclaracion")?.value||S.listoModal.aclaracion||"").trim();
+  const changes = {
+    estado:         "Lista para retirar",
+    dniListoPor:    dni,
+    nombreListoPor: check.nombre,
+    listoAt:        now(),
+    aclaracionListo: aclaracion,
+    updatedAt:      now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`✅ ${check.nombre} confirmó que está lista para retirar`);
+  sheetsUpdate(d.id, changes);
+}
+
+// Sucursal abre el modal de código (genera palabra + pide DNI)
+function openCodigoEntrega(id){
+  const palabra = generarPalabra();
+  S.codigoModal = {id, codigo:palabra, palabraGenerada:palabra, err:"", loading:false, confirmada:false,
+                   dni:"", nombreOk:"", dniConfirmado:false};
+  S.modal = "codigo";
+  S.requests = S.requests.map(x=>x.id===id?{...x,codigoEntrega:palabra}:x);
+  sheetsUpdate(id, {codigoEntrega:palabra, updatedAt:now()});
+  render();
+}
+
+// Sucursal confirma que recibió ingresando su DNI (antes de dar la palabra al repartidor)
+async function confirmarRecepcionConDni(){
+  const d = S.codigoModal;
+  const dni = String($("codigo-dni-recibe")?.value||d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.codigoModal.err="Ingresá tu DNI para confirmar."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.codigoModal.err=check.msg; render(); return; }
+  // Guardar quién recibió — se mostrará en trazabilidad para logística
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,
+    nombreQuienRecibio: check.nombre,
+    dniQuienRecibio:    dni,
+  }:x);
+  sheetsUpdate(d.id, {nombreQuienRecibio:check.nombre, dniQuienRecibio:dni, updatedAt:now()});
+  S.codigoModal.dniConfirmado = true;
+  S.codigoModal.nombreOk      = check.nombre;
+  toast(`✅ ${check.nombre} confirmó la recepción`);
+  render();
+}
+
+// Genera nueva palabra — también actualiza en Sheets
+function nuevaPalabra_old(){} // placeholder eliminado
+
+// Genera nueva palabra si la anterior es difícil — también actualiza en Sheets
+function nuevaPalabra(id){
+  const palabra = generarPalabra();
+  S.codigoModal.palabraGenerada = palabra;
+  S.codigoModal.codigo          = palabra;
+  S.requests = S.requests.map(x=>x.id===id?{...x,codigoEntrega:palabra}:x);
+  sheetsUpdate(id, {codigoEntrega:palabra, updatedAt:now()});
+  render();
+}
+
+// Repartidor abre el modal para ingresar la palabra
+function openIngresarPalabra(id){
+  S.palabraModal = {id, palabraIngresada:"", err:"", loading:false};
+  S.modal = "palabra";
+  render();
+}
+
+// Repartidor envía la palabra — se valida contra la almacenada en la solicitud
+async function submitPalabra(){
+  const d = S.palabraModal;
+  if(d.loading) return;
+
+  // Leer del input directamente (más confiable que el estado)
+  const ingresada = ($("inp-palabra")?.value||d.palabraIngresada||"").trim().toUpperCase();
+  if(!ingresada){ S.palabraModal.err="Ingresá la palabra de entrega."; render(); return; }
+
+  S.palabraModal.loading = true;
+  renderNow();
+
+  // Siempre buscar el código desde Sheets para no depender de la memoria local
+  // (el repartidor está en otro dispositivo que el de la sucursal)
+  let esperada = "";
+  if(USE_SHEETS){
+    try{
+      const res = await apiGet({action:"getAll", sheet:"Solicitudes"});
+      const fila = (res.rows||[]).find(x=>String(x.id)===String(d.id));
+      esperada = (fila?.codigoEntrega||"").trim().toUpperCase();
+    }catch(e){
+      // fallback a memoria local si falla Sheets
+      const rLocal = S.requests.find(x=>x.id===d.id);
+      esperada = (rLocal?.codigoEntrega||"").trim().toUpperCase();
+    }
+  } else {
+    // Modo demo: leer de memoria local
+    const rLocal = S.requests.find(x=>x.id===d.id);
+    esperada = (rLocal?.codigoEntrega||"").trim().toUpperCase();
+  }
+
+  if(!esperada){
+    S.palabraModal.loading = false;
+    S.palabraModal.err = "La sucursal destino todavía no generó el código. Pedile que abra la app.";
+    render(); return;
+  }
+  if(ingresada !== esperada){
+    S.palabraModal.loading = false;
+    S.palabraModal.err = "Código incorrecto. Verificá con la sucursal.";
+    render(); return;
+  }
+
+  // Código correcto — registrar entrega
+  const r = S.requests.find(x=>x.id===d.id);
+  const quienEntrego = r?.nombreQuienLevanto || S.user.nombre || "";
+  const changes = {
+    estado:             "Entregada",
+    deliveredAt:        now(),
+    nombreQuienEntrego: quienEntrego,
+    dniEntrega:         r?.dniRepartidor || "",
+    codigoEntrega:      ingresada,
+    updatedAt:          now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`✅ Entrega confirmada — ${r?.destino||""}`);
+  sheetsUpdate(d.id, changes);
+}
+
+// Repartidor reporta que no pudo levantar
+function openNoLevanta(id){
+  S.noLevantaModal = {id, dni:"", motivo:"", detalle:"", err:"", loading:false, nombreOk:""};
+  S.modal = "noLevanta";
+  render();
+}
+
+async function submitNoLevanta(){
+  const d = S.noLevantaModal;
+  if(d.loading) return;
+  const dni     = String($("nolev-dni")?.value||d.dni||"").replace(/\D/g,"");
+  const motivo  = ($("nolev-motivo")?.value||d.motivo||"").trim();
+  const detalle = ($("nolev-detalle")?.value||d.detalle||"").trim();
+  if(!dni)    { S.noLevantaModal.err="Ingresá tu DNI."; render(); return; }
+  if(!motivo) { S.noLevantaModal.err="Seleccioná el motivo."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.noLevantaModal.err=check.msg; render(); return; }
+  S.noLevantaModal.loading  = true;
+  S.noLevantaModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,450));
+  const motivoCompleto = detalle ? `${motivo} — ${detalle}` : motivo;
+  const changes = {
+    estado:       "No levantada",
+    comentario:   `⚠️ No levantada por ${check.nombre}: ${motivoCompleto}`,
+    dniRepartidor: dni,
+    updatedAt:    now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`⚠️ Registrado — Logística fue notificada`);
+  sheetsUpdate(d.id, changes);
+}
+
+// Repartidor reporta que no pudo entregar
+function openNoEntrega(id){
+  S.noEntregaModal = {id, dni:"", motivo:"", detalle:"", err:"", loading:false, nombreOk:""};
+  S.modal = "noEntrega";
+  render();
+}
+
+async function submitNoEntrega(){
+  const d = S.noEntregaModal;
+  if(d.loading) return;
+
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.noEntregaModal.err="Ingresá tu DNI."; render(); return; }
+
+  const motivo = ($("noent-motivo")?.value||d.motivo||"").trim();
+  const detalle = ($("noent-detalle")?.value||d.detalle||"").trim();
+  if(!motivo){ S.noEntregaModal.err="Seleccioná el motivo."; render(); return; }
+
+  const check = validarDNI(dni);
+  if(!check.ok){ S.noEntregaModal.err=check.msg; render(); return; }
+
+  const cb = check;
+  S.noEntregaModal.loading  = true;
+  S.noEntregaModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,450));
+
+  const motivoCompleto = detalle ? `${motivo} — ${detalle}` : motivo;
+  const changes = {
+    estado:          "No entregada",
+    comentario:      `⚠️ No entregada por ${check.nombre}: ${motivoCompleto}`,
+    dniRepartidor:   dni,
+    updatedAt:       now(),
+  };
+
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`⚠️ No entrega registrada — Logística fue notificada`, "warn");
+  sheetsUpdate(d.id, changes);
+}
+
+function openConfirmarEntrega(id){
+  // Si el destino es "Otra dirección" o no es una sucursal conocida → entrega directa sin código
+  const r = S.requests.find(x=>x.id===id);
+  if(!r) return;
+  if(esOtraDireccion(r.destino)){
+    // Sin código — confirmación directa
+    S.delivModal={id,dni:"",err:"",loading:false};
+    S.modal="entrega";
+  } else {
+    // Con código — el repartidor ingresa la palabra que le dio la sucursal
+    openIngresarPalabra(id);
+  }
+  render();
+}
+
+// ── LOGIN ──────────────────────────────────────────────────
+async function doLogin(){
+  S.loginErr = "";
+  // Leemos siempre del DOM, nunca del estado — así no depende de oninput
+  const usuario = ($("l-user")?.value||S.loginUser||"").trim();
+  const pass    = ($("l-pass")?.value||"").trim();
+  S.loginUser   = usuario; // guardamos para si hay error y se re-renderiza
+
+  if(!usuario){ S.loginErr="Ingresá tu usuario o sucursal."; render(); return; }
+
+  // FASE 1: cargar solo usuarios (rápido)
+  S.loginLoading = true; renderNow();
+  if(USE_SHEETS) await sheetsLoadUsuarios();
+  S.loginLoading = false;
+
+  const resultado = buscarUsuario(usuario, pass);
+  if(!resultado.ok){ S.loginErr = resultado.msg; render(); return; }
+
+  const tipo = resultado.tipo;
+
+  // Determinar usuario según tipo
+  if(tipo === "SUCURSAL"){
+    S.user = {rol:"sucursal", area:resultado.area, nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(tipo === "LOGISTICA"){
+    S.user = {rol:"logistica", area:"Logística", nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(tipo === "REPARTIDOR"){
+    S.user = {rol:"repartidor", area:"Reparto", nombre:resultado.nombre, dni:resultado.dni||"", recorrido:resultado.recorrido||""};
+  } else if(tipo === "AREA"){
+    S.user = {rol:"area", area:resultado.area||usuario, nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(["PLANIFICACION","ADMINISTRACION","RRHH","PRECIOS","COMPRAS","DEPOSITO"].includes(tipo)){
+    // Estos son logins COMPARTIDOS por toda un área (ej: usuario "COMPRAS" lo
+    // usan varias personas distintas, cada una se identifica por DNI al crear
+    // la solicitud). Por eso el área que se guarda y se usa para filtrar tiene
+    // que ser SIEMPRE el login (columna "usuario" de Sheets, ej. "COMPRAS"),
+    // no el nombre de la persona ni la columna "area" — así todas las
+    // solicitudes creadas desde ese login quedan agrupadas bajo la misma área,
+    // sin importar quién la haya creado.
+    const areaReal = resultado.usuario || resultado.area || tipo;
+    S.user = {rol:"planificacion", area:areaReal, nombre:resultado.nombre, dni:resultado.dni||"", tipoReal:tipo};
+  } else if(tipo === "RECEPCIONISTA"){
+    S.user = {rol:"recepcionista", area:resultado.area||"Fábrica", nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(tipo === "TESORERIA"){
+    S.user = {rol:"tesoreria", area:"Tesorería", nombre:resultado.nombre, dni:resultado.dni||""};
+  } else {
+    S.loginErr = "Tipo de acceso no reconocido. Consultá con logística.";
+    render(); return;
+  }
+
+  // Entrar inmediatamente — FASE 2 carga datos en background
+  S.view = "app";
+  S.lastRefresh = Date.now();
+  render(); // mostrar app ya
+
+  // Cargar solicitudes, recorridos y destinos en background sin bloquear
+  sheetsLoadDatos().then(()=>{ render(); });
+  startAutoRefresh(); // iniciar auto-refresh en background
+}
+
+// Auto-refresh cada 90 segundos cuando hay Sheets conectado
+let _autoRefreshTimer = null;
+function startAutoRefresh(){
+  if(!USE_SHEETS) return;
+  if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
+  _autoRefreshTimer = setInterval(async()=>{
+    if(S.view!=="app" || S.modal || S.refreshing) return; // no refrescar si hay modal abierto
+    await sheetsLoadDatos();
+    render();
+  }, 90000); // 90 segundos
+}
+function stopAutoRefresh(){
+  if(_autoRefreshTimer){ clearInterval(_autoRefreshTimer); _autoRefreshTimer=null; }
+}
+
+// ── ACTUALIZAR DATOS (sin cerrar sesión) ─────────────────
+async function doRefresh(){
+  if(S.refreshing) return; // evitar doble click
+  S.refreshing = true;
+  renderNow();
+  if(USE_SHEETS){
+    await Promise.all([sheetsLoadUsuarios(), sheetsLoadDatos()]);
+  }
+  S.lastRefresh = Date.now();
+  S.refreshing  = false;
+  toast("Datos actualizados ✓");
+}
+
+function doLogout(){ stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render(); }
+
+// ── NUEVA SOLICITUD ────────────────────────────────────────
+async function submitNueva(){
+  // Guard: evitar doble submit
+  if(S.saving) return;
+
+  // Leer valores del DOM directamente — no del estado S.form
+  // Así evitamos que oninput cause re-renders mientras se escribe
+  const destino     = ($("f-dest")?.value||"").trim();
+  const descripcion = ($("f-desc")?.value||"").trim();
+  const cantidad    = ($("f-cant")?.value||"").trim();
+  const unidad      = $("f-unit")?.value || "Unidades";
+  const prioridad   = "Media"; // eliminada del formulario
+  const fechaReq    = $("f-fecha")?.value || "";
+  const observ      = ($("f-obs")?.value||"").trim();
+
+  // Validar
+  const e={};
+  if(!destino)                                         e.dest="Seleccioná un destino";
+  if(!descripcion)                                     e.desc="Campo requerido";
+  if(!cantidad||isNaN(+cantidad)||+cantidad<=0)        e.cant="Cantidad inválida";
+  // Si el origen o el destino es "Otra dirección", la dirección exacta
+  // (en Observaciones) pasa a ser obligatoria — si no, nadie sabe adónde ir.
+  const origenPrevio = ($("f-origen")?.value||"").trim();
+  if((origenPrevio==="Otra dirección" || destino==="Otra dirección") && !observ){
+    e.obs = "Ingresá la dirección exacta — es obligatorio para 'Otra dirección'";
+  }
+  if(Object.keys(e).length){ S.formErr=e; render(); return; }
+
+  // Capturar el origen AHORA — el DOM se destruye cuando se abre el modal DNI
+  const origenElegido = ($("f-origen")?.value||"").trim();
+  const esPlanSubmit  = S.user.rol==="planificacion";
+
+  // Abrir modal DNI — el nombre del solicitante viene de Sheets
+  S.dniModal={
+    title:"Ingresá tu DNI para registrar la solicitud",
+    field:"solicitante",
+    val:"", err:"", loading:false, nombreOk:"",
+    cb: async (dniVal, usuarioEncontrado)=>{
+      if(S.saving) return; // guard doble ejecución del callback
+      const nombreSolicitante = usuarioEncontrado?.nombre || S.user.nombre || "Sin nombre";
+      S.saving=true; S.modal=null; renderNow();
+      const nueva={
+        id:genId(),
+        sucursal: S.user.rol==="sucursal"       ? S.user.area
+                : S.user.rol==="logistica"       ? origenElegido
+                : esPlanSubmit                   ? origenElegido : "",
+        area:     S.user.rol==="area"            ? S.user.area
+                : S.user.rol==="logistica"       ? "Logística"
+                : esPlanSubmit                   ? S.user.area : "",
+        solicitante:  nombreSolicitante,
+        dniSolicitante: dniVal,
+        destino, descripcion, cantidad:+cantidad,
+        unidad, prioridad,
+        fechaRequerida: fechaReq||null,
+        observaciones:  observ,
+        estado:"Pendiente", comentario:"", recorrido:"",
+        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
+        createdAt:now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt:now(),
+      };
+      // OPTIMISTIC UPDATE — agregar a la lista inmediatamente
+      S.requests = [nueva, ...S.requests];
+      S.form     = emptyForm();
+      S.saving   = false;
+      toast(`Solicitud ${nueva.id} creada — ${nombreSolicitante}`);
+      sheetsAdd(nueva); // sin await — va en background
+      // El Apps Script envía el email automáticamente al agregar la fila
+    }
+  };
+  S.modal="dniConfirm"; render();
+}
+
+// ── GESTIONAR (LOGÍSTICA) ──────────────────────────────────
+async function submitGestionar(){
+  if(!S.action.estado){ toast("Seleccioná un estado","warn"); return; }
+  S.dniModal={
+    title:"Confirmá tu DNI para registrar esta acción",
+    field:"logistica",
+    val:"", err:"", loading:false,
+    cb: async (dniVal, usuario)=>{
+      // Obtener nombre del que firma — viene del objeto usuario encontrado por validarDNI
+      const nombreFirmante = usuario?.nombre || S.user?.nombre || "Logística";
+      S.saving=true; S.modal=null; renderNow();
+      const a=S.action; const r=S.requests.find(x=>x.id===S.selId);
+      const savedId = S.selId;
+      // Leer comentario del repartidor del DOM (puede haber sido editado)
+      const comentRepDom = ($("g-coment-rep")?.value ?? a.comentarioRepartidor ?? "").trim();
+      const changes={
+        estado:          a.estado,
+        comentario:      a.comentario || "",
+        comentarioRepartidor: comentRepDom,
+        updatedAt:       now(),
+        dniLogistica:    dniVal,
+        nombreLogistica: nombreFirmante,
+      };
+      if(a.scheduledAt)   changes.scheduledAt   = a.scheduledAt;
+      if(a.prioridad)     changes.prioridad     = a.prioridad;
+      changes.pasaPorFabrica = a.pasaPorFabrica ? true : false;
+      // Recorrido: si ya llegó a fábrica → es recorrido de egreso; si no → ingreso
+      if(a.recorrido){
+        if(r.fabricaAt || r.estado==="En fábrica"){
+          changes.recorridoEgreso = a.recorrido;
+        } else {
+          changes.recorrido = a.recorrido;
+        }
+      }
+      if(a.estado==="Aprobada"&&!r.approvedAt) changes.approvedAt=now();
+      if(a.estado==="Entregada") changes.deliveredAt=now();
+      if(r.estado==="En fábrica"&&a.estado!=="En fábrica"){
+        changes.nombreQuienLevanto="";
+        changes.dniRepartidor="";
+      }
+      S.requests = S.requests.map(x=>x.id===savedId?{...x,...changes}:x);
+      S.saving=false; S.selId=null;
+      toast(`Solicitud actualizada → ${a.estado}`);
+      sheetsUpdate(savedId, changes);
+    }
+  };
+  S.modal="dniConfirm"; render();
+}
+
+// ── CONFIRMAR ENTREGA (REPARTIDOR) ─────────────────────────
+// ── TOMAR TRANSFERENCIA (repartidor levanta) ───────────────
+async function submitTomar(){
+  const d   = S.tomarModal;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+
+  if(!dni){ S.tomarModal.err="Ingresá tu DNI."; render(); return; }
+
+  const check = validarDNI(dni);
+  if(!check.ok){ S.tomarModal.err=check.msg; render(); return; }
+
+  // Mostrar nombre verificado brevemente
+  S.tomarModal.loading  = true;
+  S.tomarModal.nombreOk = check.nombre;
+  renderNow();
+  await new Promise(r=>setTimeout(r,500));
+
+  const r = S.requests.find(x=>x.id===d.id);
+  const esSegundaEtapa = r?.estado === "En fábrica";
+  const tsAhora = now();
+  const changes = {
+    estado:     "En tránsito",
+    updatedAt:  tsAhora,
+  };
+  if(esSegundaEtapa){
+    // Segunda etapa: sale de fábrica → destino final
+    changes.nombreQuienEntrego = check.nombre;
+    changes.dniEntrega         = dni;
+    changes.salidaFabricaAt    = tsAhora;  // timestamp salida de fábrica
+    changes.pasaPorFabrica     = true;
+  } else {
+    // Primera etapa: levanta de sucursal
+    changes.nombreQuienLevanto = check.nombre;
+    changes.dniRepartidor      = dni;
+    changes.levantadoAt        = tsAhora;  // timestamp levantamiento
+  }
+  // OPTIMISTIC UPDATE
+  S.requests = S.requests.map(x => x.id===d.id ? {...x,...changes} : x);
+  S.modal    = null;
+  const msg  = esSegundaEtapa
+    ? `🚚 ${check.nombre} lleva la ${d.id} al destino final`
+    : `🚚 ${check.nombre} tomó la ${d.id}`;
+  toast(msg);
+  sheetsUpdate(d.id, changes);
+}
+
+async function submitEntrega(){
+  const d      = S.delivModal;
+  const dni    = String(d.dni||"").replace(/\D/g,"");
+
+  if(!dni){ S.delivModal.err="Ingresá tu DNI."; render(); return; }
+
+  const check = validarDNI(dni);
+  if(!check.ok){ S.delivModal.err=check.msg; render(); return; }
+
+  S.delivModal.loading = true; renderNow();
+  const changes = {
+    estado:              "Entregada",
+    deliveredAt:         now(),
+    dniEntrega:          dni,             // DNI de quien entregó (distinto de quien levantó)
+    nombreQuienEntrego:  check.nombre,    // nombre de quien entregó
+    updatedAt:           now(),
+  };
+  // OPTIMISTIC UPDATE: mostrar cambio inmediatamente, Sheets en background
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal    = null;
+  toast(`Entrega confirmada — ${check.nombre} ✓`);
+  sheetsUpdate(d.id, changes); // sin await
+}
+
+// ── VALIDAR DNI en modal ───────────────────────────────────
+// Busca el DNI, muestra el nombre encontrado para que el usuario
+// confirme que es correcto antes de ejecutar la acción.
+async function submitDni(){
+  const d = S.dniModal;
+  // Guard: evitar doble ejecución
+  if(d.loading) return;
+
+  const val = String(d.val||"").replace(/\D/g,"");
+  if(!val){ S.dniModal.err="Ingresá tu DNI."; render(); return; }
+
+  const check = validarDNI(val);
+  if(!check.ok){ S.dniModal.err=check.msg; render(); return; }
+
+  // Guardar callback antes de que el render lo pueda pisar
+  const cb = d.cb;
+
+  // Mostrar nombre brevemente
+  S.dniModal.loading  = true;
+  S.dniModal.nombreOk = check.nombre;
+  S.dniModal.cb       = null; // limpiar para evitar doble disparo
+  render();
+
+  await new Promise(r=>setTimeout(r,450));
+  await cb(val, check.usuario);
+  S.modal = null;
+  render();
+}
+
+// ══════════════════════════════════════════════════════════
+//  ARRANQUE
+// ══════════════════════════════════════════════════════════
+S.requests = seedData();
+S.recorridos = ["SUR","CENTRO","NORTE"];  // default — se reemplaza con Sheets
+S.usuarios = [
+  // Demo: usuarios de prueba. En producción vienen de Sheets
+  {nombre:"Taiel",dni:"87654321",usuario:"taiel",password:"logistica2025",rol:"logistica",activo:"si"},
+  {nombre:"Encargada Fresco",dni:"12345678",usuario:"fresco",password:"fresco2025",rol:"logistica",activo:"si"},
+  {nombre:"Carlos López",dni:"11223344",usuario:"carlos.lopez",password:"reparto2025",rol:"repartidor",recorrido:"SUR",activo:"si"},
+  {nombre:"Ana Gómez",dni:"12345678",usuario:"",password:"",rol:"sucursal",activo:"si"},
+  {nombre:"Luis Sosa",dni:"45678901",usuario:"luis.sosa",password:"admin2025",rol:"area",area:"Administración",activo:"si"},
+];
+render();
+</script>
+
+<!-- ══════════════════════════════════════════════════════
+  ESTRUCTURA GOOGLE SHEETS — 4 HOJAS
+  ══════════════════════════════════════════════════════
+
+  HOJA 1: "Solicitudes"
+  Encabezados fila 1 (exactos, en orden):
+  id | createdAt | sucursal | area | solicitante | dniSolicitante |
+  destino | descripcion | cantidad | unidad | prioridad | fechaRequerida |
+  estado | comentario | recorrido | dniLogistica | dniRepartidor | nombreRepartidor |
+  scheduledAt | deliveredAt | approvedAt | updatedAt | observaciones
+
+  HOJA 2: "Usuarios"
+  Encabezados:
+  nombre | dni | usuario | password | rol | area | recorrido | activo
+  
+  Roles posibles:
+    logistica   → acceso panel logística (se valida por DNI además)
+    repartidor  → acceso panel repartidor (se asigna recorrido acá)
+    area        → Administración, Compras, RRHH (campo area)
+    sucursal    → solo necesitan nombre y dni (no usuario/password)
+  
+  Campo "activo": escribí "si" o "no" para habilitar/deshabilitar sin borrar
+
+  HOJA 3: "Recorridos"
+  Encabezados:
+  nombre | descripcion
+  
+  Ejemplo de filas:
+  SUR   | Zona sur de la ciudad
+  NORTE | Zona norte
+  CENTRO| Centro y microcentro
+  
+  Para agregar un recorrido nuevo: agregás una fila y se actualiza
+  automáticamente en la app sin tocar código.
+
+  HOJA 4: "Config" (opcional, para futuras configuraciones)
+  clave | valor
+  ══════════════════════════════════════════════════════ -->
+</body>
+</html>
