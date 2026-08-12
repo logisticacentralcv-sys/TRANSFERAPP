@@ -391,6 +391,7 @@ let S = {
   nuevoLoteModal: {cantidades:{}, err:"", loading:false},
   loteListoModal: {loteId:"", dni:"", err:"", loading:false, nombreOk:""},
   loteRecorridoModal: {loteId:"", asignaciones:{}, err:"", loading:false},
+  loteExpandido: "",
   editarModal:    {id:"", descripcion:"", cantidad:"", observaciones:"", err:"", loading:false},
   // UI – confirmar entrega repartidor
   delivModal:  {id:"", dni:"", err:"", loading:false},
@@ -916,7 +917,10 @@ function renderPlanificacion(){
 // ── TESORERÍA VIEW ────────────────────────────────────────
 function renderTesoreria(){
   const u = S.user;
-  const pendientes = S.requests.filter(r=>r.estado==="Pendiente Tesorería");
+  const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId);
+  const pendientes    = pedidosBolsin.filter(r=>r.estado==="Pendiente Tesorería");
+  const historialPedidos = pedidosBolsin.filter(r=>r.estado!=="Pendiente Tesorería")
+    .sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
 
   // Agrupar por loteId (solo lo que tiene tipoPedido="bolsin" y loteId)
   const lotesMap = {};
@@ -978,16 +982,57 @@ function renderTesoreria(){
       ${lotes.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no creaste ningún lote.</p>`:`
       <div style="display:flex;flex-direction:column;gap:10px">
         ${lotes.map(l=>`
-          <div style="background:var(--s2);border-radius:8px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
-            <div>
-              <strong>${escH(l.loteId)}</strong>
-              <span style="color:var(--muted);font-size:13px"> · ${l.total} sucursales · ${l.entregadas}/${l.total} entregadas</span>
+          <div style="background:var(--s2);border-radius:8px;padding:12px 14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+              <div style="cursor:pointer" onclick="toggleLoteExpandido('${escH(l.loteId)}')">
+                <strong>${S.loteExpandido===l.loteId?"▾":"▸"} ${escH(l.loteId)}</strong>
+                <span style="color:var(--muted);font-size:13px"> · ${l.total} sucursales · ${l.entregadas}/${l.total} entregadas</span>
+              </div>
+              ${l.pendientesListo>0?`
+              <button class="btn btn-success btn-sm" onclick="openLoteListo('${escH(l.loteId)}')">
+                ✅ Marcar ${l.pendientesListo} como Listas
+              </button>`:`<span style="font-size:12px;color:var(--muted)">Ya están todas listas o en camino</span>`}
             </div>
-            ${l.pendientesListo>0?`
-            <button class="btn btn-success btn-sm" onclick="openLoteListo('${escH(l.loteId)}')">
-              ✅ Marcar ${l.pendientesListo} como Listas
-            </button>`:`<span style="font-size:12px;color:var(--muted)">Ya están todas listas o en camino</span>`}
+            ${S.loteExpandido===l.loteId?`
+            <div class="table-wrap" style="margin-top:10px">
+              <table>
+                <thead><tr><th>Sucursal</th><th>Cant.</th><th>Estado</th><th>Recorrido</th><th>Quién lo levantó</th><th>Quién lo entregó / recibió</th><th></th></tr></thead>
+                <tbody>
+                  ${l.filas.sort((a,b)=>(a.destino||"").localeCompare(b.destino||"")).map(f=>`
+                  <tr>
+                    <td>${escH(f.destino)}</td>
+                    <td>${escH(String(f.cantidad))}</td>
+                    <td>${badge(f.estado,S_COLOR[f.estado]||"var(--muted)")}</td>
+                    <td class="muted-cell">${escH(f.recorrido||"—")}</td>
+                    <td class="muted-cell">${escH(f.nombreQuienLevanto||"—")}</td>
+                    <td class="muted-cell">${escH(f.nombreQuienRecibio||f.nombreQuienEntrego||"—")}</td>
+                    <td><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(f.id)}')">Ver</button></td>
+                  </tr>`).join("")}
+                </tbody>
+              </table>
+            </div>`:""}
           </div>`).join("")}
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🗂️ Historial de pedidos de excepción</h3>
+      ${historialPedidos.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no hay pedidos resueltos.</p>`:`
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Sucursal</th><th>Cant.</th><th>Estado</th><th>Pedido por</th><th></th></tr></thead>
+          <tbody>
+            ${historialPedidos.slice(0,30).map(r=>`
+            <tr>
+              <td class="id-cell">${escH(r.id)}</td>
+              <td>${escH(r.destino)}</td>
+              <td>${escH(String(r.cantidad))}</td>
+              <td>${badge(r.estado,S_COLOR[r.estado]||"var(--muted)")}</td>
+              <td class="muted-cell">${escH(r.solicitante||"—")}</td>
+              <td><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button></td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
       </div>`}
     </div>
   </div>`;
@@ -2789,11 +2834,19 @@ function renderPedidoTesoreriaModal(){
   ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
     ${badge(r.id,"var(--blue)")}<br/><br/>
     <strong>Destino:</strong> ${escH(r.destino)}<br/>
-    <strong>Cantidad:</strong> ${escH(String(r.cantidad))} bolsines<br/>
     ${r.observaciones?`<strong>Motivo:</strong> ${escH(r.observaciones)}<br/>`:""}
     <strong>Pedido por:</strong> ${escH(r.solicitante||"—")}
   </div>`:""}
+  ${esAprobar?`
   <div class="field">
+    <label>Cantidad a enviar <span style="color:var(--faint);font-size:12px">(podés ajustarla si hace falta)</span></label>
+    <input id="pt-cant" type="number" min="1" class="inp" value="${escH(String(r?.cantidad??""))}"/>
+  </div>`:`
+  <div class="field">
+    <label>Cantidad pedida</label>
+    <input class="inp" value="${escH(String(r?.cantidad??""))} bolsines" disabled/>
+  </div>`}
+  <div class="field" style="margin-top:12px">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="pt-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
       value="${escH(d.dni)}"
@@ -2823,12 +2876,21 @@ async function submitPedidoTesoreria(){
   const esAprobar = d.accion==="aprobar";
   const motivo = ($("pt-motivo")?.value||d.motivo||"").trim();
   if(!esAprobar && !motivo){ S.pedidoTesoreriaModal.err="Ingresá el motivo del rechazo."; render(); return; }
+  let cantidadFinal = null;
+  if(esAprobar){
+    cantidadFinal = +(($("pt-cant")?.value||"").trim());
+    if(!cantidadFinal || cantidadFinal<=0){ S.pedidoTesoreriaModal.err="Ingresá una cantidad válida."; render(); return; }
+  }
 
   d.loading = true; renderNow();
   await new Promise(r=>setTimeout(r,400));
 
+  const original = S.requests.find(x=>x.id===d.id);
+  const cambioCant = esAprobar && original && +original.cantidad!==cantidadFinal;
   const changes = esAprobar
-    ? {estado:"Pendiente", comentario:`Aprobado por Tesorería (${check.nombre})`, updatedAt:now()}
+    ? {estado:"Pendiente", cantidad:cantidadFinal,
+       comentario:`Aprobado por Tesorería (${check.nombre})${cambioCant?` — cantidad ajustada de ${original.cantidad} a ${cantidadFinal}`:""}`,
+       updatedAt:now()}
     : {estado:"Rechazada", comentario:`Rechazado por Tesorería (${check.nombre}): ${motivo}`, updatedAt:now()};
   S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
   S.modal = null;
@@ -2839,6 +2901,11 @@ async function submitPedidoTesoreria(){
 // ══════════════════════════════════════════════════════════
 //  TESORERÍA — lote diario de bolsines (todas las sucursales)
 // ══════════════════════════════════════════════════════════
+function toggleLoteExpandido(loteId){
+  S.loteExpandido = S.loteExpandido===loteId ? "" : loteId;
+  render();
+}
+
 function openNuevoLote(){
   S.nuevoLoteModal = {cantidades:{}, err:"", loading:false};
   S.modal = "nuevoLote";
@@ -2878,7 +2945,7 @@ async function submitNuevoLote(){
   const items = [];
   sucursales.forEach((s,i)=>{
     const v = ($(`lote-cant-${i}`)?.value ?? d.cantidades[s] ?? "").toString().trim();
-    if(v && +v > 0) items.push({sucursal:s, cantidad:+v});
+    if(v && +v > 0) items.push({destino:s, cantidad:+v});
   });
   if(!items.length){ S.nuevoLoteModal.err = "Cargá al menos una cantidad."; render(); return; }
 
@@ -2891,32 +2958,24 @@ async function submitNuevoLote(){
       if(S.saving) return;
       const nombre = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
       S.saving = true; S.modal = null; renderNow();
-      const loteId = "LOTE-" + fechaCorta();
-      const nuevas = items.map(it => ({
-        id: genId(),
-        sucursal: "Fábrica",
-        area: "Tesorería",
-        solicitante: nombre,
-        dniSolicitante: dniVal,
-        destino: it.sucursal,
-        descripcion: "Bolsines",
-        cantidad: it.cantidad,
-        unidad: "Bolsines",
-        prioridad: "Media",
-        fechaRequerida: fechaISO(),
-        observaciones: "",
-        estado: "Aprobada",
-        tipoPedido: "bolsin",
-        loteId,
-        comentario: `Lote diario — creado por Tesorería (${nombre})`,
-        recorrido:"",
-        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
-        createdAt: now(), approvedAt: now(), scheduledAt:null, deliveredAt:null, updatedAt: now(),
-      }));
-      S.requests = [...nuevas, ...S.requests];
+      // Se crea todo en UNA sola llamada al backend (bajo un lock), para
+      // que no pueda quedar a mitad de camino ni pisarse con otra cosa.
+      try{
+        const res = await apiPost({
+          action:"crearLote", sheet:"Solicitudes",
+          data:{ items, solicitante:nombre, dniSolicitante:dniVal, fechaRequerida:fechaISO() }
+        });
+        if(res && res.ok){
+          toast(`📦 Lote ${res.loteId} creado — ${res.count} sucursales`);
+          await sheetsLoadAll(); // releemos para traer las filas reales con sus IDs definitivos
+        } else {
+          toast(`⚠️ No se pudo crear el lote: ${res?.error||"error desconocido"}`, "warn");
+        }
+      } catch(e){
+        toast("⚠️ No se pudo crear el lote — revisá la conexión", "warn");
+      }
       S.saving = false;
-      toast(`📦 Lote ${loteId} creado — ${nuevas.length} sucursales`);
-      nuevas.forEach(n => sheetsAdd(n)); // en background, una por una
+      render();
     }
   };
   S.modal = "dniConfirm"; render();
@@ -2960,20 +3019,31 @@ async function submitLoteListo(){
   if(!check.ok){ S.loteListoModal.err=check.msg; render(); return; }
 
   d.loading = true; renderNow();
-  await new Promise(r=>setTimeout(r,400));
 
-  const filas = S.requests.filter(r=>r.loteId===d.loteId && r.estado==="Aprobada");
-  const changes = {
-    estado: "Lista para retirar",
-    listoAt: now(),
-    dniListoPor: dni,
-    nombreListoPor: check.nombre,
-    updatedAt: now(),
-  };
-  S.requests = S.requests.map(x => (x.loteId===d.loteId && x.estado==="Aprobada") ? {...x,...changes} : x);
-  S.modal = null;
-  toast(`✅ ${check.nombre} marcó ${filas.length} solicitudes del lote ${d.loteId} como Listas`);
-  filas.forEach(f => sheetsUpdate(f.id, changes)); // en background
+  // Una sola llamada al backend que actualiza todas las filas del lote bajo
+  // un lock — antes esto era un sheetsUpdate por fila en paralelo, y si
+  // alguna se perdía en el camino quedaba "1 pendiente" sin explicación.
+  try{
+    const res = await apiPost({
+      action:"marcarLoteListo", sheet:"Solicitudes",
+      data:{ loteId:d.loteId, dni, nombre:check.nombre }
+    });
+    if(res && res.ok){
+      const nowTs = now();
+      S.requests = S.requests.map(x => (x.loteId===d.loteId && x.estado==="Aprobada")
+        ? {...x, estado:"Lista para retirar", listoAt:nowTs, dniListoPor:dni, nombreListoPor:check.nombre, updatedAt:nowTs}
+        : x);
+      S.modal = null;
+      toast(`✅ ${check.nombre} marcó ${res.count} solicitudes del lote ${d.loteId} como Listas`);
+    } else {
+      S.loteListoModal.loading=false;
+      S.loteListoModal.err = "No se pudo actualizar el lote: " + (res?.error||"error desconocido");
+    }
+  } catch(e){
+    S.loteListoModal.loading=false;
+    S.loteListoModal.err = "No se pudo conectar — probá de nuevo.";
+  }
+  render();
 }
 
 // ── Logística: asignar recorrido a todas las sucursales de un lote ──
@@ -3025,16 +3095,29 @@ async function submitLoteRecorrido(){
   if(!updates.length){ S.loteRecorridoModal.err="Asigná al menos un recorrido."; render(); return; }
 
   d.loading = true; renderNow();
-  await new Promise(r=>setTimeout(r,400));
 
-  const nowTs = now();
-  S.requests = S.requests.map(x=>{
-    const u = updates.find(u=>u.id===x.id);
-    return u ? {...x, recorrido:u.recorrido, updatedAt:nowTs} : x;
-  });
-  S.modal = null;
-  toast(`🚚 Recorridos asignados a ${updates.length} solicitudes del lote ${d.loteId}`);
-  updates.forEach(u => sheetsUpdate(u.id, {recorrido:u.recorrido, updatedAt:nowTs}));
+  try{
+    const res = await apiPost({
+      action:"asignarRecorridoLote", sheet:"Solicitudes",
+      data:{ updates }
+    });
+    if(res && res.ok){
+      const nowTs = now();
+      S.requests = S.requests.map(x=>{
+        const u = updates.find(u=>u.id===x.id);
+        return u ? {...x, recorrido:u.recorrido, updatedAt:nowTs} : x;
+      });
+      S.modal = null;
+      toast(`🚚 Recorridos asignados a ${res.count} solicitudes del lote ${d.loteId}`);
+    } else {
+      S.loteRecorridoModal.loading=false;
+      S.loteRecorridoModal.err = "No se pudo asignar: " + (res?.error||"error desconocido");
+    }
+  } catch(e){
+    S.loteRecorridoModal.loading=false;
+    S.loteRecorridoModal.err = "No se pudo conectar — probá de nuevo.";
+  }
+  render();
 }
 
 function openTomarTransferencia(id){
