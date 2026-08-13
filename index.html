@@ -351,6 +351,7 @@ let S = {
   // UI – filtros logística
   fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:"", fRecorrido:"", fSolicitante:"",
   fSucFecha:"", fPlanFecha:"",
+  logSeleccion: new Set(),
 
   // UI – filtros repartidor
   fRepRecorrido:"",
@@ -392,6 +393,7 @@ let S = {
   loteListoModal: {loteId:"", dni:"", err:"", loading:false, nombreOk:""},
   loteRecorridoModal: {loteId:"", asignaciones:{}, err:"", loading:false},
   loteExpandido: "",
+  cambioEstadoMasivoModal: {ids:[], estado:"", dni:"", err:"", loading:false, nombreOk:""},
   editarModal:    {id:"", descripcion:"", cantidad:"", observaciones:"", err:"", loading:false},
   // UI – confirmar entrega repartidor
   delivModal:  {id:"", dni:"", err:"", loading:false},
@@ -1325,17 +1327,28 @@ function renderLogTabla(){
     </div>
     ${hasF?`<div class="filter-bar"><span>${filtered.length} resultado${filtered.length!==1?"s":""}</span><button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Limpiar</button></div>`:""}
   </div>
+  ${S.logSeleccion.size>0?`
+  <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <strong>${S.logSeleccion.size} seleccionada${S.logSeleccion.size!==1?"s":""}</strong>
+    <select id="log-estado-masivo" class="inp" style="width:200px">
+      ${ESTADOS.map(s=>`<option ${s==="Entregada"?"selected":""}>${escH(s)}</option>`).join("")}
+    </select>
+    <button class="btn btn-success btn-sm" onclick="openCambioEstadoMasivo()">Aplicar a seleccionadas</button>
+    <button class="btn btn-ghost btn-sm" onclick="S.logSeleccion=new Set();render()">✕ Deseleccionar todo</button>
+  </div>`:""}
   <div class="card-flush">
     <div class="table-wrap">
       <table>
         <thead><tr>
+          <th><input type="checkbox" ${filtered.length&&filtered.every(r=>S.logSeleccion.has(r.id))?"checked":""} onchange="toggleLogSeleccionTodos(this.checked)"/></th>
           <th>N°</th><th>Fecha</th><th>Origen</th><th>Solicitante</th>
           <th>Destino</th><th>Descripción</th><th>Cant.</th><th>F.Req.</th>
           <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>Acción</th>
         </tr></thead>
         <tbody>
-          ${filtered.length===0?`<tr class="empty-row"><td colspan="12">Sin resultados</td></tr>`:""}
+          ${filtered.length===0?`<tr class="empty-row"><td colspan="13">Sin resultados</td></tr>`:""}
           ${filtered.map(r=>`<tr>
+            <td><input type="checkbox" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>
             <td class="id-cell">${escH(r.id)}</td>
             <td class="muted-cell">${fd(r.createdAt)}</td>
             <td style="font-weight:500">${escH(origenLabel(r))}</td>
@@ -1608,6 +1621,7 @@ function renderModals(){
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
   if(S.modal==="loteListo")     return wrapModal("m","Marcar lote como Listo",renderLoteListoModal(),420);
   if(S.modal==="loteRecorrido") return wrapModal("m","Asignar recorridos del lote",renderLoteRecorridoModal(),680);
+  if(S.modal==="cambioEstadoMasivo") return wrapModal("m","Confirmar cambio de estado",renderCambioEstadoMasivoModal(),420);
   return "";
 }
 
@@ -2616,6 +2630,92 @@ function checkOtraDireccion(){
 }
 
 function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fRecorrido=S.fSolicitante=""; render(); }
+
+// ── Selección múltiple en la tabla de Logística ───────────
+function toggleLogSeleccion(id, checked){
+  if(checked) S.logSeleccion.add(id); else S.logSeleccion.delete(id);
+  render();
+}
+function toggleLogSeleccionTodos(checked){
+  // Aplica solo sobre lo que está filtrado/visible en este momento
+  const f=S;
+  const filtered=S.requests.filter(r=>{
+    if(f.fEstado    && r.estado    !==f.fEstado)    return false;
+    if(f.fSucursal  && r.sucursal!==f.fSucursal && r.area!==f.fSucursal && origenLabel(r)!==f.fSucursal) return false;
+    if(f.fDestino   && r.destino   !==f.fDestino)   return false;
+    if(f.fPrioridad && r.prioridad !==f.fPrioridad) return false;
+    if(f.fFecha     && !r.createdAt.startsWith(f.fFecha)) return false;
+    if(f.fRecorrido && r.recorrido !==f.fRecorrido) return false;
+    if(f.fSolicitante && !(solicitanteLabel(r)||"").toLowerCase().includes(f.fSolicitante.trim().toLowerCase())) return false;
+    return true;
+  });
+  if(checked) filtered.forEach(r=>S.logSeleccion.add(r.id));
+  else filtered.forEach(r=>S.logSeleccion.delete(r.id));
+  render();
+}
+
+function openCambioEstadoMasivo(){
+  const estado = ($("log-estado-masivo")?.value||"").trim();
+  if(!estado || S.logSeleccion.size===0) return;
+  S.cambioEstadoMasivoModal = {ids:[...S.logSeleccion], estado, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "cambioEstadoMasivo";
+  render();
+}
+
+function renderCambioEstadoMasivoModal(){
+  const d = S.cambioEstadoMasivoModal;
+  return `
+  <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    ⚠️ Vas a cambiar <strong>${d.ids.length} solicitudes</strong> a <strong>${escH(d.estado)}</strong> de una sola vez. Esta acción queda registrada con tu DNI.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="cem-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.cambioEstadoMasivoModal.dni=this.value;S.cambioEstadoMasivoModal.err=''"
+      onkeydown="if(event.key==='Enter')submitCambioEstadoMasivo()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitCambioEstadoMasivo()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Aplicando...`:`✅ Cambiar ${d.ids.length} a ${escH(d.estado)}`}
+    </button>
+  </div>`;
+}
+
+async function submitCambioEstadoMasivo(){
+  const d = S.cambioEstadoMasivoModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.cambioEstadoMasivoModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.cambioEstadoMasivoModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+
+  try{
+    const res = await apiPost({
+      action:"cambiarEstadoMasivo", sheet:"Solicitudes",
+      data:{ ids:d.ids, estado:d.estado, dni, nombre:check.nombre }
+    });
+    if(res && res.ok){
+      const nowTs = now();
+      const idsSet = new Set(d.ids);
+      S.requests = S.requests.map(x=>idsSet.has(x.id) ? {...x, estado:d.estado, updatedAt:nowTs} : x);
+      S.logSeleccion = new Set();
+      S.modal = null;
+      toast(`✅ ${res.count} solicitudes cambiadas a "${d.estado}"`);
+    } else {
+      S.cambioEstadoMasivoModal.loading=false;
+      S.cambioEstadoMasivoModal.err = "No se pudo aplicar: " + (res?.error||"error desconocido");
+    }
+  } catch(e){
+    S.cambioEstadoMasivoModal.loading=false;
+    S.cambioEstadoMasivoModal.err = "No se pudo conectar — probá de nuevo.";
+  }
+  render();
+}
 function closeModal(){ S.modal=null; S.selId=null; render(); }
 function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
 function openModal(m){ S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
