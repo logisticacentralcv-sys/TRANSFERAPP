@@ -68,6 +68,9 @@ select option{background:#1a2338}
 .btn-warn{background:#f5a6231a;border-color:#f5a62350;color:var(--amber)}
 .btn-teal{background:#2de0c41a;border-color:#2de0c450;color:var(--teal)}
 .btn-ghost{background:transparent;border-color:var(--border);color:var(--muted)}
+.chk-round{appearance:none;-webkit-appearance:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:var(--s2);cursor:pointer;display:inline-block;vertical-align:middle;position:relative;transition:.15s}
+.chk-round:checked{background:var(--blue);border-color:var(--blue)}
+.chk-round:checked::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .spinner{width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
 
 /* BADGES */
@@ -352,6 +355,7 @@ let S = {
   fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:"", fRecorrido:"", fSolicitante:"",
   fSucFecha:"", fPlanFecha:"",
   logSeleccion: new Set(),
+  modoSeleccion: false,
 
   // UI – filtros repartidor
   fRepRecorrido:"",
@@ -453,6 +457,12 @@ function emptyForm(){
 function $(id){ return document.getElementById(id); }
 function badge(label,color){
   return `<span class="badge" style="background:${color}1a;color:${color};border-color:${color}40">${escH(label)}</span>`;
+}
+// Badge de estado + badge extra "Reprogramada" si corresponde (conviven,
+// no se pisan — una solicitud puede estar Aprobada Y reprogramada a la vez)
+function estadoBadges(r){
+  const esRepro = r.reprogramada===true||r.reprogramada==="true"||r.reprogramada==="si";
+  return badge(r.estado,S_COLOR[r.estado]) + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"");
 }
 function escH(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function toast(msg,type="success"){
@@ -901,7 +911,7 @@ function renderPlanificacion(){
               <td><div class="trunc">${escH(r.descripcion)}</div></td>
               <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
               <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
-              <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+              <td>${estadoBadges(r)}</td>
               <td style="white-space:nowrap">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
                 ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
@@ -1096,7 +1106,7 @@ function renderRecepcionista(){
                 <td><div class="trunc">${escH(r.descripcion)}</div></td>
                 <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
                 <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
-                <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+                <td>${estadoBadges(r)}</td>
                 <td style="white-space:nowrap">
                   <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
                   ${puedeRecibir?`
@@ -1203,7 +1213,7 @@ function renderSucursalArea(){
               <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
               <td class="muted-cell">${esOrigen?escH(r.destino):escH(origenLabel(r))}</td>
               <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
-              <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+              <td>${estadoBadges(r)}</td>
               <td class="muted-cell">${escH(r.recorrido||"—")}</td>
               <td style="white-space:nowrap">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
@@ -1327,7 +1337,12 @@ function renderLogTabla(){
     </div>
     ${hasF?`<div class="filter-bar"><span>${filtered.length} resultado${filtered.length!==1?"s":""}</span><button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Limpiar</button></div>`:""}
   </div>
-  ${S.logSeleccion.size>0?`
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button class="btn ${S.modoSeleccion?"btn-primary":"btn-ghost"} btn-sm" onclick="S.modoSeleccion=!S.modoSeleccion; if(!S.modoSeleccion) S.logSeleccion=new Set(); render()">
+      ${S.modoSeleccion?"✕ Cancelar selección":"◯ Seleccionar"}
+    </button>
+  </div>
+  ${S.modoSeleccion && S.logSeleccion.size>0?`
   <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <strong>${S.logSeleccion.size} seleccionada${S.logSeleccion.size!==1?"s":""}</strong>
     <select id="log-estado-masivo" class="inp" style="width:200px">
@@ -1340,15 +1355,15 @@ function renderLogTabla(){
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th><input type="checkbox" ${filtered.length&&filtered.every(r=>S.logSeleccion.has(r.id))?"checked":""} onchange="toggleLogSeleccionTodos(this.checked)"/></th>
+          ${S.modoSeleccion?`<th><input type="checkbox" class="chk-round" ${filtered.length&&filtered.every(r=>S.logSeleccion.has(r.id))?"checked":""} onchange="toggleLogSeleccionTodos(this.checked)"/></th>`:""}
           <th>N°</th><th>Fecha</th><th>Origen</th><th>Solicitante</th>
           <th>Destino</th><th>Descripción</th><th>Cant.</th><th>F.Req.</th>
           <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>Acción</th>
         </tr></thead>
         <tbody>
-          ${filtered.length===0?`<tr class="empty-row"><td colspan="13">Sin resultados</td></tr>`:""}
+          ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?13:12}">Sin resultados</td></tr>`:""}
           ${filtered.map(r=>`<tr>
-            <td><input type="checkbox" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>
+            ${S.modoSeleccion?`<td><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
             <td class="id-cell">${escH(r.id)}</td>
             <td class="muted-cell">${fd(r.createdAt)}</td>
             <td style="font-weight:500">${escH(origenLabel(r))}</td>
@@ -1358,7 +1373,7 @@ function renderLogTabla(){
             <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
             <td class="muted-cell">${fd(r.fechaRequerida)}</td>
             <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
-            <td>${badge(r.estado,S_COLOR[r.estado])}</td>
+            <td>${estadoBadges(r)}</td>
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
             <td style="white-space:nowrap">
               <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
@@ -1482,7 +1497,7 @@ function renderRepartidor(){
                 <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
                 <div style="font-weight:600">${escH(origenLabel(r))}</div>
               </div>
-              ${badge(r.estado,S_COLOR[r.estado])}
+              ${estadoBadges(r)}
             </div>
 
             <!-- Ruta -->
@@ -1879,7 +1894,7 @@ function renderDetalle(){
 
   return `
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
-    ${badge(r.estado,S_COLOR[r.estado])} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
+    ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
     ${r.recorrido?badge(r.recorrido,"var(--teal)"):""}
   </div>
   ${drow("Origen",origenLabel(r))}
@@ -1948,7 +1963,7 @@ function renderGestionar(){
   return `
   <div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px">
-      ${badge(r.estado,S_COLOR[r.estado])} ${badge(r.prioridad,P_COLOR[r.prioridad])}
+      ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])}
     </div>
     <div style="line-height:1.8;color:var(--muted)">
       <strong style="color:var(--text)">${escH(origenLabel(r))}</strong> → ${escH(r.destino)}<br/>
@@ -1967,7 +1982,16 @@ function renderGestionar(){
     ["Entregada",         "📦 Entregada",       "btn-teal"],
   ].map(([v,l,cls])=>`
       <button class="btn ${cls} btn-sm" style="opacity:${a.estado===v?1:.5}" onclick="S.action.estado='${v}';render()">${l}</button>`).join("")}
+    <button class="btn btn-warn btn-sm" style="opacity:${a.reprogramando?1:.5}" onclick="S.action.reprogramando=!S.action.reprogramando;render()">🔁 Reprogramar</button>
   </div>
+  ${a.reprogramando?`
+  <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    🔁 Esto NO cambia el estado — se mantiene <strong>${escH(a.estado||r.estado)}</strong>, solo se actualiza la fecha pedida y queda marcada como "Reprogramada" para que se sepa que no es la fecha original.
+  </div>
+  <div class="field">
+    <label>Nueva fecha requerida <span class="req">*</span></label>
+    <input type="date" class="inp" value="${escH(a.nuevaFechaRequerida)}" onchange="S.action.nuevaFechaRequerida=this.value"/>
+  </div>`:""}
   <div class="field">
     <label>Estado manual</label>
     <select onchange="S.action.estado=this.value;render()">
@@ -2335,7 +2359,7 @@ function renderEditarModal(){
   const r = S.requests.find(x=>x.id===d.id);
   return `
   ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
-    ${badge(r.id,"var(--blue)")} ${badge(r.estado,S_COLOR[r.estado])}<br/><br/>
+    ${badge(r.id,"var(--blue)")} ${estadoBadges(r)}<br/><br/>
     <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong>
   </div>`:""}
   <div class="field">
@@ -2704,6 +2728,7 @@ async function submitCambioEstadoMasivo(){
       const idsSet = new Set(d.ids);
       S.requests = S.requests.map(x=>idsSet.has(x.id) ? {...x, estado:d.estado, updatedAt:nowTs} : x);
       S.logSeleccion = new Set();
+      S.modoSeleccion = false;
       S.modal = null;
       toast(`✅ ${res.count} solicitudes cambiadas a "${d.estado}"`);
     } else {
@@ -2734,6 +2759,8 @@ function openGestionar(id){
     recorrido:            String(r.recorrido||""),
     prioridad:            String(r.prioridad||"Media"),
     pasaPorFabrica:       r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si",
+    reprogramando:        false,
+    nuevaFechaRequerida:  String(r.fechaRequerida||""),
   };
   S.modal="gestionar";
   render();
@@ -3659,6 +3686,13 @@ async function submitGestionar(){
       if(r.estado==="En fábrica"&&a.estado!=="En fábrica"){
         changes.nombreQuienLevanto="";
         changes.dniRepartidor="";
+      }
+      // Reprogramar: NO toca el estado — solo actualiza la fecha pedida y
+      // deja marcado que se reprogramó, para que convivan "Aprobada" +
+      // "Reprogramada" en vez de perder el estado real de la solicitud.
+      if(a.reprogramando && a.nuevaFechaRequerida){
+        changes.fechaRequerida = a.nuevaFechaRequerida;
+        changes.reprogramada = true;
       }
       S.requests = S.requests.map(x=>x.id===savedId?{...x,...changes}:x);
       S.saving=false; S.selId=null;
