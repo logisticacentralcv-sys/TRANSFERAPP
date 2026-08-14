@@ -356,6 +356,9 @@ let S = {
   fSucFecha:"", fPlanFecha:"",
   logSeleccion: new Set(),
   modoSeleccion: false,
+  repSeleccion: new Set(),
+  modoSeleccionRep: false,
+  tomarVariasModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
 
   // UI – filtros repartidor
   fRepRecorrido:"",
@@ -931,7 +934,8 @@ function renderTesoreria(){
   const u = S.user;
   const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId);
   const pendientes    = pedidosBolsin.filter(r=>r.estado==="Pendiente Tesorería");
-  const historialPedidos = pedidosBolsin.filter(r=>r.estado!=="Pendiente Tesorería")
+  const aprobadosParaListo = pedidosBolsin.filter(r=>r.estado==="Aprobada");
+  const historialPedidos = pedidosBolsin.filter(r=>!["Pendiente Tesorería","Aprobada"].includes(r.estado))
     .sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
 
   // Agrupar por loteId (solo lo que tiene tipoPedido="bolsin" y loteId)
@@ -962,6 +966,7 @@ function renderTesoreria(){
 
     <div class="stats-grid">
       ${statCard("🎒","PEDIDOS PENDIENTES",pendientes.length,"var(--amber)")}
+      ${statCard("✅","PARA MARCAR LISTOS",aprobadosParaListo.length,"var(--teal)")}
       ${statCard("📦","LOTES ACTIVOS",lotes.filter(l=>l.entregadas<l.total).length,"var(--blue)")}
     </div>
 
@@ -982,6 +987,27 @@ function renderTesoreria(){
               <td style="white-space:nowrap">
                 <button class="btn btn-success btn-sm" onclick="openPedidoTesoreria('${escH(r.id)}','aprobar')">✅ Aprobar</button>
                 <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="openPedidoTesoreria('${escH(r.id)}','rechazar')">✕ Rechazar</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">✅ Aprobados por logística — marcar como listos</h3>
+      ${aprobadosParaListo.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos esperando que los prepares.</p>`:`
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Sucursal</th><th>Cant.</th><th></th></tr></thead>
+          <tbody>
+            ${aprobadosParaListo.map(r=>`
+            <tr>
+              <td class="id-cell">${escH(r.id)}</td>
+              <td>${escH(r.destino)}</td>
+              <td>${escH(String(r.cantidad))}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Lista</button>
               </td>
             </tr>`).join("")}
           </tbody>
@@ -1465,7 +1491,17 @@ function renderRepartidor(){
           ${recOpts.map(r=>`<option ${S.fRepRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
         </select>
       </div>
+      ${S.tabRep==="activas"?`
+      <button class="btn ${S.modoSeleccionRep?"btn-primary":"btn-ghost"} btn-sm" style="margin-left:auto" onclick="S.modoSeleccionRep=!S.modoSeleccionRep; if(!S.modoSeleccionRep) S.repSeleccion=new Set(); render()">
+        ${S.modoSeleccionRep?"✕ Cancelar selección":"◯ Seleccionar"}
+      </button>`:""}
     </div>
+    ${S.modoSeleccionRep && S.repSeleccion.size>0?`
+    <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
+      <button class="btn btn-warn btn-sm" onclick="openTomarVarias()">🤲 Tomar seleccionadas</button>
+      <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
+    </div>`:""}
     <div class="del-grid">
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="activas"?"No hay transferencias activas":"Sin entregas registradas"}</div>`:""}
       ${list.map(r=>{
@@ -1493,9 +1529,12 @@ function renderRepartidor(){
 
             <!-- Header -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-              <div>
-                <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
-                <div style="font-weight:600">${escH(origenLabel(r))}</div>
+              <div style="display:flex;align-items:flex-start;gap:8px">
+                ${S.modoSeleccionRep && puedeTomar?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.repSeleccion.has(r.id)?"checked":""} onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
+                <div>
+                  <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
+                  <div style="font-weight:600">${escH(origenLabel(r))}</div>
+                </div>
               </div>
               ${estadoBadges(r)}
             </div>
@@ -1621,6 +1660,7 @@ function renderModals(){
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
   if(S.modal==="dniConfirm")return wrapModal("m",escH(S.dniModal.title),renderDniModal(),400);
   if(S.modal==="tomar")     return wrapModal("m","Tomar transferencia",renderTomarModal(),420);
+  if(S.modal==="tomarVarias") return wrapModal("m","Tomar varias transferencias",renderTomarVariasModal(),420);
   if(S.modal==="fabrica")   return wrapModal("m","Dejar en fábrica",renderFabricaModal(),420);
   if(S.modal==="entrega")   return wrapModal("m","Confirmar entrega",renderEntregaModal(),420);
   if(S.modal==="codigo")    return wrapModal("m","Confirmar recepción — Sucursal",renderCodigoModal(),420);
@@ -2656,6 +2696,80 @@ function checkOtraDireccion(){
 function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fRecorrido=S.fSolicitante=""; render(); }
 
 // ── Selección múltiple en la tabla de Logística ───────────
+function toggleRepSeleccion(id, checked){
+  if(checked) S.repSeleccion.add(id); else S.repSeleccion.delete(id);
+  render();
+}
+
+function openTomarVarias(){
+  if(S.repSeleccion.size===0) return;
+  S.tomarVariasModal = {ids:[...S.repSeleccion], dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "tomarVarias";
+  render();
+}
+
+function renderTomarVariasModal(){
+  const d = S.tomarVariasModal;
+  return `
+  <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    🤲 Vas a tomar <strong>${d.ids.length} transferencias</strong> de una sola vez.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="tv-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.tomarVariasModal.dni=this.value;S.tomarVariasModal.err=''"
+      onkeydown="if(event.key==='Enter')submitTomarVarias()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-warn btn-md" onclick="submitTomarVarias()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Tomando...`:`🤲 Tomar ${d.ids.length}`}
+    </button>
+  </div>`;
+}
+
+async function submitTomarVarias(){
+  const d = S.tomarVariasModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.tomarVariasModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.tomarVariasModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+
+  try{
+    const res = await apiPost({
+      action:"tomarVarias", sheet:"Solicitudes",
+      data:{ ids:d.ids, dni, nombre:check.nombre }
+    });
+    if(res && res.ok){
+      const nowTs = now();
+      const idsSet = new Set(d.ids);
+      S.requests = S.requests.map(x=>{
+        if(!idsSet.has(x.id)) return x;
+        const esSegundaEtapa = x.estado==="En fábrica";
+        return esSegundaEtapa
+          ? {...x, estado:"En tránsito", nombreQuienEntrego:check.nombre, dniEntrega:dni, salidaFabricaAt:nowTs, updatedAt:nowTs}
+          : {...x, estado:"En tránsito", nombreQuienLevanto:check.nombre, dniRepartidor:dni, levantadoAt:nowTs, updatedAt:nowTs};
+      });
+      S.repSeleccion = new Set();
+      S.modoSeleccionRep = false;
+      S.modal = null;
+      toast(`🚚 ${check.nombre} tomó ${res.count} transferencias`);
+    } else {
+      S.tomarVariasModal.loading=false;
+      S.tomarVariasModal.err = "No se pudo tomar: " + (res?.error||"error desconocido");
+    }
+  } catch(e){
+    S.tomarVariasModal.loading=false;
+    S.tomarVariasModal.err = "No se pudo conectar — probá de nuevo.";
+  }
+  render();
+}
+
 function toggleLogSeleccion(id, checked){
   if(checked) S.logSeleccion.add(id); else S.logSeleccion.delete(id);
   render();
