@@ -199,12 +199,15 @@ tr:hover td{background:var(--s2)}
 </head>
 <body>
 <div id="app"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ══════════════════════════════════════════════════════════
-//  ★  CONFIGURACIÓN — PEGÁ TU URL AQUÍ  ★
+//  ★  CONFIGURACIÓN — SUPABASE  ★
 // ══════════════════════════════════════════════════════════
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzhAqn8z0Wk2EHPA7iFQomlKAgVdNOpihQ9q5oaBXfCRNrQPpY_OesnActmUqccLw4tcQ/exec";  // URL del Apps Script (termina en /exec)
-const USE_SHEETS  = WEB_APP_URL !== "";
+const SUPABASE_URL = "https://lrwwpulunfcavmvmwotd.supabase.co";
+const SUPABASE_KEY = "sb_publishable_SrUcYrDVBIOvZgF-DSPcyg_qV0LXEDQ";
+const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatibilidad con el resto del código
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ══════════════════════════════════════════════════════════
 //  EMAIL — notificación a logística cuando entra una solicitud
@@ -488,44 +491,55 @@ function drow(label,val,mono=false){
 }
 
 // ══════════════════════════════════════════════════════════
-//  GOOGLE SHEETS API
+//  SUPABASE — capa de datos
+//  Mantiene los mismos nombres de función que usaba Sheets
+//  (sheetsLoadUsuarios, sheetsAdd, sheetsUpdate, etc.) para que el
+//  resto del código — que ya sabe pensar en "sucursal", "dniEntrega",
+//  etc. — no tenga que cambiar una sola línea. Solo cambia CÓMO se
+//  guarda y se lee, no el resto de la lógica de la app.
 // ══════════════════════════════════════════════════════════
-async function apiPost(payload){
-  const body="payload="+encodeURIComponent(JSON.stringify(payload));
-  const r=await fetch(WEB_APP_URL,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
-  return r.json();
-}
-async function apiGet(params){
-  const qs=Object.entries(params).map(([k,v])=>`${k}=${encodeURIComponent(v)}`).join("&");
-  const r=await fetch(`${WEB_APP_URL}?${qs}`);
-  return r.json();
-}
 
-// FASE 1: solo lo necesario para validar el login (hojas pequeñas y rápidas)
+// Convierte entre camelCase (como piensa toda la app) y snake_case
+// (como se llaman las columnas en Postgres). Es genérico — no hace
+// falta mantener una lista de campos a mano.
+function camelToSnake(s){ return s.replace(/[A-Z]/g, m => "_"+m.toLowerCase()); }
+function snakeToCamel(s){ return s.replace(/_([a-z0-9])/g, (_,c) => c.toUpperCase()); }
+function toSnakeRow(obj){
+  const out={};
+  Object.keys(obj||{}).forEach(k=>{ if(obj[k]!==undefined) out[camelToSnake(k)]=obj[k]; });
+  return out;
+}
+function toCamelRow(row){
+  if(!row) return row;
+  const out={};
+  Object.keys(row).forEach(k=>{ out[snakeToCamel(k)]=row[k]; });
+  return out;
+}
+function toCamelRows(rows){ return (rows||[]).map(toCamelRow); }
+
+// FASE 1: solo lo necesario para validar el login (tablas chicas y rápidas)
 async function sheetsLoadUsuarios(){
   if(!USE_SHEETS) return;
   try{
     const [us,sucs]=await Promise.all([
-      apiGet({action:"getAll",sheet:"Usuarios"}),
-      apiGet({action:"getAll",sheet:"Sucursales"}),
+      sb.from("usuarios").select("*"),
+      sb.from("sucursales").select("*"),
     ]);
-    if(us.rows)   S.usuarios   = us.rows.filter(u=>u.activo!=="no");
-    if(sucs.rows){
-      S.sucursales = sucs.rows.filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
-      // Guardamos también el resto de datos de cada sucursal (email,
-      // recorrido habitual, etc.) para usarlos en notificaciones y en la
-      // asignación rápida de recorridos de un lote.
-      const info = {};
-      sucs.rows.forEach(r=>{
-        if(!r.nombre) return;
-        info[(r.nombre||"").trim().toLowerCase()] = {
-          email: r.email||"",
-          recorridoDefault: r.recorridoDefault||r.recorrido||"",
-        };
-      });
-      S.sucursalesInfo = info;
-    }
-  }catch(e){console.warn("Sheets load usuarios:",e);}
+    if(us.error) throw us.error;
+    if(sucs.error) throw sucs.error;
+    S.usuarios = toCamelRows(us.data).filter(u=>u.activo!=="no");
+    const sucRows = toCamelRows(sucs.data);
+    S.sucursales = sucRows.filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
+    const info = {};
+    sucRows.forEach(r=>{
+      if(!r.nombre) return;
+      info[(r.nombre||"").trim().toLowerCase()] = {
+        email: r.email||"",
+        recorridoDefault: r.recorridoDefault||r.recorrido||"",
+      };
+    });
+    S.sucursalesInfo = info;
+  }catch(e){console.warn("Supabase load usuarios:",e);}
 }
 
 // FASE 2: cargar el resto en background una vez que ya entraste
@@ -533,14 +547,17 @@ async function sheetsLoadDatos(){
   if(!USE_SHEETS) return;
   try{
     const [rs,recs,dests]=await Promise.all([
-      apiGet({action:"getAll",sheet:"Solicitudes"}),
-      apiGet({action:"getAll",sheet:"Recorridos"}),
-      apiGet({action:"getAll",sheet:"Destinos"}),
+      sb.from("solicitudes").select("*").order("created_at",{ascending:false}),
+      sb.from("recorridos").select("*"),
+      sb.from("destinos").select("*"),
     ]);
-    if(rs.rows)    S.requests   = rs.rows.filter(r=>r.id);
-    if(recs.rows)  S.recorridos = recs.rows.filter(r=>r.nombre).map(r=>r.nombre);
-    if(dests.rows) S.destinos   = dests.rows.filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
-  }catch(e){console.warn("Sheets load datos:",e);}
+    if(rs.error) throw rs.error;
+    if(recs.error) throw recs.error;
+    if(dests.error) throw dests.error;
+    S.requests   = toCamelRows(rs.data).filter(r=>r.id);
+    S.recorridos = toCamelRows(recs.data).filter(r=>r.nombre).map(r=>r.nombre);
+    S.destinos   = toCamelRows(dests.data).filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
+  }catch(e){console.warn("Supabase load datos:",e);}
 }
 
 // Recarga completa (botón actualizar) — ambas fases
@@ -549,7 +566,7 @@ async function sheetsLoadAll(){
   await Promise.all([sheetsLoadUsuarios(), sheetsLoadDatos()]);
 }
 
-// Busca un usuario en Sheets (o demo) por usuario+password
+// Busca un usuario en Supabase (o demo) por usuario+password
 // Para SUCURSAL: solo necesita el nombre de la sucursal como usuario, sin pass
 function buscarUsuario(usuario, password){
   const lista = USE_SHEETS ? S.usuarios : DEMO_USUARIOS;
@@ -573,7 +590,7 @@ function buscarUsuario(usuario, password){
     return {ok:false, msg:"Usuario no encontrado."};
   }
 
-  // Si el usuario no tiene contraseña configurada en Sheets → entra directo
+  // Si el usuario no tiene contraseña configurada → entra directo
   const tienePass = foundUser.password && String(foundUser.password).trim() !== "";
   if(tienePass && foundUser.password !== p){
     return {ok:false, msg:"Contraseña incorrecta."};
@@ -585,27 +602,32 @@ function buscarUsuario(usuario, password){
   return {ok:true, tipo:foundUser.tipo, usuario:foundUser.usuario||"", nombre:foundUser.nombre||foundUser.usuario, area:foundUser.area||"", recorrido:foundUser.recorrido||"", dni:foundUser.dni||""};
 }
 
+// Crea una solicitud. A diferencia de Sheets, ACÁ ESPERAMOS la respuesta
+// antes de mostrarla — Postgres genera el id solo (sin locks manuales) y
+// la respuesta es rápida, así que no hace falta el truco de "mostrar
+// optimista y corregir después" que usábamos con Apps Script.
 async function sheetsAdd(row){
-  if(!USE_SHEETS) return;
+  if(!USE_SHEETS) return null;
   try{
-    const res = await apiPost({action:"addRow",sheet:"Solicitudes",data:row});
-    // El backend genera el ID definitivo con un lock (evita duplicados si dos
-    // sesiones/dispositivos crean una solicitud al mismo tiempo). Si difiere
-    // del que pusimos optimistamente, corregimos la solicitud ya mostrada.
-    if(res && res.ok && res.id && res.id!==row.id){
-      const idViejo = row.id;
-      S.requests = S.requests.map(x=>x.id===idViejo?{...x,id:res.id}:x);
-      if(S.selId===idViejo) S.selId=res.id;
-      render();
-    }
+    const payload = toSnakeRow(row);
+    delete payload.id; // que lo genere Postgres, nunca lo mandamos nosotros
+    const { data, error } = await sb.from("solicitudes").insert(payload).select().single();
+    if(error) throw error;
+    return toCamelRow(data);
+  }catch(e){
+    console.warn("Supabase add:",e);
+    toast("⚠️ No se pudo guardar — revisá la conexión","warn");
+    return null;
   }
-  catch(e){console.warn("Sheets add:",e);}
 }
 
 async function sheetsUpdate(id,data){
   if(!USE_SHEETS) return;
-  try{ await apiPost({action:"updateRow",sheet:"Solicitudes",id,data}); }
-  catch(e){console.warn("Sheets update:",e);}
+  try{
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(data)).eq("id",id);
+    if(error) throw error;
+  }
+  catch(e){console.warn("Supabase update:",e);}
 }
 
 // ──────────────────────────────────────────────────────────
@@ -740,7 +762,7 @@ function renderLogin(){
         </button>
       </div>
       <p style="text-align:center;font-size:12px;margin-top:12px;color:${USE_SHEETS?"var(--teal)":"var(--amber)"}">
-        ${USE_SHEETS?"✅ Conectado a Google Sheets":"⚠️ Modo demo — los datos no persisten"}
+        ${USE_SHEETS?"✅ Conectado a Supabase":"⚠️ Modo demo — los datos no persisten"}
       </p>
     </div>
   </div>`;
@@ -2741,27 +2763,37 @@ async function submitTomarVarias(){
   d.loading = true; renderNow();
 
   try{
-    const res = await apiPost({
-      action:"tomarVarias", sheet:"Solicitudes",
-      data:{ ids:d.ids, dni, nombre:check.nombre }
+    // Postgres actualiza cada fila de forma segura aunque se disparen todas
+    // juntas — a diferencia de Sheets, acá no hace falta un lock manual en
+    // un backend intermedio. Cada solicitud puede estar en una etapa
+    // distinta (recién sale de origen, o sale de fábrica en la segunda
+    // etapa), así que se arma el cambio correcto para cada una.
+    const nowTs = now();
+    const cambios = d.ids.map(id=>{
+      const x = S.requests.find(r=>r.id===id);
+      const esSegundaEtapa = x && x.estado==="En fábrica";
+      const changes = esSegundaEtapa
+        ? {estado:"En tránsito", nombreQuienEntrego:check.nombre, dniEntrega:dni, salidaFabricaAt:nowTs, updatedAt:nowTs}
+        : {estado:"En tránsito", nombreQuienLevanto:check.nombre, dniRepartidor:dni, levantadoAt:nowTs, updatedAt:nowTs};
+      return {id, changes};
     });
-    if(res && res.ok){
-      const nowTs = now();
+    const resultados = await Promise.all(
+      cambios.map(c => sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id))
+    );
+    const fallidas = resultados.filter(r=>r.error);
+    if(fallidas.length===0){
       const idsSet = new Set(d.ids);
       S.requests = S.requests.map(x=>{
-        if(!idsSet.has(x.id)) return x;
-        const esSegundaEtapa = x.estado==="En fábrica";
-        return esSegundaEtapa
-          ? {...x, estado:"En tránsito", nombreQuienEntrego:check.nombre, dniEntrega:dni, salidaFabricaAt:nowTs, updatedAt:nowTs}
-          : {...x, estado:"En tránsito", nombreQuienLevanto:check.nombre, dniRepartidor:dni, levantadoAt:nowTs, updatedAt:nowTs};
+        const c = cambios.find(c=>c.id===x.id);
+        return c ? {...x, ...c.changes} : x;
       });
       S.repSeleccion = new Set();
       S.modoSeleccionRep = false;
       S.modal = null;
-      toast(`🚚 ${check.nombre} tomó ${res.count} transferencias`);
+      toast(`🚚 ${check.nombre} tomó ${cambios.length} transferencias`);
     } else {
       S.tomarVariasModal.loading=false;
-      S.tomarVariasModal.err = "No se pudo tomar: " + (res?.error||"error desconocido");
+      S.tomarVariasModal.err = `No se pudieron tomar ${fallidas.length} de ${cambios.length}. Probá de nuevo.`;
     }
   } catch(e){
     S.tomarVariasModal.loading=false;
@@ -2833,21 +2865,32 @@ async function submitCambioEstadoMasivo(){
   d.loading = true; renderNow();
 
   try{
-    const res = await apiPost({
-      action:"cambiarEstadoMasivo", sheet:"Solicitudes",
-      data:{ ids:d.ids, estado:d.estado, dni, nombre:check.nombre }
+    // Igual que con tomarVarias: cada fila puede tener un comentario previo
+    // distinto, así que se actualiza una por una (Postgres lo hace seguro
+    // aunque vayan todas juntas) para no perder el historial de cada una.
+    const nowTs = now();
+    const cambios = d.ids.map(id=>{
+      const x = S.requests.find(r=>r.id===id);
+      const nota = `Cambio masivo a "${d.estado}" por ${check.nombre} (DNI ${dni})`;
+      const comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
+      return {id, changes:{estado:d.estado, comentario, updatedAt:nowTs}};
     });
-    if(res && res.ok){
-      const nowTs = now();
-      const idsSet = new Set(d.ids);
-      S.requests = S.requests.map(x=>idsSet.has(x.id) ? {...x, estado:d.estado, updatedAt:nowTs} : x);
+    const resultados = await Promise.all(
+      cambios.map(c => sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id))
+    );
+    const fallidas = resultados.filter(r=>r.error);
+    if(fallidas.length===0){
+      S.requests = S.requests.map(x=>{
+        const c = cambios.find(c=>c.id===x.id);
+        return c ? {...x, ...c.changes} : x;
+      });
       S.logSeleccion = new Set();
       S.modoSeleccion = false;
       S.modal = null;
-      toast(`✅ ${res.count} solicitudes cambiadas a "${d.estado}"`);
+      toast(`✅ ${cambios.length} solicitudes cambiadas a "${d.estado}"`);
     } else {
       S.cambioEstadoMasivoModal.loading=false;
-      S.cambioEstadoMasivoModal.err = "No se pudo aplicar: " + (res?.error||"error desconocido");
+      S.cambioEstadoMasivoModal.err = `No se pudieron cambiar ${fallidas.length} de ${cambios.length}. Probá de nuevo.`;
     }
   } catch(e){
     S.cambioEstadoMasivoModal.loading=false;
@@ -3030,8 +3073,8 @@ async function submitPedirBolsin(){
       if(S.saving) return;
       const nombreSolicitante = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
       S.saving = true; S.modal = null; renderNow();
-      const nueva = {
-        id: genId(),
+      const optimista = {
+        id: "tmp-"+Date.now(),
         sucursal: "Fábrica",
         area: "Tesorería",
         solicitante: nombreSolicitante,
@@ -3049,10 +3092,11 @@ async function submitPedirBolsin(){
         dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
         createdAt: now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt: now(),
       };
-      S.requests = [nueva, ...S.requests];
+      const creada = await sheetsAdd(optimista);
+      S.requests = [creada||optimista, ...S.requests];
       S.saving = false;
-      toast(`🎒 Pedido ${nueva.id} enviado a Tesorería`);
-      sheetsAdd(nueva);
+      toast(`🎒 Pedido ${(creada||optimista).id} enviado a Tesorería`);
+      render();
     }
   };
   S.modal = "dniConfirm"; render();
@@ -3199,20 +3243,39 @@ async function submitNuevoLote(){
       if(S.saving) return;
       const nombre = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
       S.saving = true; S.modal = null; renderNow();
-      // Se crea todo en UNA sola llamada al backend (bajo un lock), para
-      // que no pueda quedar a mitad de camino ni pisarse con otra cosa.
+      // Un solo INSERT con todas las filas — Postgres lo trata como una
+      // transacción: o entran todas, o si algo falla no queda ninguna a
+      // medio camino (mismo espíritu que el lock que usábamos en Sheets,
+      // pero acá es una garantía nativa de la base, no algo que armamos a mano).
       try{
-        const res = await apiPost({
-          action:"crearLote", sheet:"Solicitudes",
-          data:{ items, solicitante:nombre, dniSolicitante:dniVal, fechaRequerida:fechaISO() }
-        });
-        if(res && res.ok){
-          toast(`📦 Lote ${res.loteId} creado — ${res.count} sucursales`);
-          await sheetsLoadAll(); // releemos para traer las filas reales con sus IDs definitivos
-        } else {
-          toast(`⚠️ No se pudo crear el lote: ${res?.error||"error desconocido"}`, "warn");
-        }
+        const hoy = new Date();
+        const loteId = "LOTE-" + fechaCorta() + "-" + String(hoy.getHours()).padStart(2,"0") + String(hoy.getMinutes()).padStart(2,"0");
+        const nowIso = now();
+        const filas = items.map(it => toSnakeRow({
+          sucursal: "Fábrica",
+          area: "Tesorería",
+          solicitante: nombre,
+          dniSolicitante: dniVal,
+          destino: it.destino,
+          descripcion: "Bolsines",
+          cantidad: it.cantidad,
+          unidad: "Bolsines",
+          prioridad: "Media",
+          fechaRequerida: fechaISO(),
+          estado: "Aprobada",
+          comentario: `Lote diario — creado por Tesorería (${nombre})`,
+          createdAt: nowIso,
+          approvedAt: nowIso,
+          updatedAt: nowIso,
+          tipoPedido: "bolsin",
+          loteId,
+        }));
+        const { data, error } = await sb.from("solicitudes").insert(filas).select();
+        if(error) throw error;
+        toast(`📦 Lote ${loteId} creado — ${data.length} sucursales`);
+        S.requests = [...toCamelRows(data), ...S.requests];
       } catch(e){
+        console.warn(e);
         toast("⚠️ No se pudo crear el lote — revisá la conexión", "warn");
       }
       S.saving = false;
@@ -3261,28 +3324,25 @@ async function submitLoteListo(){
 
   d.loading = true; renderNow();
 
-  // Una sola llamada al backend que actualiza todas las filas del lote bajo
-  // un lock — antes esto era un sheetsUpdate por fila en paralelo, y si
-  // alguna se perdía en el camino quedaba "1 pendiente" sin explicación.
+  // Una sola sentencia UPDATE en Postgres, filtrando por lote + estado —
+  // atómica de por sí, no hace falta ningún lock manual ni backend
+  // intermedio (antes esto era el punto que se "bugueaba" con Sheets).
   try{
-    const res = await apiPost({
-      action:"marcarLoteListo", sheet:"Solicitudes",
-      data:{ loteId:d.loteId, dni, nombre:check.nombre }
-    });
-    if(res && res.ok){
-      const nowTs = now();
-      S.requests = S.requests.map(x => (x.loteId===d.loteId && x.estado==="Aprobada")
-        ? {...x, estado:"Lista para retirar", listoAt:nowTs, dniListoPor:dni, nombreListoPor:check.nombre, updatedAt:nowTs}
-        : x);
-      S.modal = null;
-      toast(`✅ ${check.nombre} marcó ${res.count} solicitudes del lote ${d.loteId} como Listas`);
-    } else {
-      S.loteListoModal.loading=false;
-      S.loteListoModal.err = "No se pudo actualizar el lote: " + (res?.error||"error desconocido");
-    }
+    const nowTs = now();
+    const { data, error } = await sb.from("solicitudes")
+      .update(toSnakeRow({estado:"Lista para retirar", listoAt:nowTs, dniListoPor:dni, nombreListoPor:check.nombre, updatedAt:nowTs}))
+      .eq("lote_id", d.loteId)
+      .eq("estado","Aprobada")
+      .select();
+    if(error) throw error;
+    S.requests = S.requests.map(x => (x.loteId===d.loteId && x.estado==="Aprobada")
+      ? {...x, estado:"Lista para retirar", listoAt:nowTs, dniListoPor:dni, nombreListoPor:check.nombre, updatedAt:nowTs}
+      : x);
+    S.modal = null;
+    toast(`✅ ${check.nombre} marcó ${data.length} solicitudes del lote ${d.loteId} como Listas`);
   } catch(e){
     S.loteListoModal.loading=false;
-    S.loteListoModal.err = "No se pudo conectar — probá de nuevo.";
+    S.loteListoModal.err = "No se pudo actualizar el lote — probá de nuevo.";
   }
   render();
 }
@@ -3338,21 +3398,24 @@ async function submitLoteRecorrido(){
   d.loading = true; renderNow();
 
   try{
-    const res = await apiPost({
-      action:"asignarRecorridoLote", sheet:"Solicitudes",
-      data:{ updates }
-    });
-    if(res && res.ok){
-      const nowTs = now();
+    // Cada sucursal puede llevar un recorrido distinto, así que va una
+    // actualización por fila — Postgres las procesa de forma segura aunque
+    // salgan todas juntas (no hace falta backend intermedio con lock).
+    const nowTs = now();
+    const resultados = await Promise.all(
+      updates.map(u => sb.from("solicitudes").update(toSnakeRow({recorrido:u.recorrido, updatedAt:nowTs})).eq("id",u.id))
+    );
+    const fallidas = resultados.filter(r=>r.error);
+    if(fallidas.length===0){
       S.requests = S.requests.map(x=>{
         const u = updates.find(u=>u.id===x.id);
         return u ? {...x, recorrido:u.recorrido, updatedAt:nowTs} : x;
       });
       S.modal = null;
-      toast(`🚚 Recorridos asignados a ${res.count} solicitudes del lote ${d.loteId}`);
+      toast(`🚚 Recorridos asignados a ${updates.length} solicitudes del lote ${d.loteId}`);
     } else {
       S.loteRecorridoModal.loading=false;
-      S.loteRecorridoModal.err = "No se pudo asignar: " + (res?.error||"error desconocido");
+      S.loteRecorridoModal.err = `No se pudieron asignar ${fallidas.length} de ${updates.length}. Probá de nuevo.`;
     }
   } catch(e){
     S.loteRecorridoModal.loading=false;
@@ -3465,16 +3528,16 @@ async function submitPalabra(){
   S.palabraModal.loading = true;
   renderNow();
 
-  // Siempre buscar el código desde Sheets para no depender de la memoria local
-  // (el repartidor está en otro dispositivo que el de la sucursal)
+  // Siempre buscar el código directo de la base para no depender de la memoria
+  // local (el repartidor está en otro dispositivo que el de la sucursal)
   let esperada = "";
   if(USE_SHEETS){
     try{
-      const res = await apiGet({action:"getAll", sheet:"Solicitudes"});
-      const fila = (res.rows||[]).find(x=>String(x.id)===String(d.id));
-      esperada = (fila?.codigoEntrega||"").trim().toUpperCase();
+      const { data, error } = await sb.from("solicitudes").select("codigo_entrega").eq("id",d.id).single();
+      if(error) throw error;
+      esperada = (data?.codigo_entrega||"").trim().toUpperCase();
     }catch(e){
-      // fallback a memoria local si falla Sheets
+      // fallback a memoria local si falla la conexión
       const rLocal = S.requests.find(x=>x.id===d.id);
       esperada = (rLocal?.codigoEntrega||"").trim().toUpperCase();
     }
@@ -3660,19 +3723,31 @@ async function doLogin(){
   startAutoRefresh(); // iniciar auto-refresh en background
 }
 
-// Auto-refresh cada 90 segundos cuando hay Sheets conectado
-let _autoRefreshTimer = null;
+// Tiempo real: en vez de "preguntar cada 90 segundos si pasó algo nuevo",
+// la app se suscribe a la tabla y Supabase le avisa apenas algo cambia —
+// se termina el parpadeo del refresco periódico.
+let _rtChannel = null;
 function startAutoRefresh(){
   if(!USE_SHEETS) return;
-  if(_autoRefreshTimer) clearInterval(_autoRefreshTimer);
-  _autoRefreshTimer = setInterval(async()=>{
-    if(S.view!=="app" || S.modal || S.refreshing) return; // no refrescar si hay modal abierto
-    await sheetsLoadDatos();
-    render();
-  }, 90000); // 90 segundos
+  if(_rtChannel) return; // ya suscripto
+  _rtChannel = sb.channel("solicitudes-rt")
+    .on("postgres_changes", {event:"*", schema:"public", table:"solicitudes"}, (payload)=>{
+      if(S.view!=="app") return;
+      if(payload.eventType==="DELETE"){
+        S.requests = S.requests.filter(r=>r.id!==payload.old.id);
+      } else {
+        const fila = toCamelRow(payload.new);
+        const existe = S.requests.some(r=>r.id===fila.id);
+        S.requests = existe
+          ? S.requests.map(r=>r.id===fila.id?fila:r)
+          : [fila, ...S.requests];
+      }
+      if(!S.modal) render(); // si hay un modal abierto, no interrumpir — se actualiza solo al cerrarlo
+    })
+    .subscribe();
 }
 function stopAutoRefresh(){
-  if(_autoRefreshTimer){ clearInterval(_autoRefreshTimer); _autoRefreshTimer=null; }
+  if(_rtChannel){ sb.removeChannel(_rtChannel); _rtChannel=null; }
 }
 
 // ── ACTUALIZAR DATOS (sin cerrar sesión) ─────────────────
@@ -3732,7 +3807,7 @@ async function submitNueva(){
       const nombreSolicitante = usuarioEncontrado?.nombre || S.user.nombre || "Sin nombre";
       S.saving=true; S.modal=null; renderNow();
       const nueva={
-        id:genId(),
+        id:"tmp-"+Date.now(),
         sucursal: S.user.rol==="sucursal"       ? S.user.area
                 : S.user.rol==="logistica"       ? origenElegido
                 : esPlanSubmit                   ? origenElegido : "",
@@ -3749,13 +3824,13 @@ async function submitNueva(){
         dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
         createdAt:now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt:now(),
       };
-      // OPTIMISTIC UPDATE — agregar a la lista inmediatamente
-      S.requests = [nueva, ...S.requests];
+      const creada = await sheetsAdd(nueva);
+      S.requests = [creada||nueva, ...S.requests];
       S.form     = emptyForm();
       S.saving   = false;
-      toast(`Solicitud ${nueva.id} creada — ${nombreSolicitante}`);
-      sheetsAdd(nueva); // sin await — va en background
-      // El Apps Script envía el email automáticamente al agregar la fila
+      toast(`Solicitud ${(creada||nueva).id} creada — ${nombreSolicitante}`);
+      render();
+      // El envío de mail a logística lo dispara un trigger/función en Supabase (ver nota de configuración)
     }
   };
   S.modal="dniConfirm"; render();
