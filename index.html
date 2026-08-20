@@ -627,17 +627,20 @@ async function cargarQuejas(){
   }catch(e){ console.warn("Cargar quejas:",e); }
 }
 
-// Sube una foto al bucket "adjuntos" y devuelve su URL pública (o null)
-async function subirFotoQueja(file){
+// Sube un archivo al bucket "adjuntos" (carpeta según de dónde venga) y
+// devuelve su URL pública (o null si falla). Genérica: la usan tanto las
+// quejas como los adjuntos de una solicitud nueva.
+async function subirArchivo(file, carpeta){
   if(!file) return null;
   try{
-    const path = `quejas/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g,"_")}`;
+    const path = `${carpeta}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g,"_")}`;
     const { error } = await sb.storage.from("adjuntos").upload(path, file);
     if(error) throw error;
     const { data } = sb.storage.from("adjuntos").getPublicUrl(path);
     return data?.publicUrl || null;
-  }catch(e){ console.warn("Subir foto:",e); return null; }
+  }catch(e){ console.warn("Subir archivo:",e); return null; }
 }
+async function subirFotoQueja(file){ return subirArchivo(file, "quejas"); }
 
 async function submitQueja(){
   const texto = ($("queja-texto")?.value||S.quejaForm.texto||"").trim();
@@ -1994,6 +1997,10 @@ function renderFormNueva(){
     <textarea id="f-obs" class="${e.obs?"err":""}" rows="2" placeholder="Horarios, contacto, dirección exacta si es 'Otra dirección'..."></textarea>
     ${e.obs?`<span class="err-msg">${e.obs}</span>`:""}
   </div>
+  <div class="field">
+    <label>Adjuntar foto o archivo <span style="color:var(--faint);font-size:12px">(opcional — ej. foto de dónde retirar, factura, etc.)</span></label>
+    <input id="f-adjunto" type="file" accept="image/*,.pdf" class="inp"/>
+  </div>
   ${Object.keys(e).length?`<div class="alert-err">⚠️ Completá los campos marcados en rojo.</div>`:""}
   <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:4px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
@@ -2189,6 +2196,10 @@ function renderDetalle(){
   ${drow("Cantidad",r.cantidad+" "+r.unidad,true)}
   ${drow("Fecha requerida",fd(r.fechaRequerida),true)}
   ${r.observaciones?drow("Observaciones",r.observaciones):""}
+  ${r.adjuntoUrl?`<div class="field"><label>Adjunto</label><a href="${escH(r.adjuntoUrl)}" target="_blank" rel="noopener">
+    <img src="${escH(r.adjuntoUrl)}" style="max-width:220px;border-radius:8px;margin-top:4px;display:block" onerror="this.style.display='none';this.nextSibling.style.display='inline'"/>
+    <span style="display:none;color:var(--blue)">📎 Ver archivo adjunto</span>
+  </a></div>`:""}
   ${r.comentario&&!esLogistica?`<div class="alert-info" style="margin-top:8px"><strong>💬 Logística:</strong> ${escH(r.comentario)}</div>`:""}
   ${divider("TRAZABILIDAD")}
   ${steps.map((s,i)=>`
@@ -4175,8 +4186,9 @@ async function submitNueva(){
   }
   if(Object.keys(e).length){ S.formErr=e; render(); return; }
 
-  // Capturar el origen AHORA — el DOM se destruye cuando se abre el modal DNI
+  // Capturar el origen y el archivo AHORA — el DOM se destruye cuando se abre el modal DNI
   const origenElegido = ($("f-origen")?.value||"").trim();
+  const archivoElegido = $("f-adjunto")?.files?.[0] || null;
   const esPlanSubmit  = S.user.rol==="planificacion";
 
   // Abrir modal DNI — el nombre del solicitante viene de Sheets
@@ -4188,6 +4200,7 @@ async function submitNueva(){
       if(S.saving) return; // guard doble ejecución del callback
       const nombreSolicitante = usuarioEncontrado?.nombre || S.user.nombre || "Sin nombre";
       S.saving=true; S.modal=null; renderNow();
+      const adjuntoUrl = await subirArchivo(archivoElegido, "solicitudes");
       const nueva={
         id:"tmp-"+Date.now(),
         sucursal: S.user.rol==="sucursal"       ? S.user.area
@@ -4202,6 +4215,7 @@ async function submitNueva(){
         unidad, prioridad,
         fechaRequerida: fechaReq||null,
         observaciones:  observ,
+        adjuntoUrl,
         estado:"Pendiente", comentario:"", recorrido:"",
         dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
         createdAt:now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt:now(),
