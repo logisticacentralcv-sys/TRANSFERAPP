@@ -645,9 +645,12 @@ async function subirFotoQueja(file){ return subirArchivo(file, "quejas"); }
 async function submitQueja(){
   const texto = ($("queja-texto")?.value||S.quejaForm.texto||"").trim();
   if(!texto){ S.quejaForm.err="Escribí la queja."; render(); return; }
+  // Leer el archivo ANTES de redibujar — el spinner de "loading" redibuja
+  // la pantalla y eso resetea el <input type="file">, perdiendo la foto.
+  const fotoFile = $("queja-foto")?.files?.[0] || null;
+
   S.quejaForm.loading = true; S.quejaForm.err=""; renderNow();
 
-  const fotoFile = $("queja-foto")?.files?.[0] || null;
   const fotoUrl = await subirFotoQueja(fotoFile);
 
   const u = S.user;
@@ -825,7 +828,7 @@ async function sheetsAdd(row){
     return toCamelRow(data);
   }catch(e){
     console.warn("Supabase add:",e);
-    toast("⚠️ No se pudo guardar — revisá la conexión","warn");
+    toast("⚠️ No se pudo guardar: "+(e?.message||e?.details||JSON.stringify(e)),"warn");
     return null;
   }
 }
