@@ -541,9 +541,25 @@ function drow(label,val,mono=false){
 // falta mantener una lista de campos a mano.
 function camelToSnake(s){ return s.replace(/[A-Z]/g, m => "_"+m.toLowerCase()); }
 function snakeToCamel(s){ return s.replace(/_([a-z0-9])/g, (_,c) => c.toUpperCase()); }
+// Columnas de fecha/hora (timestamptz o date) — Postgres acepta NULL ahí,
+// pero rechaza "" (string vacío) con un error. Varias partes del código
+// arman objetos con valores tipo "" por comodidad (mismo patrón que se
+// usaba con Sheets, donde "" no rompía nada) — acá se corrige siempre,
+// en un solo lugar, para no tener que cazarlo campo por campo.
+const COLUMNAS_FECHA = new Set([
+  "created_at","updated_at","approved_at","scheduled_at","delivered_at",
+  "fabrica_at","listo_at","levantado_at","salida_fabrica_at",
+  "confirmada_sucursal_at","fecha_requerida",
+]);
 function toSnakeRow(obj){
   const out={};
-  Object.keys(obj||{}).forEach(k=>{ if(obj[k]!==undefined) out[camelToSnake(k)]=obj[k]; });
+  Object.keys(obj||{}).forEach(k=>{
+    if(obj[k]===undefined) return;
+    const col = camelToSnake(k);
+    let val = obj[k];
+    if(val==="" && COLUMNAS_FECHA.has(col)) val = null;
+    out[col]=val;
+  });
   return out;
 }
 function toCamelRow(row){
