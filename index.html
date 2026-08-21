@@ -394,6 +394,7 @@ let S = {
   quejaFiltroEstado: "",
   quejaResponderId: "",
   quejaRespuestaTexto: "",
+  imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   repSeleccion: new Set(),
   modoSeleccionRep: false,
   tomarVariasModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
@@ -774,7 +775,7 @@ function renderQuejas(){
             ${badge(q.estado, q.estado==="Resuelta"?"#1fa86a":"var(--amber)")}
           </div>
           <p style="margin-top:8px;font-size:14px">${escH(q.texto)}</p>
-          ${q.fotoUrl?`<img src="${escH(q.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block"/>`:""}
+          ${q.fotoUrl?`<img src="${escH(q.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(q.fotoUrl)}')"/>`:""}
           ${q.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(q.respondidoPor||"—")}):</strong> ${escH(q.respuesta)}</div>`:""}
           ${esGestor && q.estado==="Pendiente"?`
             ${S.quejaResponderId===q.id?`
@@ -925,7 +926,7 @@ function render(){
     _renderPending = false;
     const el = $("app");
     if(!el) return;
-    el.innerHTML = S.view==="login" ? renderLogin() : renderApp();
+    el.innerHTML = (S.view==="login" ? renderLogin() : renderApp()) + renderLightbox();
   });
 }
 
@@ -935,7 +936,25 @@ function renderNow(){
   _renderPending = false;
   const el = $("app");
   if(!el) return;
-  el.innerHTML = S.view==="login" ? renderLogin() : renderApp();
+  el.innerHTML = (S.view==="login" ? renderLogin() : renderApp()) + renderLightbox();
+}
+
+// ── Lightbox: ver una imagen ampliada, tocando afuera se cierra ──
+function verImagenAmpliada(url){
+  S.imagenAmpliada = url;
+  render();
+}
+function cerrarImagenAmpliada(){
+  S.imagenAmpliada = "";
+  render();
+}
+function renderLightbox(){
+  if(!S.imagenAmpliada) return "";
+  return `
+  <div onclick="cerrarImagenAmpliada()" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;animation:fadeUp .15s ease">
+    <img src="${escH(S.imagenAmpliada)}" style="max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.5)" onclick="event.stopPropagation()"/>
+    <button onclick="cerrarImagenAmpliada()" style="position:absolute;top:20px;right:24px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer">✕</button>
+  </div>`;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -2216,7 +2235,7 @@ function renderDetalle(){
   ${drow("Fecha requerida",fd(r.fechaRequerida),true)}
   ${r.observaciones?drow("Observaciones",r.observaciones):""}
   ${r.adjuntoUrl?`<div class="field"><label>Adjunto</label><a href="${escH(r.adjuntoUrl)}" target="_blank" rel="noopener">
-    <img src="${escH(r.adjuntoUrl)}" style="max-width:220px;border-radius:8px;margin-top:4px;display:block" onerror="this.style.display='none';this.nextSibling.style.display='inline'"/>
+    <img src="${escH(r.adjuntoUrl)}" style="max-width:220px;border-radius:8px;margin-top:4px;display:block;cursor:zoom-in" onclick="event.preventDefault();verImagenAmpliada('${escH(r.adjuntoUrl)}')" onerror="this.style.display='none';this.nextSibling.style.display='inline'"/>
     <span style="display:none;color:var(--blue)">📎 Ver archivo adjunto</span>
   </a></div>`:""}
   ${r.comentario&&!esLogistica?`<div class="alert-info" style="margin-top:8px"><strong>💬 Logística:</strong> ${escH(r.comentario)}</div>`:""}
