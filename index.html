@@ -209,10 +209,17 @@ const SUPABASE_KEY = "sb_publishable_SrUcYrDVBIOvZgF-DSPcyg_qV0LXEDQ";
 const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatibilidad con el resto del código
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// ⚠️⚠️⚠️ PENDIENTE — FALTA COMPLETAR ESTO ⚠️⚠️⚠️
 // Supabase no puede mandar mails por sí solo — se deja el Apps Script
 // conectado ÚNICAMENTE para eso (ya no toca ninguna hoja ni solicitud).
-// Poné acá la MISMA URL que ya tenías funcionando.
-const MAIL_WEBHOOK_URL = "";  // ← pegá tu URL de Apps Script (termina en /exec)
+// Poné acá la MISMA URL que ya tenías funcionando (termina en /exec).
+// SIN ESTO, LOS MAILS NO SE VAN A ENVIAR — el resto de la app funciona
+// igual, esto es solo para los avisos por mail.
+const MAIL_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzhAqn8z0Wk2EHPA7iFQomlKAgVdNOpihQ9q5oaBXfCRNrQPpY_OesnActmUqccLw4tcQ/exec";  // ← PEGÁ ACÁ TU URL DE APPS SCRIPT
+
+if(!MAIL_WEBHOOK_URL){
+  console.warn("⚠️ MAIL_WEBHOOK_URL está vacía — los mails de aviso NO se van a enviar hasta que la completes.");
+}
 
 async function enviarMail(to, subject, body){
   if(!MAIL_WEBHOOK_URL || !to) return;
@@ -395,6 +402,14 @@ let S = {
   quejaResponderId: "",
   quejaRespuestaTexto: "",
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
+  devoluciones: [],
+  devolucionesLoaded: false,
+  devolucionForm: {motivo:"", loading:false, err:""},
+  devolucionFiltroSucursal: "",
+  devolucionFiltroEstado: "",
+  devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
+  devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
+  devolucionAccionTexto: "",
   repSeleccion: new Set(),
   modoSeleccionRep: false,
   tomarVariasModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
@@ -645,13 +660,47 @@ async function cargarQuejas(){
 }
 
 // Sube un archivo al bucket "adjuntos" (carpeta según de dónde venga) y
-// devuelve su URL pública (o null si falla). Genérica: la usan tanto las
-// quejas como los adjuntos de una solicitud nueva.
+// Comprime una imagen antes de subirla (redimensiona a máx. 1200px de
+// ancho y la pasa a JPG calidad 70%) — así el 1GB gratis de Supabase
+// Storage rinde muchísimo más (una foto de celular sin comprimir pesa
+// 2-4MB; comprimida queda en 150-300KB). Si no es una imagen (ej. PDF)
+// o algo falla, sube el archivo original tal cual.
+function comprimirImagen(file, maxAncho=1200, calidad=0.7){
+  return new Promise((resolve)=>{
+    if(!file || !file.type || !file.type.startsWith("image/")){ resolve(file); return; }
+    const reader = new FileReader();
+    reader.onload = (e)=>{
+      const img = new Image();
+      img.onload = ()=>{
+        let w = img.width, h = img.height;
+        if(w > maxAncho){ h = Math.round(h*maxAncho/w); w = maxAncho; }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img,0,0,w,h);
+        canvas.toBlob((blob)=>{
+          if(!blob){ resolve(file); return; }
+          const nombre = file.name.replace(/\.[^.]+$/,"") + ".jpg";
+          resolve(new File([blob], nombre, {type:"image/jpeg"}));
+        }, "image/jpeg", calidad);
+      };
+      img.onerror = ()=>resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = ()=>resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
+// Sube un archivo al bucket "adjuntos" (carpeta según de dónde venga) y
+// devuelve su URL pública (o null si falla). Genérica: la usan las
+// quejas, devoluciones y los adjuntos de una solicitud nueva.
 async function subirArchivo(file, carpeta){
   if(!file) return null;
   try{
-    const path = `${carpeta}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.]/g,"_")}`;
-    const { error } = await sb.storage.from("adjuntos").upload(path, file);
+    const comprimido = await comprimirImagen(file);
+    const path = `${carpeta}/${Date.now()}_${comprimido.name.replace(/[^a-zA-Z0-9.]/g,"_")}`;
+    const { error } = await sb.storage.from("adjuntos").upload(path, comprimido);
     if(error) throw error;
     const { data } = sb.storage.from("adjuntos").getPublicUrl(path);
     return data?.publicUrl || null;
@@ -794,8 +843,201 @@ function renderQuejas(){
   </div>`;
 }
 
+// ══════════════════════════════════════════════════════════
+//  DEVOLUCIONES — sucursal devuelve algo a fábrica/depósito
+// ══════════════════════════════════════════════════════════
+function normSinTildes(s){
+  return (s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+// Gestiona devoluciones: Logística, Producción, Fábrica o Depósito.
+// El recepcionista queda afuera a propósito — él no recibe devoluciones.
+function esGestorDevolucion(){
+  const u = S.user;
+  if(!u || u.rol==="recepcionista") return false;
+  if(u.rol==="logistica") return true;
+  const area = normSinTildes(u.area);
+  return ["produccion","fabrica","deposito"].includes(area);
+}
+function puedeVerDevoluciones(){
+  const u = S.user;
+  if(!u) return false;
+  return u.rol==="sucursal" || esGestorDevolucion();
+}
 
-// Busca un usuario en Supabase (o demo) por usuario+password
+async function abrirDevoluciones(){
+  S.vista = "devoluciones";
+  render();
+  if(!S.devolucionesLoaded) await cargarDevoluciones();
+  render();
+}
+
+async function cargarDevoluciones(){
+  if(!USE_SHEETS) return;
+  try{
+    const { data, error } = await sb.from("devoluciones").select("*").order("created_at",{ascending:false});
+    if(error) throw error;
+    S.devoluciones = toCamelRows(data);
+    S.devolucionesLoaded = true;
+  }catch(e){ console.warn("Cargar devoluciones:",e); }
+}
+
+async function submitDevolucion(){
+  const motivo = ($("devol-motivo")?.value||S.devolucionForm.motivo||"").trim();
+  if(!motivo){ S.devolucionForm.err="Contá el motivo de la devolución."; render(); return; }
+  const fotoFile = $("devol-foto")?.files?.[0] || null;
+  if(!fotoFile){ S.devolucionForm.err="La foto es obligatoria para una devolución."; render(); return; }
+
+  S.devolucionForm.loading = true; S.devolucionForm.err=""; renderNow();
+
+  const fotoUrl = await subirArchivo(fotoFile, "devoluciones");
+  const u = S.user;
+  const payload = toSnakeRow({
+    sucursal: u.area||"",
+    motivo, fotoUrl,
+    estado: "Pendiente",
+    creadoPor: u.nombre||u.area||"",
+  });
+  try{
+    const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
+    if(error) throw error;
+    S.devoluciones = [toCamelRow(data), ...S.devoluciones];
+    S.devolucionForm = {motivo:"", loading:false, err:""};
+    toast("📦 Devolución enviada");
+  }catch(e){
+    S.devolucionForm.loading = false;
+    S.devolucionForm.err = "No se pudo enviar — probá de nuevo.";
+  }
+  render();
+}
+
+function abrirAccionDevolucion(id, tipo){
+  S.devolucionAccionId = id;
+  S.devolucionAccionTipo = tipo; // "confirmar" | "noConfirmar"
+  S.devolucionAccionTexto = "";
+  render();
+}
+function cancelarAccionDevolucion(){
+  S.devolucionAccionId = "";
+  S.devolucionAccionTipo = "";
+  render();
+}
+
+async function confirmarAccionDevolucion(){
+  const id = S.devolucionAccionId;
+  const esConfirmar = S.devolucionAccionTipo==="confirmar";
+  const texto = ($("devol-accion-texto")?.value||S.devolucionAccionTexto||"").trim();
+  if(!esConfirmar && !texto){ toast("Contá qué faltó para poder cerrarla","warn"); return; }
+
+  const nowTs = now();
+  const changes = {
+    estado: esConfirmar?"Confirmada":"No confirmada",
+    respuesta: texto || (esConfirmar?"Confirmada, todo en orden.":""),
+    respondidoPor: S.user.nombre||S.user.area||"",
+    updatedAt: nowTs,
+  };
+  try{
+    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",id);
+    if(error) throw error;
+    S.devoluciones = S.devoluciones.map(d=>d.id===id?{...d,...changes}:d);
+    S.devolucionAccionId = ""; S.devolucionAccionTipo = "";
+    toast(esConfirmar?"✅ Devolución confirmada":"⚠️ Devolución cerrada como no confirmada");
+  }catch(e){ toast("⚠️ No se pudo actualizar","warn"); }
+  render();
+}
+
+function renderDevoluciones(){
+  const u = S.user;
+  const esGestor = esGestorDevolucion();
+  let lista = S.devoluciones;
+  if(!esGestor){
+    const norm = s=>(s||"").trim().toLowerCase();
+    lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
+  } else {
+    if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
+    if(S.devolucionFiltroEstado)   lista = lista.filter(d=>d.estado===S.devolucionFiltroEstado);
+  }
+  const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
+  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : "var(--amber)";
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">📦 Devoluciones</h2>
+        <p style="color:var(--muted);font-size:13px">${esGestor?"Todas las sucursales":escH(u.area||"")}</p>
+      </div>
+      <button class="btn btn-ghost btn-md" onclick="S.vista='main';render()">← Volver</button>
+    </div>
+
+    ${!esGestor?`
+    <div class="card" style="margin-bottom:20px">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
+      <div class="field">
+        <textarea id="devol-motivo" rows="3" placeholder="Motivo de la devolución..."
+          oninput="S.devolucionForm.motivo=this.value">${escH(S.devolucionForm.motivo||"")}</textarea>
+      </div>
+      ${S.devolucionForm.err?`<span class="err-msg">${escH(S.devolucionForm.err)}</span>`:""}
+      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
+        <input id="devol-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px"/>
+        <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
+          ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
+        </button>
+      </div>
+    </div>`:""}
+
+    ${esGestor?`
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <select class="inp" style="width:200px" onchange="S.devolucionFiltroSucursal=this.value;render()">
+        <option value="">Todas las sucursales</option>
+        ${sucursalesUnicas.map(o=>`<option ${S.devolucionFiltroSucursal===o?"selected":""}>${escH(o)}</option>`).join("")}
+      </select>
+      <select class="inp" style="width:180px" onchange="S.devolucionFiltroEstado=this.value;render()">
+        <option value="">Todos los estados</option>
+        <option ${S.devolucionFiltroEstado==="Pendiente"?"selected":""}>Pendiente</option>
+        <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
+        <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
+      </select>
+    </div>`:""}
+
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay devoluciones${S.devolucionFiltroSucursal||S.devolucionFiltroEstado?" con ese filtro":""}.</p>`:""}
+      ${lista.map(d=>`
+        <div class="card" style="padding:14px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+            <div>
+              <strong>${escH(d.sucursal||"—")}</strong>
+              <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)} · ${escH(d.creadoPor||"—")}</span>
+            </div>
+            ${badge(d.estado, colorEstado(d.estado))}
+          </div>
+          <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
+          ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
+          ${d.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(d.respondidoPor||"—")}):</strong> ${escH(d.respuesta)}</div>`:""}
+          ${!d.respuesta && d.estado!=="Pendiente"?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
+          ${!esGestor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
+          ${esGestor && d.estado==="Pendiente"?`
+            ${S.devolucionAccionId===d.id?`
+            <div class="field" style="margin-top:10px">
+              <textarea id="devol-accion-texto" rows="2" placeholder="${S.devolucionAccionTipo==='confirmar'?'Comentario (opcional)...':'¿Qué faltó? (obligatorio)'}"
+                oninput="S.devolucionAccionTexto=this.value">${escH(S.devolucionAccionTexto||"")}</textarea>
+              <div style="display:flex;gap:8px;margin-top:6px;justify-content:flex-end">
+                <button class="btn btn-ghost btn-sm" onclick="cancelarAccionDevolucion()">Cancelar</button>
+                <button class="btn ${S.devolucionAccionTipo==='confirmar'?'btn-success':'btn-danger'} btn-sm" onclick="confirmarAccionDevolucion()">
+                  ${S.devolucionAccionTipo==='confirmar'?'✅ Confirmar':'✕ No confirmar y cerrar'}
+                </button>
+              </div>
+            </div>`:`
+            <div style="display:flex;gap:8px;margin-top:10px">
+              <button class="btn btn-success btn-sm" onclick="abrirAccionDevolucion('${escH(d.id)}','confirmar')">✅ Confirmar</button>
+              <button class="btn btn-danger btn-sm" onclick="abrirAccionDevolucion('${escH(d.id)}','noConfirmar')">✕ No confirmar</button>
+            </div>
+            `}`:""}
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+
 // Para SUCURSAL: solo necesita el nombre de la sucursal como usuario, sin pass
 function buscarUsuario(usuario, password){
   const lista = USE_SHEETS ? S.usuarios : DEMO_USUARIOS;
@@ -1063,6 +1305,7 @@ function renderApp(){
 
   const mainContent = S.loading ? `<div class="loading-center"><div class="spin-circle"></div><span>Cargando datos...</span></div>`
     : S.vista==="quejas"         ? renderQuejas()
+    : S.vista==="devoluciones"   ? renderDevoluciones()
     : u.rol==="logistica"      ? renderLogistica()
     : u.rol==="repartidor"     ? renderRepartidor()
     : u.rol==="planificacion"  ? renderPlanificacion()
@@ -1100,6 +1343,14 @@ function renderApp(){
         💬 <span style="display:none" class="quejas-lbl">Quejas</span>${S.quejas.filter(q=>q.estado==="Pendiente").length>0 && esLogisticaOTesoreria()?` (${S.quejas.filter(q=>q.estado==="Pendiente").length})`:""}
       </button>
       <style>@media(min-width:480px){.quejas-lbl{display:inline!important}}</style>
+      ${puedeVerDevoluciones()?`
+      <!-- Separador -->
+      <span style="color:var(--border);font-size:16px">|</span>
+      <!-- Devoluciones -->
+      <button class="btn ${S.vista==="devoluciones"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirDevoluciones()">
+        📦 <span style="display:none" class="devol-lbl">Devoluciones</span>${S.devoluciones.filter(d=>d.estado==="Pendiente").length>0 && esGestorDevolucion()?` (${S.devoluciones.filter(d=>d.estado==="Pendiente").length})`:""}
+      </button>
+      <style>@media(min-width:480px){.devol-lbl{display:inline!important}}</style>`:""}
       <!-- Separador -->
       <span style="color:var(--border);font-size:16px">|</span>
       <!-- Nombre usuario -->
