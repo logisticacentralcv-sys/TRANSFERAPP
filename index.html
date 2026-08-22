@@ -396,7 +396,7 @@ let S = {
   vista: "main", // "main" | "quejas"
   quejas: [],
   quejasLoaded: false,
-  quejaForm: {texto:"", loading:false, err:""},
+  quejaForm: {texto:"", area:"", loading:false, err:""},
   quejaFiltroSucursal: "",
   quejaFiltroEstado: "",
   quejaResponderId: "",
@@ -404,7 +404,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {motivo:"", loading:false, err:""},
+  devolucionForm: {motivo:"", detalle:"", loading:false, err:""},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
@@ -638,8 +638,35 @@ async function sheetsLoadAll(){
 // ══════════════════════════════════════════════════════════
 //  QUEJAS
 // ══════════════════════════════════════════════════════════
+// Áreas a las que se puede dirigir una queja, con un ejemplo de qué tipo
+// de problema le corresponde a cada una (se muestra como ayuda al elegir).
+const AREAS_QUEJA = {
+  "PRODUCCION_CALIDAD": {
+    label: "Producción / Calidad",
+    ejemplo: "Referí la queja a Producción o Calidad si: la mercadería tiene olor o color sospechoso, o si está mal envasada o mal etiquetada.",
+  },
+  "PLANIFICACION": {
+    label: "Planificación",
+    ejemplo: "Referí la queja a Planificación si: la cantidad que se envió coincide con la planilla pero de todas formas te parece poco o excesivo, o si tenés una transferencia planificada pero no contás con el stock suficiente.",
+  },
+  "LOGISTICA": {
+    label: "Logística",
+    ejemplo: "Referí la queja a Logística si: la mercadería llegó dañada o en malas condiciones, no se bajó la cantidad planificada, o hubo un inconveniente con un repartidor.",
+  },
+};
+
 function esLogisticaOTesoreria(){
   return S.user?.rol==="logistica" || S.user?.rol==="tesoreria";
+}
+// Qué área de quejas gestiona el usuario actual (o null si ninguna)
+function areaGestionadaPorUsuario(){
+  const u = S.user;
+  if(!u) return null;
+  if(u.rol==="logistica") return "LOGISTICA";
+  const area = normSinTildes(u.area);
+  if(["produccion","calidad"].includes(area)) return "PRODUCCION_CALIDAD";
+  if(area==="planificacion") return "PLANIFICACION";
+  return null;
 }
 
 async function abrirQuejas(){
@@ -709,6 +736,8 @@ async function subirArchivo(file, carpeta){
 async function subirFotoQueja(file){ return subirArchivo(file, "quejas"); }
 
 async function submitQueja(){
+  const areaDestino = ($("queja-area")?.value||S.quejaForm.area||"").trim();
+  if(!areaDestino){ S.quejaForm.err="Elegí a qué área va dirigida."; render(); return; }
   const texto = ($("queja-texto")?.value||S.quejaForm.texto||"").trim();
   if(!texto){ S.quejaForm.err="Escribí la queja."; render(); return; }
   // Leer el archivo ANTES de redibujar — el spinner de "loading" redibuja
@@ -723,7 +752,7 @@ async function submitQueja(){
   const payload = toSnakeRow({
     sucursal: u.rol==="sucursal" ? u.area : "",
     area:     u.rol!=="sucursal" ? u.area : "",
-    texto, fotoUrl,
+    texto, fotoUrl, areaDestino,
     estado: "Pendiente",
     creadoPor: u.nombre||u.area||"",
   });
@@ -731,7 +760,7 @@ async function submitQueja(){
     const { data, error } = await sb.from("quejas").insert(payload).select().single();
     if(error) throw error;
     S.quejas = [toCamelRow(data), ...S.quejas];
-    S.quejaForm = {texto:"", loading:false, err:""};
+    S.quejaForm = {texto:"", area:"", loading:false, err:""};
     toast("💬 Queja enviada");
   }catch(e){
     S.quejaForm.loading = false;
@@ -762,24 +791,27 @@ async function marcarQuejaResuelta(id){
 
 function renderQuejas(){
   const u = S.user;
-  const esGestor = esLogisticaOTesoreria();
+  const areaGestion = areaGestionadaPorUsuario();
+  const esGestor = !!areaGestion;
   let lista = S.quejas;
   if(!esGestor){
-    // cada sucursal/área ve solo las suyas
+    // cada sucursal/área ve solo las que ella misma cargó
     const norm = s=>(s||"").trim().toLowerCase();
     lista = lista.filter(q => norm(q.sucursal||q.area)===norm(u.area));
   } else {
+    // cada área gestora ve SOLO lo que le fue dirigido a ella
+    lista = lista.filter(q => q.areaDestino===areaGestion);
     if(S.quejaFiltroSucursal) lista = lista.filter(q=>(q.sucursal||q.area)===S.quejaFiltroSucursal);
     if(S.quejaFiltroEstado)   lista = lista.filter(q=>q.estado===S.quejaFiltroEstado);
   }
-  const origenesUnicos = [...new Set(S.quejas.map(q=>q.sucursal||q.area).filter(Boolean))].sort();
+  const origenesUnicos = [...new Set(S.quejas.filter(q=>!esGestor||q.areaDestino===areaGestion).map(q=>q.sucursal||q.area).filter(Boolean))].sort();
 
   return `
   <div style="animation:fadeUp .3s ease">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div>
         <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">💬 Quejas</h2>
-        <p style="color:var(--muted);font-size:13px">${esGestor?"Todas las sucursales y áreas":escH(u.area||"")}</p>
+        <p style="color:var(--muted);font-size:13px">${esGestor?"Dirigidas a "+(AREAS_QUEJA[areaGestion]?.label||areaGestion):escH(u.area||"")}</p>
       </div>
       <button class="btn btn-ghost btn-md" onclick="S.vista='main';render()">← Volver</button>
     </div>
@@ -787,6 +819,14 @@ function renderQuejas(){
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva queja</h3>
       <div class="field">
+        <label>¿A qué área es esta queja? <span class="req">*</span></label>
+        <select id="queja-area" class="inp" onchange="S.quejaForm.area=this.value;render()">
+          <option value="">— Elegí un área —</option>
+          ${Object.entries(AREAS_QUEJA).map(([k,v])=>`<option value="${k}" ${S.quejaForm.area===k?"selected":""}>${v.label}</option>`).join("")}
+        </select>
+      </div>
+      ${S.quejaForm.area?`<div class="alert-info" style="margin-top:8px;font-size:13px">${escH(AREAS_QUEJA[S.quejaForm.area].ejemplo)}</div>`:""}
+      <div class="field" style="margin-top:12px">
         <textarea id="queja-texto" rows="3" placeholder="Contanos qué pasó..."
           oninput="S.quejaForm.texto=this.value">${escH(S.quejaForm.texto||"")}</textarea>
       </div>
@@ -820,6 +860,7 @@ function renderQuejas(){
             <div>
               <strong>${escH(q.sucursal||q.area||"—")}</strong>
               <span style="color:var(--faint);font-size:12px"> · ${fdt(q.createdAt)} · ${escH(q.creadoPor||"—")}</span>
+              ${q.areaDestino?`<div style="margin-top:2px">${badge(AREAS_QUEJA[q.areaDestino]?.label||q.areaDestino,"var(--blue)")}</div>`:""}
             </div>
             ${badge(q.estado, q.estado==="Resuelta"?"#1fa86a":"var(--amber)")}
           </div>
@@ -849,20 +890,20 @@ function renderQuejas(){
 function normSinTildes(s){
   return (s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
-// Gestiona devoluciones: Logística, Producción, Fábrica o Depósito.
-// El recepcionista queda afuera a propósito — él no recibe devoluciones.
+// Gestiona devoluciones: Logística, Planificación, Producción o Calidad.
 function esGestorDevolucion(){
   const u = S.user;
   if(!u || u.rol==="recepcionista") return false;
   if(u.rol==="logistica") return true;
   const area = normSinTildes(u.area);
-  return ["produccion","fabrica","deposito"].includes(area);
+  return ["planificacion","produccion","calidad"].includes(area);
 }
 function puedeVerDevoluciones(){
   const u = S.user;
   if(!u) return false;
   return u.rol==="sucursal" || esGestorDevolucion();
 }
+const MOTIVOS_DEVOLUCION = ["Vencido","Rotura/pérdida de vacío","Sin etiqueta","Mal olor o color","Otro"];
 
 async function abrirDevoluciones(){
   S.vista = "devoluciones";
@@ -882,13 +923,16 @@ async function cargarDevoluciones(){
 }
 
 async function submitDevolucion(){
-  const motivo = ($("devol-motivo")?.value||S.devolucionForm.motivo||"").trim();
-  if(!motivo){ S.devolucionForm.err="Contá el motivo de la devolución."; render(); return; }
+  const motivoBase = ($("devol-motivo-select")?.value||S.devolucionForm.motivo||"").trim();
+  if(!motivoBase){ S.devolucionForm.err="Elegí el motivo de la devolución."; render(); return; }
+  const detalle = ($("devol-detalle")?.value||S.devolucionForm.detalle||"").trim();
+  if(motivoBase==="Otro" && !detalle){ S.devolucionForm.err="Contá el detalle — elegiste 'Otro'."; render(); return; }
   const fotoFile = $("devol-foto")?.files?.[0] || null;
   if(!fotoFile){ S.devolucionForm.err="La foto es obligatoria para una devolución."; render(); return; }
 
   S.devolucionForm.loading = true; S.devolucionForm.err=""; renderNow();
 
+  const motivo = detalle ? `${motivoBase} — ${detalle}` : motivoBase;
   const fotoUrl = await subirArchivo(fotoFile, "devoluciones");
   const u = S.user;
   const payload = toSnakeRow({
@@ -901,7 +945,7 @@ async function submitDevolucion(){
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {motivo:"", loading:false, err:""};
+    S.devolucionForm = {motivo:"", detalle:"", loading:false, err:""};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -973,8 +1017,16 @@ function renderDevoluciones(){
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
       <div class="field">
-        <textarea id="devol-motivo" rows="3" placeholder="Motivo de la devolución..."
-          oninput="S.devolucionForm.motivo=this.value">${escH(S.devolucionForm.motivo||"")}</textarea>
+        <label>Motivo <span class="req">*</span></label>
+        <select id="devol-motivo-select" class="inp" onchange="S.devolucionForm.motivo=this.value;render()">
+          <option value="">— Elegí un motivo —</option>
+          ${MOTIVOS_DEVOLUCION.map(m=>`<option ${S.devolucionForm.motivo===m?"selected":""}>${m}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="margin-top:12px">
+        <label>Detalle ${S.devolucionForm.motivo==="Otro"?'<span class="req">*</span>':'<span style="color:var(--faint);font-size:12px">(opcional)</span>'}</label>
+        <textarea id="devol-detalle" rows="2" placeholder="Contanos más si hace falta..."
+          oninput="S.devolucionForm.detalle=this.value">${escH(S.devolucionForm.detalle||"")}</textarea>
       </div>
       ${S.devolucionForm.err?`<span class="err-msg">${escH(S.devolucionForm.err)}</span>`:""}
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
@@ -1340,7 +1392,7 @@ function renderApp(){
       <span style="color:var(--border);font-size:16px">|</span>
       <!-- Quejas -->
       <button class="btn ${S.vista==="quejas"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirQuejas()">
-        💬 <span style="display:none" class="quejas-lbl">Quejas</span>${S.quejas.filter(q=>q.estado==="Pendiente").length>0 && esLogisticaOTesoreria()?` (${S.quejas.filter(q=>q.estado==="Pendiente").length})`:""}
+        💬 <span style="display:none" class="quejas-lbl">Quejas</span>${(()=>{const ag=areaGestionadaPorUsuario();const n=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;return n>0?` (${n})`:"";})()}
       </button>
       <style>@media(min-width:480px){.quejas-lbl{display:inline!important}}</style>
       ${puedeVerDevoluciones()?`
