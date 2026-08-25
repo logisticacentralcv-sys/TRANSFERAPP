@@ -396,7 +396,7 @@ let S = {
   vista: "main", // "main" | "quejas"
   quejas: [],
   quejasLoaded: false,
-  quejaForm: {texto:"", area:"", loading:false, err:""},
+  quejaForm: {texto:"", area:"", motivo:"", loading:false, err:""},
   quejaFiltroSucursal: "",
   quejaFiltroEstado: "",
   quejaResponderId: "",
@@ -410,9 +410,13 @@ let S = {
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
   devolucionAccionTexto: "",
+  adminTab: "solicitudes",
+  usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
+  adminFiltroTexto: "",
   repSeleccion: new Set(),
   modoSeleccionRep: false,
   tomarVariasModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
+  dejarBolsinesModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
 
   // UI – filtros repartidor
   fRepRecorrido:"",
@@ -653,6 +657,21 @@ const AREAS_QUEJA = {
     label: "Logística",
     ejemplo: "Referí la queja a Logística si: la mercadería llegó dañada o en malas condiciones, no se bajó la cantidad planificada, o hubo un inconveniente con un repartidor.",
   },
+  "ADMINISTRACION": { label: "Administración", ejemplo: "Referí la queja a Administración si tiene que ver con algo administrativo (facturación, documentación, etc.)." },
+  "COMPRAS":        { label: "Compras",        ejemplo: "Referí la queja a Compras si tiene que ver con lo que se compró o con un proveedor." },
+  "RRHH":           { label: "Recursos Humanos", ejemplo: "Referí la queja a RRHH si tiene que ver con personal." },
+  "PRECIOS":        { label: "Precios",         ejemplo: "Referí la queja a Precios si tiene que ver con un precio cargado incorrectamente." },
+};
+
+// Motivos estandarizados por área — "Otra"/"Otro" siempre permite detalle libre.
+const MOTIVOS_QUEJA = {
+  "LOGISTICA": ["Mercadería rota o no apta","Pedido incompleto","Diferencias entre la cantidad planificada y lo entregado","Devolución no levantada","Otra"],
+  "PLANIFICACION": ["Mercadería insuficiente","Rompí stock","Sobrestock","Otra"],
+  "PRODUCCION_CALIDAD": ["Problema con cerdo","Problema con milanesas","Problemas con congelados","Otro"],
+  "ADMINISTRACION": ["Otra"],
+  "COMPRAS": ["Otra"],
+  "RRHH": ["Otra"],
+  "PRECIOS": ["Otra"],
 };
 
 function esLogisticaOTesoreria(){
@@ -662,10 +681,15 @@ function esLogisticaOTesoreria(){
 function areaGestionadaPorUsuario(){
   const u = S.user;
   if(!u) return null;
+  if(u.rol==="admin") return "TODAS";
   if(u.rol==="logistica") return "LOGISTICA";
   const area = normSinTildes(u.area);
   if(["produccion","calidad"].includes(area)) return "PRODUCCION_CALIDAD";
-  if(area==="planificacion") return "PLANIFICACION";
+  if(["planificacion","planificador fresco","planificacion fresco"].includes(area)) return "PLANIFICACION";
+  if(area==="administracion") return "ADMINISTRACION";
+  if(area==="compras") return "COMPRAS";
+  if(["rrhh","recursos humanos"].includes(area)) return "RRHH";
+  if(area==="precios") return "PRECIOS";
   return null;
 }
 
@@ -738,14 +762,17 @@ async function subirFotoQueja(file){ return subirArchivo(file, "quejas"); }
 async function submitQueja(){
   const areaDestino = ($("queja-area")?.value||S.quejaForm.area||"").trim();
   if(!areaDestino){ S.quejaForm.err="Elegí a qué área va dirigida."; render(); return; }
-  const texto = ($("queja-texto")?.value||S.quejaForm.texto||"").trim();
-  if(!texto){ S.quejaForm.err="Escribí la queja."; render(); return; }
+  const motivo = ($("queja-motivo")?.value||S.quejaForm.motivo||"").trim();
+  if(!motivo){ S.quejaForm.err="Elegí un motivo."; render(); return; }
+  const detalle = ($("queja-texto")?.value||S.quejaForm.texto||"").trim();
+  if((motivo==="Otra"||motivo==="Otro") && !detalle){ S.quejaForm.err="Contá el detalle — elegiste 'Otra/Otro'."; render(); return; }
   // Leer el archivo ANTES de redibujar — el spinner de "loading" redibuja
   // la pantalla y eso resetea el <input type="file">, perdiendo la foto.
   const fotoFile = $("queja-foto")?.files?.[0] || null;
 
   S.quejaForm.loading = true; S.quejaForm.err=""; renderNow();
 
+  const texto = detalle ? `${motivo} — ${detalle}` : motivo;
   const fotoUrl = await subirFotoQueja(fotoFile);
 
   const u = S.user;
@@ -760,7 +787,7 @@ async function submitQueja(){
     const { data, error } = await sb.from("quejas").insert(payload).select().single();
     if(error) throw error;
     S.quejas = [toCamelRow(data), ...S.quejas];
-    S.quejaForm = {texto:"", area:"", loading:false, err:""};
+    S.quejaForm = {texto:"", area:"", motivo:"", loading:false, err:""};
     toast("💬 Queja enviada");
   }catch(e){
     S.quejaForm.loading = false;
@@ -800,7 +827,7 @@ function renderQuejas(){
     lista = lista.filter(q => norm(q.sucursal||q.area)===norm(u.area));
   } else {
     // cada área gestora ve SOLO lo que le fue dirigido a ella
-    lista = lista.filter(q => q.areaDestino===areaGestion);
+    if(areaGestion!=="TODAS") lista = lista.filter(q => q.areaDestino===areaGestion);
     if(S.quejaFiltroSucursal) lista = lista.filter(q=>(q.sucursal||q.area)===S.quejaFiltroSucursal);
     if(S.quejaFiltroEstado)   lista = lista.filter(q=>q.estado===S.quejaFiltroEstado);
   }
@@ -811,7 +838,7 @@ function renderQuejas(){
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div>
         <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">💬 Quejas</h2>
-        <p style="color:var(--muted);font-size:13px">${esGestor?"Dirigidas a "+(AREAS_QUEJA[areaGestion]?.label||areaGestion):escH(u.area||"")}</p>
+        <p style="color:var(--muted);font-size:13px">${esGestor?(areaGestion==="TODAS"?"Todas las áreas":"Dirigidas a "+(AREAS_QUEJA[areaGestion]?.label||areaGestion)):escH(u.area||"")}</p>
       </div>
       <button class="btn btn-ghost btn-md" onclick="S.vista='main';render()">← Volver</button>
     </div>
@@ -826,7 +853,16 @@ function renderQuejas(){
         </select>
       </div>
       ${S.quejaForm.area?`<div class="alert-info" style="margin-top:8px;font-size:13px">${escH(AREAS_QUEJA[S.quejaForm.area].ejemplo)}</div>`:""}
+      ${S.quejaForm.area?`
       <div class="field" style="margin-top:12px">
+        <label>Motivo <span class="req">*</span></label>
+        <select id="queja-motivo" class="inp" onchange="S.quejaForm.motivo=this.value;render()">
+          <option value="">— Elegí un motivo —</option>
+          ${(MOTIVOS_QUEJA[S.quejaForm.area]||["Otra"]).map(m=>`<option ${S.quejaForm.motivo===m?"selected":""}>${m}</option>`).join("")}
+        </select>
+      </div>`:""}
+      <div class="field" style="margin-top:12px">
+        <label>Detalle ${(S.quejaForm.motivo==="Otra"||S.quejaForm.motivo==="Otro")?'<span class="req">*</span>':'<span style="color:var(--faint);font-size:12px">(opcional)</span>'}</label>
         <textarea id="queja-texto" rows="3" placeholder="Contanos qué pasó..."
           oninput="S.quejaForm.texto=this.value">${escH(S.quejaForm.texto||"")}</textarea>
       </div>
@@ -894,6 +930,7 @@ function normSinTildes(s){
 function esGestorDevolucion(){
   const u = S.user;
   if(!u || u.rol==="recepcionista") return false;
+  if(u.rol==="admin") return true;
   if(u.rol==="logistica") return true;
   const area = normSinTildes(u.area);
   return ["planificacion","produccion","calidad"].includes(area);
@@ -1213,14 +1250,33 @@ function seedData(){
 // en la misma tarea del event loop
 let _renderPending  = false;
 let _operacionEnCurso = false; // previene doble submit global
+let _ultimoHTML = ""; // último HTML pintado — para no redibujar si no cambió nada
+
+// Redibuja el DOM SOLO si el HTML generado es distinto al que ya está en
+// pantalla. Antes se reemplazaba innerHTML siempre que algo cambiara en
+// CUALQUIER parte de la app (por tiempo real), aunque no tuviera nada que
+// ver con lo que este usuario está mirando — eso causaba el "titileo"
+// (imágenes redecodificándose, scroll saltando) para todos los conectados
+// cada vez que cualquiera hacía cualquier cosa. Comparando el string antes
+// de tocar el DOM, un cambio irrelevante para esta pantalla no produce
+// ningún parpadeo.
+function aplicarRenderDOM(){
+  const el = $("app");
+  if(!el) return;
+  const html = (S.view==="login" ? renderLogin() : renderApp()) + renderLightbox();
+  if(html === _ultimoHTML) return; // nada visualmente distinto — no tocar el DOM
+  _ultimoHTML = html;
+  const scrollY = window.scrollY;
+  el.innerHTML = html;
+  window.scrollTo(0, scrollY);
+}
+
 function render(){
   if(_renderPending) return;
   _renderPending = true;
   requestAnimationFrame(()=>{
     _renderPending = false;
-    const el = $("app");
-    if(!el) return;
-    el.innerHTML = (S.view==="login" ? renderLogin() : renderApp()) + renderLightbox();
+    aplicarRenderDOM();
   });
 }
 
@@ -1228,9 +1284,7 @@ function render(){
 // (ej: loading spinner antes de una operación async)
 function renderNow(){
   _renderPending = false;
-  const el = $("app");
-  if(!el) return;
-  el.innerHTML = (S.view==="login" ? renderLogin() : renderApp()) + renderLightbox();
+  aplicarRenderDOM();
 }
 
 // ── Lightbox: ver una imagen ampliada, tocando afuera se cierra ──
@@ -1363,6 +1417,7 @@ function renderApp(){
     : u.rol==="planificacion"  ? renderPlanificacion()
     : u.rol==="recepcionista"  ? renderRecepcionista()
     : u.rol==="tesoreria"      ? renderTesoreria()
+    : u.rol==="admin"          ? renderAdmin()
     : renderSucursalArea();
 
   const lastUpd = S.lastRefresh
@@ -1657,6 +1712,257 @@ function renderTesoreria(){
 }
 
 // ── RECEPCIONISTA VIEW ───────────────────────────────────
+// ── ADMINISTRADOR — acceso total ─────────────────────────
+function renderAdmin(){
+  const u = S.user;
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+      <div>
+        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">🔑 Administrador</h2>
+        <p style="color:var(--muted);font-size:13px">Acceso total — solicitudes y usuarios</p>
+      </div>
+      <div class="tabs" style="margin-bottom:0">
+        <button class="tab ${S.adminTab==="solicitudes"?"active":""}" onclick="S.adminTab='solicitudes';render()">📋 Solicitudes</button>
+        <button class="tab ${S.adminTab==="usuarios"?"active":""}" onclick="S.adminTab='usuarios';render()">👤 Usuarios</button>
+      </div>
+    </div>
+    ${S.adminTab==="solicitudes"?renderAdminSolicitudes():renderAdminUsuarios()}
+  </div>`;
+}
+
+function renderAdminSolicitudes(){
+  const q = (S.adminFiltroTexto||"").trim().toLowerCase();
+  const lista = !q ? S.requests : S.requests.filter(r=>
+    (r.id||"").toLowerCase().includes(q) ||
+    (r.sucursal||r.area||"").toLowerCase().includes(q) ||
+    (r.destino||"").toLowerCase().includes(q) ||
+    (r.descripcion||"").toLowerCase().includes(q) ||
+    (r.solicitante||"").toLowerCase().includes(q)
+  );
+  return `
+    <div class="field" style="margin-bottom:14px;max-width:340px">
+      <input class="inp" placeholder="Buscar por N°, origen, destino, descripción..." value="${escH(S.adminFiltroTexto)}"
+        oninput="S.adminFiltroTexto=this.value;render()"/>
+    </div>
+    <div class="card-flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>N°</th><th>Fecha</th><th>Origen</th><th>Destino</th>
+            <th>Descripción</th><th>Cant.</th><th>Estado</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${lista.length===0?`<tr class="empty-row"><td colspan="8">Sin resultados</td></tr>`:""}
+            ${lista.map(r=>`<tr>
+              <td class="id-cell">${escH(r.id)}</td>
+              <td class="muted-cell">${fd(r.createdAt)}</td>
+              <td>${escH(origenLabel(r))}</td>
+              <td>${escH(r.destino)}</td>
+              <td><div class="trunc">${escH(r.descripcion)}</div></td>
+              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
+              <td>${estadoBadges(r)}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+                <button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Editar</button>
+                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="confirmarBorrarSolicitud('${escH(r.id)}')">🗑️</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+async function confirmarBorrarSolicitud(id){
+  if(!confirm(`¿Seguro que querés borrar la solicitud ${id}? Esto no se puede deshacer.`)) return;
+  try{
+    const { error } = await sb.from("solicitudes").delete().eq("id",id);
+    if(error) throw error;
+    S.requests = S.requests.filter(r=>r.id!==id);
+    toast(`🗑️ Solicitud ${id} borrada`);
+  }catch(e){ toast("⚠️ No se pudo borrar","warn"); }
+  render();
+}
+
+function renderAdminUsuarios(){
+  const q = (S.adminFiltroTexto||"").trim().toLowerCase();
+  const lista = !q ? S.usuarios : S.usuarios.filter(u=>
+    (u.usuario||"").toLowerCase().includes(q) ||
+    (u.nombre||"").toLowerCase().includes(q) ||
+    (u.area||"").toLowerCase().includes(q) ||
+    (u.tipo||"").toLowerCase().includes(q)
+  );
+  return `
+    <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <div class="field" style="margin-bottom:0;max-width:340px;flex:1">
+        <input class="inp" placeholder="Buscar por usuario, nombre, área, tipo..." value="${escH(S.adminFiltroTexto)}"
+          oninput="S.adminFiltroTexto=this.value;render()"/>
+      </div>
+      <button class="btn btn-success btn-md" onclick="abrirNuevoUsuario()">+ Nuevo usuario</button>
+    </div>
+    <div class="card-flush">
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Usuario</th><th>Tipo</th><th>Nombre</th><th>Área</th><th>DNI</th><th>Activo</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${lista.length===0?`<tr class="empty-row"><td colspan="7">Sin resultados</td></tr>`:""}
+            ${lista.map(us=>`<tr>
+              <td class="id-cell">${escH(us.usuario)}</td>
+              <td>${escH(us.tipo||"—")}</td>
+              <td>${escH(us.nombre||"—")}</td>
+              <td class="muted-cell">${escH(us.area||"—")}</td>
+              <td class="muted-cell">${escH(us.dni||"—")}</td>
+              <td>${badge(us.activo==="no"?"Inactivo":"Activo", us.activo==="no"?"var(--red)":"#1fa86a")}</td>
+              <td style="white-space:nowrap">
+                <button class="btn btn-primary btn-sm" onclick='abrirEditarUsuario(${JSON.stringify(us.usuario).replace(/'/g,"&#39;")})'>Editar</button>
+                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick='confirmarBorrarUsuario(${JSON.stringify(us.usuario).replace(/'/g,"&#39;")})'>🗑️</button>
+              </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+function abrirNuevoUsuario(){
+  S.usuarioForm = {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false};
+  S.modal = "usuarioForm";
+  render();
+}
+function abrirEditarUsuario(usuarioId){
+  const us = S.usuarios.find(x=>x.usuario===usuarioId);
+  if(!us) return;
+  S.usuarioForm = {
+    usuarioOriginal: us.usuario, usuario: us.usuario, password: us.password||"",
+    tipo: us.tipo||"", nombre: us.nombre||"", area: us.area||"", recorrido: us.recorrido||"",
+    dni: us.dni||"", email: us.email||"", activo: us.activo||"si", err:"", loading:false,
+  };
+  S.modal = "usuarioForm";
+  render();
+}
+
+const TIPOS_USUARIO = ["SUCURSAL","LOGISTICA","REPARTIDOR","AREA","PLANIFICACION","ADMINISTRACION","COMPRAS","TESORERIA","RECEPCIONISTA","ADMIN"];
+
+function renderUsuarioFormModal(){
+  const f = S.usuarioForm;
+  const esEdicion = !!f.usuarioOriginal;
+  return `
+  <div class="field">
+    <label>Usuario (login) <span class="req">*</span> ${esEdicion?'<span style="color:var(--faint);font-size:12px">(no se puede cambiar)</span>':""}</label>
+    <input id="uf-usuario" class="inp ${f.err&&f.err.usuario?"err":""}" value="${escH(f.usuario)}" ${esEdicion?"disabled":""}
+      oninput="S.usuarioForm.usuario=this.value"/>
+  </div>
+  <div class="g3" style="margin-top:10px">
+    <div class="field">
+      <label>Contraseña</label>
+      <input id="uf-password" class="inp" value="${escH(f.password)}" placeholder="(vacío = sin contraseña)" oninput="S.usuarioForm.password=this.value"/>
+    </div>
+    <div class="field">
+      <label>Tipo <span class="req">*</span></label>
+      <select id="uf-tipo" class="inp" onchange="S.usuarioForm.tipo=this.value">
+        <option value="">— Elegí —</option>
+        ${TIPOS_USUARIO.map(t=>`<option ${f.tipo===t?"selected":""}>${t}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field">
+      <label>Activo</label>
+      <select id="uf-activo" class="inp" onchange="S.usuarioForm.activo=this.value">
+        <option value="si" ${f.activo!=="no"?"selected":""}>Sí</option>
+        <option value="no" ${f.activo==="no"?"selected":""}>No</option>
+      </select>
+    </div>
+  </div>
+  <div class="g3" style="margin-top:10px">
+    <div class="field">
+      <label>Nombre</label>
+      <input id="uf-nombre" class="inp" value="${escH(f.nombre)}" oninput="S.usuarioForm.nombre=this.value"/>
+    </div>
+    <div class="field">
+      <label>Área</label>
+      <input id="uf-area" class="inp" value="${escH(f.area)}" oninput="S.usuarioForm.area=this.value"/>
+    </div>
+    <div class="field">
+      <label>DNI</label>
+      <input id="uf-dni" class="inp" value="${escH(f.dni)}" oninput="S.usuarioForm.dni=this.value"/>
+    </div>
+  </div>
+  <div class="g3" style="margin-top:10px">
+    <div class="field">
+      <label>Recorrido</label>
+      <input id="uf-recorrido" class="inp" value="${escH(f.recorrido)}" oninput="S.usuarioForm.recorrido=this.value"/>
+    </div>
+    <div class="field" style="grid-column:span 2">
+      <label>Email <span style="color:var(--faint);font-size:12px">(para avisos)</span></label>
+      <input id="uf-email" class="inp" value="${escH(f.email)}" oninput="S.usuarioForm.email=this.value"/>
+    </div>
+  </div>
+  ${f.err && typeof f.err==="string"?`<div class="err-msg" style="margin-top:10px">${escH(f.err)}</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="guardarUsuario()" ${f.loading?"disabled":""}>
+      ${f.loading?`<span class="spinner"></span> Guardando...`:"Guardar"}
+    </button>
+  </div>`;
+}
+
+async function guardarUsuario(){
+  const f = S.usuarioForm;
+  const usuario = ($("uf-usuario")?.value||f.usuario||"").trim();
+  const tipo = ($("uf-tipo")?.value||f.tipo||"").trim();
+  if(!usuario){ S.usuarioForm.err="El usuario (login) es obligatorio."; render(); return; }
+  if(!tipo){ S.usuarioForm.err="Elegí un tipo."; render(); return; }
+  // Si es alta nueva, chequear que no exista ya ese usuario
+  if(!f.usuarioOriginal && S.usuarios.some(u=>u.usuario===usuario)){
+    S.usuarioForm.err="Ya existe un usuario con ese login."; render(); return;
+  }
+
+  const datos = {
+    usuario,
+    password: $("uf-password")?.value||f.password||"",
+    tipo,
+    nombre: $("uf-nombre")?.value||f.nombre||"",
+    area: $("uf-area")?.value||f.area||"",
+    recorrido: $("uf-recorrido")?.value||f.recorrido||"",
+    dni: $("uf-dni")?.value||f.dni||"",
+    email: $("uf-email")?.value||f.email||"",
+    activo: $("uf-activo")?.value||f.activo||"si",
+  };
+
+  S.usuarioForm.loading = true; renderNow();
+  try{
+    if(f.usuarioOriginal){
+      const { error } = await sb.from("usuarios").update(datos).eq("usuario", f.usuarioOriginal);
+      if(error) throw error;
+      S.usuarios = S.usuarios.map(u=>u.usuario===f.usuarioOriginal?datos:u);
+      toast(`✅ Usuario ${usuario} actualizado`);
+    } else {
+      const { error } = await sb.from("usuarios").insert(datos);
+      if(error) throw error;
+      S.usuarios = [datos, ...S.usuarios];
+      toast(`✅ Usuario ${usuario} creado`);
+    }
+    S.modal = null;
+  }catch(e){
+    S.usuarioForm.loading = false;
+    S.usuarioForm.err = "No se pudo guardar — probá de nuevo.";
+  }
+  render();
+}
+
+async function confirmarBorrarUsuario(usuarioId){
+  if(!confirm(`¿Seguro que querés borrar el usuario "${usuarioId}"? Esto no se puede deshacer.`)) return;
+  try{
+    const { error } = await sb.from("usuarios").delete().eq("usuario", usuarioId);
+    if(error) throw error;
+    S.usuarios = S.usuarios.filter(u=>u.usuario!==usuarioId);
+    toast(`🗑️ Usuario ${usuarioId} borrado`);
+  }catch(e){ toast("⚠️ No se pudo borrar","warn"); }
+  render();
+}
+
 function renderRecepcionista(){
   const u = S.user;
 
@@ -2082,7 +2388,14 @@ function renderRepartidor(){
     ${S.modoSeleccionRep && S.repSeleccion.size>0?`
     <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
-      <button class="btn btn-warn btn-sm" onclick="openTomarVarias()">🤲 Tomar seleccionadas</button>
+      ${(()=>{
+        const sel=[...S.repSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
+        const nTomar = sel.filter(r=>["Lista para retirar","En fábrica"].includes(r.estado) || ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado))).length;
+        const nBolsin = sel.filter(r=>r.tipoPedido==="bolsin" && r.estado==="En tránsito").length;
+        return `
+        ${nTomar>0?`<button class="btn btn-warn btn-sm" onclick="openTomarVarias()">🤲 Tomar (${nTomar})</button>`:""}
+        ${nBolsin>0?`<button class="btn btn-teal btn-sm" onclick="openDejarBolsinesVarios()">📦 Dejar bolsines (${nBolsin})</button>`:""}`;
+      })()}
       <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
     </div>`:""}
     <div class="del-grid">
@@ -2102,6 +2415,10 @@ function renderRepartidor(){
         const puedDejarFab   = estaEnTransito && pasaPorFabrica && !r.fabricaAt;
         // Entregar: tránsito directo O segunda etapa (ya salió de fábrica)
         const puedeEntregar  = estaEnTransito && (!pasaPorFabrica || yaEsSegundaEtapa);
+        // Bolsines listos para entregar: van sin palabra clave, así que se
+        // pueden dejar todos juntos con un solo DNI.
+        const puedeDejarBolsin = r.tipoPedido==="bolsin" && puedeEntregar;
+        const puedeSeleccionar = puedeTomar || puedeDejarBolsin;
         const puedeTomarFab  = r.estado === "En fábrica";
         const tomadaPor      = r.nombreQuienLevanto && estaEnTransito && !yaEsSegundaEtapa ? r.nombreQuienLevanto : "";
         const llevadoPor     = r.nombreQuienEntrego && yaEsSegundaEtapa ? r.nombreQuienEntrego : "";
@@ -2113,7 +2430,7 @@ function renderRepartidor(){
             <!-- Header -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
               <div style="display:flex;align-items:flex-start;gap:8px">
-                ${S.modoSeleccionRep && puedeTomar?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.repSeleccion.has(r.id)?"checked":""} onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
+                ${S.modoSeleccionRep && puedeSeleccionar?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.repSeleccion.has(r.id)?"checked":""} onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
                 <div>
                   <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
                   <div style="font-weight:600">${escH(origenLabel(r))}</div>
@@ -2244,6 +2561,7 @@ function renderModals(){
   if(S.modal==="dniConfirm")return wrapModal("m",escH(S.dniModal.title),renderDniModal(),400);
   if(S.modal==="tomar")     return wrapModal("m","Tomar transferencia",renderTomarModal(),420);
   if(S.modal==="tomarVarias") return wrapModal("m","Tomar varias transferencias",renderTomarVariasModal(),420);
+  if(S.modal==="dejarBolsinesVarios") return wrapModal("m","Dejar bolsines",renderDejarBolsinesModal(),420);
   if(S.modal==="fabrica")   return wrapModal("m","Dejar en fábrica",renderFabricaModal(),420);
   if(S.modal==="entrega")   return wrapModal("m","Confirmar entrega",renderEntregaModal(),420);
   if(S.modal==="codigo")    return wrapModal("m","Confirmar recepción — Sucursal",renderCodigoModal(),420);
@@ -2262,6 +2580,7 @@ function renderModals(){
   if(S.modal==="cambioEstadoMasivo") return wrapModal("m","Confirmar cambio de estado",renderCambioEstadoMasivoModal(),420);
   if(S.modal==="reprogramarCopia") return wrapModal("m","Crear copia reprogramada",renderReprogramarCopiaModal(),420);
   if(S.modal==="noMeLlego") return wrapModal("m","No me llegó",renderNoMeLlegoModal(),420);
+  if(S.modal==="usuarioForm") return wrapModal("m",S.usuarioForm.usuarioOriginal?"Editar usuario":"Nuevo usuario",renderUsuarioFormModal(),460);
   return "";
 }
 
@@ -2356,7 +2675,8 @@ function renderDetalle(){
   const r=S.requests.find(x=>x.id===S.selId);
   if(!r) return "<p>No encontrado</p>";
 
-  // Solo logística ve los DNI completos y horas internas
+  // Logística ve horas internas; el DNI de nadie se muestra en ningún lado
+  // — el DNI solo sirve para firmar la acción, nunca para exhibirlo.
   const esLogistica   = S.user?.rol === "logistica";
   // Sucursal destino ve la hora de entrega (les corresponde saberla)
   const esDestinoView = !esLogistica && S.user?.area &&
@@ -2367,7 +2687,7 @@ function renderDetalle(){
 
   // Paso 1: Creación
   const metaCreacion = esLogistica
-    ? `${fdt(r.createdAt)} · ${solicitanteLabel(r)} · DNI: ${r.dniSolicitante||"—"}`
+    ? `${fdt(r.createdAt)} · ${solicitanteLabel(r)}`
     : `${fd(r.createdAt)} · ${solicitanteLabel(r)}`;
   steps.push({dot:S_COLOR["Pendiente"], title:"Solicitud creada", meta:metaCreacion});
 
@@ -2381,8 +2701,8 @@ function renderDetalle(){
                     : "Aprobada por Logística";
     const nombreLog = r.nombreLogistica || "Logística";
     const metaLog = esLogistica
-      // Logística: hora + quién aprobó + DNI + comentario
-      ? `${fdt(r.approvedAt||r.updatedAt)} · ${nombreLog} · DNI: ${r.dniLogistica||"—"}${r.comentario?" · "+r.comentario:""}`
+      // Logística: hora + quién aprobó + comentario (nunca DNI)
+      ? `${fdt(r.approvedAt||r.updatedAt)} · ${nombreLog}${r.comentario?" · "+r.comentario:""}`
       // Repartidor: SOLO la instrucción específica para ellos, nada más
       : S.user?.rol==="repartidor"
         ? r.comentarioRepartidor || ""
@@ -2409,7 +2729,7 @@ function renderDetalle(){
     const quienListo = r.nombreListoPor || "";
     const aclaracion = r.aclaracionListo ? ` · "${r.aclaracionListo}"` : "";
     const metaListo = esLogistica
-      ? `${r.listoAt?fdt(r.listoAt)+" · ":""}${quienListo||"—"}${r.dniListoPor?" · DNI: "+r.dniListoPor:""}${aclaracion}`
+      ? `${r.listoAt?fdt(r.listoAt)+" · ":""}${quienListo||"—"}${aclaracion}`
       // Repartidor ve el nombre para poder llamar
       : quienListo ? `${quienListo}${aclaracion}`
       : `Confirmada lista${aclaracion}`;
@@ -2424,7 +2744,7 @@ function renderDetalle(){
     const tsLev    = r.levantadoAt || "";
     const titleLev = esFabFlow ? "🚚 Levantado — viene a fábrica" : "🚚 Levantado — va al destino";
     const metaLev  = esLogistica
-      ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"} · DNI: ${r.dniRepartidor||"—"}`
+      ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"}`
       : quien ? `Por ${quien}` : "En camino";
     steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev});
   }
@@ -2434,7 +2754,7 @@ function renderDetalle(){
     const ts      = r.fabricaAt || r.updatedAt;
     const quien   = r.nombreQuienLevanto || "";
     const metaFab = esLogistica
-      ? `${fdt(ts)} · ${quien||"—"} · DNI: ${r.dniRepartidor||"—"}`
+      ? `${fdt(ts)} · ${quien||"—"}`
       : quien || "";
     steps.push({dot:S_COLOR["En fábrica"], title:"🏭 Llegó a fábrica", meta:metaFab});
   }
@@ -2443,7 +2763,7 @@ function renderDetalle(){
   if(esFabFlow && r.nombreQuienEntrego){
     const tsSal   = r.salidaFabricaAt || "";
     const metaSal = esLogistica
-      ? `${tsSal?fdt(tsSal)+" · ":""}${r.nombreQuienEntrego} · DNI: ${r.dniEntrega||"—"}`
+      ? `${tsSal?fdt(tsSal)+" · ":""}${r.nombreQuienEntrego}`
       : `Por ${r.nombreQuienEntrego}`;
     steps.push({dot:S_COLOR["En tránsito"], title:"🚚 Salió de fábrica → destino final", meta:metaSal});
   }
@@ -2451,7 +2771,7 @@ function renderDetalle(){
   // ── PASO 5a: No levantada ───────────────────────────────
   if(r.estado==="No levantada"){
     const meta = esLogistica
-      ? `${fdt(r.updatedAt)} · DNI: ${r.dniRepartidor||"—"} · ${r.comentario||""}`
+      ? `${fdt(r.updatedAt)} · ${r.comentario||""}`
       : r.comentario || "El repartidor no pudo levantar la transferencia";
     steps.push({dot:"#ff6b35", title:"⚠️ No pudo levantarse", meta});
   }
@@ -2459,7 +2779,7 @@ function renderDetalle(){
   // ── PASO 5b: No entregada ───────────────────────────────
   if(r.estado==="No entregada"){
     const meta = esLogistica
-      ? `${fdt(r.updatedAt)} · DNI: ${r.dniRepartidor||"—"} · ${r.comentario||""}`
+      ? `${fdt(r.updatedAt)} · ${r.comentario||""}`
       : r.comentario || "No se pudo entregar";
     steps.push({dot:S_COLOR["No entregada"], title:"⚠️ No pudo entregarse", meta});
   }
@@ -2468,7 +2788,7 @@ function renderDetalle(){
   if(r.estado==="Entregada (sin confirmar)"){
     const quienDejo = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
     const metaDejo = esLogistica
-      ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"} · DNI: ${r.dniEntrega||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
+      ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
       : `${quienDejo?"Por "+quienDejo:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
     steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
   }
@@ -2480,22 +2800,22 @@ function renderDetalle(){
     // la dejó el repartidor y cuándo la sucursal confirmó que la recibió.
     if(r.confirmadaSucursalAt){
       const metaDejo = esLogistica
-        ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"} · DNI: ${r.dniEntrega||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
+        ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
         : `${quienEntrego?"Por "+quienEntrego:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
       steps.push({dot:"#c98a1f", title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
       const metaConf = esLogistica
-        ? `${fdt(r.confirmadaSucursalAt)} · ${r.nombreQuienRecibio||"—"} · DNI: ${r.dniQuienRecibio||"—"}`
+        ? `${fdt(r.confirmadaSucursalAt)} · ${r.nombreQuienRecibio||"—"}`
         : `Confirmada${r.nombreQuienRecibio?" por "+r.nombreQuienRecibio:""}`;
       steps.push({dot:"#34d399", title:"✅ Confirmada por la sucursal", meta:metaConf});
     } else {
       const metaEntr = esLogistica
-        ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"} · DNI: ${r.dniEntrega||r.dniRepartidor||"—"}`
+        ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}`
         : `Entregada${quienEntrego?" por "+quienEntrego:""}`;
       steps.push({dot:S_COLOR["Entregada"], title:"✅ Entregada en destino", meta:metaEntr});
-      // Quién recibió con DNI (sucursal destino)
+      // Quién recibió (sucursal destino) — solo nombre
       if(r.nombreQuienRecibio){
         const metaRec = esLogistica
-          ? `${r.nombreQuienRecibio} · DNI: ${r.dniQuienRecibio||"—"}`
+          ? r.nombreQuienRecibio
           : `Recibido por ${r.nombreQuienRecibio}`;
         steps.push({dot:"#a371f7", title:"🔑 Confirmado por la sucursal destino", meta:metaRec});
       }
@@ -2526,7 +2846,6 @@ function renderDetalle(){
   </div>
   ${drow("Origen",origenLabel(r))}
   ${drow("Solicitante",solicitanteLabel(r))}
-  ${esLogistica?drow("DNI Solicitante",r.dniSolicitante||"—",true):""}
   ${drow("Destino",r.destino)}
   ${(r.pasaPorFabrica===true||r.pasaPorFabrica==="true")?`
   <div style="background:#2de0c412;border-radius:6px;padding:8px 12px;margin:6px 0;font-size:13px;border-left:3px solid var(--teal)">
@@ -3307,8 +3626,87 @@ function toggleRepSeleccion(id, checked){
 
 function openTomarVarias(){
   if(S.repSeleccion.size===0) return;
-  S.tomarVariasModal = {ids:[...S.repSeleccion], dni:"", err:"", loading:false, nombreOk:""};
+  // Solo el subconjunto que realmente se puede "tomar" (recoger de origen) —
+  // si hay bolsines de entrega mezclados en la selección, esos se manejan
+  // con el otro botón (openDejarBolsinesVarios).
+  const ids = [...S.repSeleccion].filter(id=>{
+    const r = S.requests.find(x=>x.id===id);
+    if(!r) return false;
+    return ["Lista para retirar","En fábrica"].includes(r.estado) ||
+           ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado));
+  });
+  if(!ids.length) return;
+  S.tomarVariasModal = {ids, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "tomarVarias";
+  render();
+}
+
+function openDejarBolsinesVarios(){
+  if(S.repSeleccion.size===0) return;
+  const ids = [...S.repSeleccion].filter(id=>{
+    const r = S.requests.find(x=>x.id===id);
+    return r && r.tipoPedido==="bolsin" && r.estado==="En tránsito";
+  });
+  if(!ids.length) return;
+  S.dejarBolsinesModal = {ids, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "dejarBolsinesVarios";
+  render();
+}
+
+function renderDejarBolsinesModal(){
+  const d = S.dejarBolsinesModal;
+  return `
+  <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+    📦 Vas a dejar <strong>${d.ids.length} bolsines</strong> de una sola vez — no hace falta palabra clave para ninguno.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="db-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.dejarBolsinesModal.dni=this.value;S.dejarBolsinesModal.err=''"
+      onkeydown="if(event.key==='Enter')submitDejarBolsinesVarios()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="submitDejarBolsinesVarios()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Registrando...`:`📦 Dejar ${d.ids.length} bolsines`}
+    </button>
+  </div>`;
+}
+
+async function submitDejarBolsinesVarios(){
+  const d = S.dejarBolsinesModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.dejarBolsinesModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.dejarBolsinesModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+
+  const nowTs = now();
+  const changes = {estado:"Entregada", nombreQuienEntrego:check.nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
+  try{
+    const resultados = await Promise.all(
+      d.ids.map(id => sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id))
+    );
+    const fallidas = resultados.filter(r=>r.error);
+    if(fallidas.length===0){
+      const idsSet = new Set(d.ids);
+      S.requests = S.requests.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
+      S.repSeleccion = new Set();
+      S.modoSeleccionRep = false;
+      S.modal = null;
+      toast(`📦 ${check.nombre} dejó ${d.ids.length} bolsines`);
+    } else {
+      S.dejarBolsinesModal.loading=false;
+      S.dejarBolsinesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
+    }
+  } catch(e){
+    S.dejarBolsinesModal.loading=false;
+    S.dejarBolsinesModal.err = "No se pudo conectar — probá de nuevo.";
+  }
   render();
 }
 
@@ -3534,7 +3932,7 @@ async function submitCambioEstadoMasivo(){
     const nowTs = now();
     const cambios = d.ids.map(id=>{
       const x = S.requests.find(r=>r.id===id);
-      const nota = `Cambio masivo a "${d.estado}" por ${check.nombre} (DNI ${dni})`;
+      const nota = `Cambio masivo a "${d.estado}" por ${check.nombre}`;
       const comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
       return {id, changes:{estado:d.estado, comentario, updatedAt:nowTs}};
     });
@@ -4385,10 +4783,11 @@ async function submitNoEntrega(){
 }
 
 function openConfirmarEntrega(id){
-  // Si el destino es "Otra dirección" o no es una sucursal conocida → entrega directa sin código
+  // Si el destino es "Otra dirección", no es una sucursal conocida, o es un
+  // bolsín (nunca lleva palabra clave) → entrega directa sin código
   const r = S.requests.find(x=>x.id===id);
   if(!r) return;
-  if(esOtraDireccion(r.destino)){
+  if(esOtraDireccion(r.destino) || r.tipoPedido==="bolsin"){
     // Sin código — confirmación directa
     S.delivModal={id,dni:"",err:"",loading:false};
     S.modal="entrega";
@@ -4442,6 +4841,8 @@ async function doLogin(){
     S.user = {rol:"recepcionista", area:resultado.area||"Fábrica", nombre:resultado.nombre, dni:resultado.dni||""};
   } else if(tipo === "TESORERIA"){
     S.user = {rol:"tesoreria", area:"Tesorería", nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(tipo === "ADMIN"){
+    S.user = {rol:"admin", area:"Administrador", nombre:resultado.nombre, dni:resultado.dni||""};
   } else {
     S.loginErr = "Tipo de acceso no reconocido. Consultá con logística.";
     render(); return;
@@ -4477,6 +4878,28 @@ function startAutoRefresh(){
           : [fila, ...S.requests];
       }
       if(!S.modal) render(); // si hay un modal abierto, no interrumpir — se actualiza solo al cerrarlo
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"quejas"}, (payload)=>{
+      if(S.view!=="app" || !S.quejasLoaded) return;
+      if(payload.eventType==="DELETE"){
+        S.quejas = S.quejas.filter(q=>q.id!==payload.old.id);
+      } else {
+        const fila = toCamelRow(payload.new);
+        const existe = S.quejas.some(q=>q.id===fila.id);
+        S.quejas = existe ? S.quejas.map(q=>q.id===fila.id?fila:q) : [fila, ...S.quejas];
+      }
+      if(!S.modal) render();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"devoluciones"}, (payload)=>{
+      if(S.view!=="app" || !S.devolucionesLoaded) return;
+      if(payload.eventType==="DELETE"){
+        S.devoluciones = S.devoluciones.filter(d=>d.id!==payload.old.id);
+      } else {
+        const fila = toCamelRow(payload.new);
+        const existe = S.devoluciones.some(d=>d.id===fila.id);
+        S.devoluciones = existe ? S.devoluciones.map(d=>d.id===fila.id?fila:d) : [fila, ...S.devoluciones];
+      }
+      if(!S.modal) render();
     })
     .subscribe();
 }
