@@ -199,6 +199,7 @@ tr:hover td{background:var(--s2)}
 </head>
 <body>
 <div id="app"></div>
+<div id="app-modal"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 // ══════════════════════════════════════════════════════════
@@ -1250,25 +1251,35 @@ function seedData(){
 // en la misma tarea del event loop
 let _renderPending  = false;
 let _operacionEnCurso = false; // previene doble submit global
-let _ultimoHTML = ""; // último HTML pintado — para no redibujar si no cambió nada
+let _ultimoHTML = "";      // último fondo (tabla/pantalla) pintado
+let _ultimoHTMLModal = ""; // último modal+lightbox pintado
 
 // Redibuja el DOM SOLO si el HTML generado es distinto al que ya está en
-// pantalla. Antes se reemplazaba innerHTML siempre que algo cambiara en
-// CUALQUIER parte de la app (por tiempo real), aunque no tuviera nada que
-// ver con lo que este usuario está mirando — eso causaba el "titileo"
-// (imágenes redecodificándose, scroll saltando) para todos los conectados
-// cada vez que cualquiera hacía cualquier cosa. Comparando el string antes
-// de tocar el DOM, un cambio irrelevante para esta pantalla no produce
-// ningún parpadeo.
+// pantalla — y el FONDO y el MODAL se comparan y actualizan por separado
+// en dos contenedores distintos. Antes iban los dos pegados en un mismo
+// string: tocar cualquier botón del modal (estado, recorrido, etc.)
+// obligaba a redibujar TODA la pantalla de atrás también — de ahí el
+// "titileo" y que el scroll saltara al cerrar un modal. Ahora, mientras
+// hay un modal abierto, el fondo ni se toca (nunca cambia su HTML), así
+// que ni se entera de que el modal cambió.
 function aplicarRenderDOM(){
-  const el = $("app");
-  if(!el) return;
-  const html = (S.view==="login" ? renderLogin() : renderApp()) + renderLightbox();
-  if(html === _ultimoHTML) return; // nada visualmente distinto — no tocar el DOM
-  _ultimoHTML = html;
-  const scrollY = window.scrollY;
-  el.innerHTML = html;
-  window.scrollTo(0, scrollY);
+  const elBg = $("app");
+  const elModal = $("app-modal");
+  if(!elBg || !elModal) return;
+
+  const htmlBg = S.view==="login" ? renderLogin() : renderApp();
+  if(htmlBg !== _ultimoHTML){
+    _ultimoHTML = htmlBg;
+    const scrollY = window.scrollY;
+    elBg.innerHTML = htmlBg;
+    window.scrollTo(0, scrollY);
+  }
+
+  const htmlModal = S.view==="login" ? "" : (renderModals() + renderLightbox());
+  if(htmlModal !== _ultimoHTMLModal){
+    _ultimoHTMLModal = htmlModal;
+    elModal.innerHTML = htmlModal;
+  }
 }
 
 function render(){
@@ -1475,7 +1486,6 @@ function renderApp(){
     <span style="color:var(--faint)">${lastUpd}</span>
     <span>${S.requests.length} solicitudes</span>
   </footer>
-  ${renderModals()}
   ${S.toast?renderToast():""}`;
 }
 
@@ -1541,7 +1551,7 @@ function renderPlanificacion(){
               // Planificación/RRHH/etc puede confirmar recepción cuando destino es fábrica/depósito
               const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
               const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
-              return `<tr>
+              return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td class="muted-cell">${fd(r.createdAt)}</td>
               <td style="font-weight:500">${escH(origenLabel(r))}</td>
@@ -1550,7 +1560,7 @@ function renderPlanificacion(){
               <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
               <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
               <td>${estadoBadges(r)}</td>
-              <td style="white-space:nowrap">
+              <td style="white-space:nowrap" onclick="event.stopPropagation()">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
                 ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
                 ${puedeRecibirFab?`<button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar en fábrica</button>`:""}
@@ -1672,14 +1682,14 @@ function renderTesoreria(){
                 <thead><tr><th>Sucursal</th><th>Cant.</th><th>Estado</th><th>Recorrido</th><th>Quién lo levantó</th><th>Quién lo entregó / recibió</th><th></th></tr></thead>
                 <tbody>
                   ${l.filas.sort((a,b)=>(a.destino||"").localeCompare(b.destino||"")).map(f=>`
-                  <tr>
+                  <tr onclick="openDetalle('${escH(f.id)}')" style="cursor:pointer">
                     <td>${escH(f.destino)}</td>
                     <td>${escH(String(f.cantidad))}</td>
                     <td>${badge(f.estado,S_COLOR[f.estado]||"var(--muted)")}</td>
                     <td class="muted-cell">${escH(f.recorrido||"—")}</td>
                     <td class="muted-cell">${escH(f.nombreQuienLevanto||"—")}</td>
                     <td class="muted-cell">${escH(f.nombreQuienRecibio||f.nombreQuienEntrego||"—")}</td>
-                    <td><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(f.id)}')">Ver</button></td>
+                    <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(f.id)}')">Ver</button></td>
                   </tr>`).join("")}
                 </tbody>
               </table>
@@ -1696,13 +1706,13 @@ function renderTesoreria(){
           <thead><tr><th>N°</th><th>Sucursal</th><th>Cant.</th><th>Estado</th><th>Pedido por</th><th></th></tr></thead>
           <tbody>
             ${historialPedidos.slice(0,30).map(r=>`
-            <tr>
+            <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td>${escH(r.destino)}</td>
               <td>${escH(String(r.cantidad))}</td>
               <td>${badge(r.estado,S_COLOR[r.estado]||"var(--muted)")}</td>
               <td class="muted-cell">${escH(r.solicitante||"—")}</td>
-              <td><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button></td>
+              <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button></td>
             </tr>`).join("")}
           </tbody>
         </table>
@@ -1754,7 +1764,7 @@ function renderAdminSolicitudes(){
           </tr></thead>
           <tbody>
             ${lista.length===0?`<tr class="empty-row"><td colspan="8">Sin resultados</td></tr>`:""}
-            ${lista.map(r=>`<tr>
+            ${lista.map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td class="muted-cell">${fd(r.createdAt)}</td>
               <td>${escH(origenLabel(r))}</td>
@@ -1762,7 +1772,7 @@ function renderAdminSolicitudes(){
               <td><div class="trunc">${escH(r.descripcion)}</div></td>
               <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
               <td>${estadoBadges(r)}</td>
-              <td style="white-space:nowrap">
+              <td style="white-space:nowrap" onclick="event.stopPropagation()">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
                 <button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Editar</button>
                 <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="confirmarBorrarSolicitud('${escH(r.id)}')">🗑️</button>
@@ -2011,7 +2021,7 @@ function renderRecepcionista(){
               const esSaliente   = esOrigenFabrica(r);
               const puedeRecibir = !esSaliente && r.estado==="En tránsito";
               const puedeLista   = esSaliente && ["Aprobada","Programada"].includes(r.estado);
-              return `<tr>
+              return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
                 <td class="id-cell">${escH(r.id)}</td>
                 <td style="font-weight:500">${escH(origenLabel(r))}</td>
                 <td class="muted-cell">${escH(r.destino)}</td>
@@ -2019,7 +2029,7 @@ function renderRecepcionista(){
                 <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
                 <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
                 <td>${estadoBadges(r)}</td>
-                <td style="white-space:nowrap">
+                <td style="white-space:nowrap" onclick="event.stopPropagation()">
                   <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
                   ${puedeRecibir?`
                   <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">
@@ -2117,7 +2127,7 @@ function renderSucursalArea(){
               const rolBadge = esOrigen
                 ? `<span style="font-size:11px;color:var(--muted)">📤 Origen</span>`
                 : `<span style="font-size:11px;color:var(--teal)">📥 Destino</span>`;
-              return `<tr>
+              return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td class="muted-cell">${fd(r.createdAt)}</td>
               <td>${rolBadge}</td>
@@ -2127,7 +2137,7 @@ function renderSucursalArea(){
               <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
               <td>${estadoBadges(r)}</td>
               <td class="muted-cell">${escH(r.recorrido||"—")}</td>
-              <td style="white-space:nowrap">
+              <td style="white-space:nowrap" onclick="event.stopPropagation()">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
                 ${esOrigen && ["Aprobada","Programada"].includes(r.estado)?`
                 <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">
@@ -2274,8 +2284,8 @@ function renderLogTabla(){
         </tr></thead>
         <tbody>
           ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?13:12}">Sin resultados</td></tr>`:""}
-          ${filtered.map(r=>`<tr>
-            ${S.modoSeleccion?`<td><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
+          ${filtered.map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+            ${S.modoSeleccion?`<td onclick="event.stopPropagation()"><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
             <td class="id-cell">${escH(r.id)}</td>
             <td class="muted-cell">${fd(r.createdAt)}</td>
             <td style="font-weight:500">${escH(origenLabel(r))}</td>
@@ -2287,7 +2297,7 @@ function renderLogTabla(){
             <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
             <td>${estadoBadges(r)}</td>
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
-            <td style="white-space:nowrap">
+            <td style="white-space:nowrap" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
               ${r.estado!=="Entregada"&&r.estado!=="Rechazada"?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
             </td>
@@ -2425,12 +2435,12 @@ function renderRepartidor(){
         return `
         <div class="del-card">
           <div class="del-stripe" style="background:${ac}"></div>
-          <div class="del-body">
+          <div class="del-body" onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
 
             <!-- Header -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
               <div style="display:flex;align-items:flex-start;gap:8px">
-                ${S.modoSeleccionRep && puedeSeleccionar?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.repSeleccion.has(r.id)?"checked":""} onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
+                ${S.modoSeleccionRep && puedeSeleccionar?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.repSeleccion.has(r.id)?"checked":""} onclick="event.stopPropagation()" onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
                 <div>
                   <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
                   <div style="font-weight:600">${escH(origenLabel(r))}</div>
@@ -2491,7 +2501,7 @@ function renderRepartidor(){
             </div>`:""}
 
             <!-- Acciones -->
-            <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap">
+            <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" style="flex:1;min-width:60px" onclick="openDetalle('${escH(r.id)}')">Ver</button>
               ${puedeTomar && r.estado==="Lista para retirar"?`
               <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
