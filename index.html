@@ -201,6 +201,7 @@ tr:hover td{background:var(--s2)}
 <div id="app"></div>
 <div id="app-modal"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.4/dist/morphdom-umd.min.js"></script>
 <script>
 // ══════════════════════════════════════════════════════════
 //  ★  CONFIGURACIÓN — SUPABASE  ★
@@ -1254,14 +1255,29 @@ let _operacionEnCurso = false; // previene doble submit global
 let _ultimoHTML = "";      // último fondo (tabla/pantalla) pintado
 let _ultimoHTMLModal = ""; // último modal+lightbox pintado
 
-// Redibuja el DOM SOLO si el HTML generado es distinto al que ya está en
-// pantalla — y el FONDO y el MODAL se comparan y actualizan por separado
-// en dos contenedores distintos. Antes iban los dos pegados en un mismo
-// string: tocar cualquier botón del modal (estado, recorrido, etc.)
-// obligaba a redibujar TODA la pantalla de atrás también — de ahí el
-// "titileo" y que el scroll saltara al cerrar un modal. Ahora, mientras
-// hay un modal abierto, el fondo ni se toca (nunca cambia su HTML), así
-// que ni se entera de que el modal cambió.
+// Redibuja el DOM parchando SOLO lo que cambió (con morphdom) en vez de
+// tirar y reconstruir todo el HTML de una — esto es lo que de verdad
+// resuelve el titileo cuando SÍ hay un cambio real (ej. pasar una
+// solicitud de Aprobada a Entregada): antes, aunque solo cambiara una
+// fila de una tabla larga, se reemplazaba TODA la tabla entera, lo que
+// se sentía como que "se borraba todo". Con morphdom, solo se tocan los
+// nodos que realmente cambiaron — el resto de la pantalla ni se entera.
+// Fondo y modal siguen en contenedores separados (ver fix anterior),
+// así que un cambio en uno nunca repinta el otro.
+function morphSeguro(el, html){
+  // Nunca tocar el elemento donde el usuario está escribiendo ahora mismo
+  // (evita perder foco/cursor si un cambio de fondo llega mientras tipea).
+  morphdom(el, html, {
+    onBeforeElUpdated: (fromEl, toEl) => {
+      if(fromEl === document.activeElement &&
+         (fromEl.tagName==="INPUT" || fromEl.tagName==="TEXTAREA" || fromEl.tagName==="SELECT")){
+        return false;
+      }
+      return true;
+    }
+  });
+}
+
 function aplicarRenderDOM(){
   const elBg = $("app");
   const elModal = $("app-modal");
@@ -1270,15 +1286,13 @@ function aplicarRenderDOM(){
   const htmlBg = S.view==="login" ? renderLogin() : renderApp();
   if(htmlBg !== _ultimoHTML){
     _ultimoHTML = htmlBg;
-    const scrollY = window.scrollY;
-    elBg.innerHTML = htmlBg;
-    window.scrollTo(0, scrollY);
+    morphSeguro(elBg, `<div id="app">${htmlBg}</div>`);
   }
 
   const htmlModal = S.view==="login" ? "" : (renderModals() + renderLightbox());
   if(htmlModal !== _ultimoHTMLModal){
     _ultimoHTMLModal = htmlModal;
-    elModal.innerHTML = htmlModal;
+    morphSeguro(elModal, `<div id="app-modal">${htmlModal}</div>`);
   }
 }
 
