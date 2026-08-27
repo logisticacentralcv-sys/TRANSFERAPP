@@ -455,6 +455,7 @@ let S = {
   cerradoModal:   {id:"", dni:"", aclaracion:"", err:"", loading:false, nombreOk:""},
   confirmarCerradoModal: {id:"", dni:"", comentario:"", err:"", loading:false, nombreOk:""},
   pedirBolsinModal: {cantidad:"", motivo:"", err:"", loading:false},
+  enviarBolsinModal: {numero:"", monto:"", comentario:"", err:"", loading:false},
   pedidoTesoreriaModal: {id:"", accion:"aprobar", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
   nuevoLoteModal: {cantidades:{}, err:"", loading:false},
   loteListoModal: {loteId:"", dni:"", err:"", loading:false, nombreOk:""},
@@ -1591,11 +1592,14 @@ function renderPlanificacion(){
 // ── TESORERÍA VIEW ────────────────────────────────────────
 function renderTesoreria(){
   const u = S.user;
-  const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId);
+  const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId && r.destino!=="Tesorería");
   const pendientes    = pedidosBolsin.filter(r=>r.estado==="Pendiente Tesorería");
   const aprobadosParaListo = pedidosBolsin.filter(r=>r.estado==="Aprobada");
   const historialPedidos = pedidosBolsin.filter(r=>!["Pendiente Tesorería","Aprobada"].includes(r.estado))
     .sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
+  // Bolsines que las sucursales mandan HACIA Tesorería (con plata)
+  const bolsinesEnviados = S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería")
+    .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
 
   // Agrupar por loteId (solo lo que tiene tipoPedido="bolsin" y loteId)
   const lotesMap = {};
@@ -1668,6 +1672,28 @@ function renderTesoreria(){
               <td style="white-space:nowrap">
                 <button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Lista</button>
               </td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-top:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📥 Bolsines recibidos de sucursales</h3>
+      ${bolsinesEnviados.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no llegó ningún bolsín.</p>`:`
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Sucursal</th><th>Detalle</th><th>Enviado</th><th>Recibido en Tesorería</th><th>Estado</th><th></th></tr></thead>
+          <tbody>
+            ${bolsinesEnviados.map(r=>`
+            <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+              <td class="id-cell">${escH(r.id)}</td>
+              <td>${escH(r.sucursal)}</td>
+              <td><div class="trunc">${escH(r.descripcion)}</div></td>
+              <td class="muted-cell">${fdt(r.createdAt)}</td>
+              <td class="muted-cell">${r.deliveredAt?fdt(r.deliveredAt):"—"}</td>
+              <td>${estadoBadges(r)}</td>
+              <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button></td>
             </tr>`).join("")}
           </tbody>
         </table>
@@ -2110,6 +2136,7 @@ function renderSucursalArea(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
         <button class="btn btn-warn btn-md" onclick="openPedirBolsin()">🎒 Pedir bolsín</button>
+        <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>
       </div>
     </div>
     <div class="stats-grid">
@@ -2597,6 +2624,7 @@ function renderModals(){
   if(S.modal==="confirmarCerrado") return wrapModal("m","Confirmar transferencia recibida",renderConfirmarCerradoModal(),420);
   if(S.modal==="editar")     return wrapModal("m","Editar solicitud",renderEditarModal(),460);
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
+  if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
   if(S.modal==="loteListo")     return wrapModal("m","Marcar lote como Listo",renderLoteListoModal(),420);
@@ -4252,6 +4280,95 @@ async function submitPedirBolsin(){
       S.requests = [creada||optimista, ...S.requests];
       S.saving = false;
       toast(`🎒 Pedido ${(creada||optimista).id} enviado a Tesorería`);
+      render();
+    }
+  };
+  S.modal = "dniConfirm"; render();
+}
+
+// ══════════════════════════════════════════════════════════
+//  BOLSINES — envío de una sucursal HACIA Tesorería (con plata)
+//  Va directo, se aprueba en el momento (queda "Lista para retirar" ya
+//  mismo — la sucursal ya lo tiene físicamente listo al cargarlo), sin
+//  palabra clave (mismo criterio que el resto de los bolsines), y el
+//  repartidor lo puede levantar junto con transferencias y devoluciones.
+// ══════════════════════════════════════════════════════════
+function openEnviarBolsin(){
+  S.enviarBolsinModal = {numero:"", monto:"", comentario:"", err:"", loading:false};
+  S.modal = "enviarBolsin";
+  render();
+}
+
+function renderEnviarBolsinModal(){
+  const d = S.enviarBolsinModal;
+  return `
+  <div style="background:#2de0c418;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
+    📤 Este bolsín va directo a Tesorería, ya queda listo para que el repartidor lo levante — no necesita aprobación previa ni palabra clave.
+  </div>
+  <div class="field">
+    <label>N° de bolsín <span class="req">*</span></label>
+    <input id="eb-numero" type="text" class="inp ${d.err&&d.err.numero?"err":""}" placeholder="Ej: 4521" value="${escH(d.numero)}"/>
+    ${d.err&&d.err.numero?`<span class="err-msg">${escH(d.err.numero)}</span>`:""}
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Monto <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <input id="eb-monto" type="number" min="0" class="inp" placeholder="Ej: 50000" value="${escH(d.monto)}"/>
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <textarea id="eb-comentario" rows="2" placeholder="Alguna aclaración...">${escH(d.comentario||"")}</textarea>
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="submitEnviarBolsin()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Enviando...`:"📤 Enviar bolsín"}
+    </button>
+  </div>`;
+}
+
+async function submitEnviarBolsin(){
+  if(S.saving) return;
+  const numero = ($("eb-numero")?.value||"").trim();
+  const monto  = ($("eb-monto")?.value||"").trim();
+  const comentario = ($("eb-comentario")?.value||"").trim();
+  const e={};
+  if(!numero) e.numero="Ingresá el número de bolsín";
+  if(Object.keys(e).length){ S.enviarBolsinModal.err=e; render(); return; }
+
+  const u = S.user;
+  S.dniModal = {
+    title:"Ingresá tu DNI para registrar el envío",
+    field:"solicitante",
+    val:"", err:"", loading:false, nombreOk:"",
+    cb: async (dniVal, usuarioEncontrado)=>{
+      if(S.saving) return;
+      const nombreSolicitante = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
+      S.saving = true; S.modal = null; renderNow();
+      const nowTs = now();
+      const optimista = {
+        id: "tmp-"+Date.now(),
+        sucursal: u.area,
+        area: "",
+        solicitante: nombreSolicitante,
+        dniSolicitante: dniVal,
+        destino: "Tesorería",
+        descripcion: `Bolsín N° ${numero}` + (monto?` — $${monto}`:""),
+        cantidad: 1,
+        unidad: "Bolsín",
+        prioridad: "Alta",
+        fechaRequerida: fechaISO(),
+        observaciones: comentario,
+        estado: "Lista para retirar",
+        tipoPedido: "bolsin",
+        comentario:"", recorrido:"",
+        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"",
+        listoAt: nowTs, dniListoPor: dniVal, nombreListoPor: nombreSolicitante,
+        createdAt: nowTs, approvedAt: nowTs, scheduledAt:null, deliveredAt:null, updatedAt: nowTs,
+      };
+      const creada = await sheetsAdd(optimista);
+      S.requests = [creada||optimista, ...S.requests];
+      S.saving = false;
+      toast(`📤 Bolsín N° ${numero} enviado a Tesorería — ${(creada||optimista).id}`);
       render();
     }
   };
