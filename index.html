@@ -217,7 +217,7 @@ const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // Poné acá la MISMA URL que ya tenías funcionando (termina en /exec).
 // SIN ESTO, LOS MAILS NO SE VAN A ENVIAR — el resto de la app funciona
 // igual, esto es solo para los avisos por mail.
-const MAIL_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzhAqn8z0Wk2EHPA7iFQomlKAgVdNOpihQ9q5oaBXfCRNrQPpY_OesnActmUqccLw4tcQ/exec";  // ← PEGÁ ACÁ TU URL DE APPS SCRIPT
+const MAIL_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbx5CV49bSA1UnH-j1YSgiGRuO0Vg7KUiuucvbDnE3c87EFTGLvoznoVxpOaVr4SbF7r/exec";
 
 if(!MAIL_WEBHOOK_URL){
   console.warn("⚠️ MAIL_WEBHOOK_URL está vacía — los mails de aviso NO se van a enviar hasta que la completes.");
@@ -412,6 +412,8 @@ let S = {
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
   devolucionAccionTexto: "",
+  devolSeleccion: new Set(),
+  dejarDevolucionesModal: {ids:[], dni:"", err:"", loading:false},
   adminTab: "solicitudes",
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
@@ -941,7 +943,7 @@ function esGestorDevolucion(){
 function puedeVerDevoluciones(){
   const u = S.user;
   if(!u) return false;
-  return u.rol==="sucursal" || esGestorDevolucion();
+  return u.rol==="sucursal" || u.rol==="repartidor" || esGestorDevolucion();
 }
 const MOTIVOS_DEVOLUCION = ["Vencido","Rotura/pérdida de vacío","Sin etiqueta","Mal olor o color","Otro"];
 
@@ -1029,11 +1031,88 @@ async function confirmarAccionDevolucion(){
   render();
 }
 
+// ── Repartidor: seleccionar varias devoluciones y dejarlas en fábrica ──
+function toggleDevolSeleccion(id, checked){
+  if(checked) S.devolSeleccion.add(id); else S.devolSeleccion.delete(id);
+  render();
+}
+
+function openDejarDevolucionesFabrica(){
+  if(S.devolSeleccion.size===0) return;
+  const ids = [...S.devolSeleccion].filter(id=>{
+    const d = S.devoluciones.find(x=>x.id===id);
+    return d && d.estado==="Pendiente";
+  });
+  if(!ids.length) return;
+  S.dejarDevolucionesModal = {ids, dni:"", err:"", loading:false};
+  S.modal = "dejarDevolucionesFabrica";
+  render();
+}
+
+function renderDejarDevolucionesModal(){
+  const d = S.dejarDevolucionesModal;
+  return `
+  <div style="background:#2de0c418;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
+    📦 Vas a dejar <strong>${d.ids.length} devolucion${d.ids.length!==1?"es":""}</strong> en fábrica de una sola vez.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="dd-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.dejarDevolucionesModal.dni=this.value;S.dejarDevolucionesModal.err=''"
+      onkeydown="if(event.key==='Enter')submitDejarDevolucionesFabrica()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="submitDejarDevolucionesFabrica()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Registrando...`:`📦 Dejar ${d.ids.length} en fábrica`}
+    </button>
+  </div>`;
+}
+
+async function submitDejarDevolucionesFabrica(){
+  const d = S.dejarDevolucionesModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.dejarDevolucionesModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.dejarDevolucionesModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+
+  const nowTs = now();
+  const changes = {estado:"En fábrica", nombreRepartidor:check.nombre, dejadoFabricaAt:nowTs, updatedAt:nowTs};
+  try{
+    const resultados = await Promise.all(
+      d.ids.map(id => sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",id))
+    );
+    const fallidas = resultados.filter(r=>r.error);
+    if(fallidas.length===0){
+      const idsSet = new Set(d.ids);
+      S.devoluciones = S.devoluciones.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
+      S.devolSeleccion = new Set();
+      S.modal = null;
+      toast(`📦 ${check.nombre} dejó ${d.ids.length} devolución${d.ids.length!==1?"es":""} en fábrica`);
+    } else {
+      S.dejarDevolucionesModal.loading=false;
+      S.dejarDevolucionesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
+    }
+  } catch(e){
+    S.dejarDevolucionesModal.loading=false;
+    S.dejarDevolucionesModal.err = "No se pudo conectar — probá de nuevo.";
+  }
+  render();
+}
+
 function renderDevoluciones(){
   const u = S.user;
   const esGestor = esGestorDevolucion();
+  const esRepartidor = u.rol==="repartidor";
   let lista = S.devoluciones;
-  if(!esGestor){
+  if(esRepartidor){
+    lista = S.devoluciones; // ve todas — necesita saber qué hay para levantar en cualquier sucursal
+  } else if(!esGestor){
     const norm = s=>(s||"").trim().toLowerCase();
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
@@ -1041,19 +1120,20 @@ function renderDevoluciones(){
     if(S.devolucionFiltroEstado)   lista = lista.filter(d=>d.estado===S.devolucionFiltroEstado);
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
-  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : "var(--amber)";
+  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : e==="En fábrica" ? "var(--teal)" : "var(--amber)";
+  const pendientesLevantar = S.devoluciones.filter(d=>d.estado==="Pendiente");
 
   return `
   <div style="animation:fadeUp .3s ease">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div>
         <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">📦 Devoluciones</h2>
-        <p style="color:var(--muted);font-size:13px">${esGestor?"Todas las sucursales":escH(u.area||"")}</p>
+        <p style="color:var(--muted);font-size:13px">${esGestor?"Todas las sucursales":esRepartidor?"Para levantar y llevar a fábrica":escH(u.area||"")}</p>
       </div>
       <button class="btn btn-ghost btn-md" onclick="S.vista='main';render()">← Volver</button>
     </div>
 
-    ${!esGestor?`
+    ${!esGestor && !esRepartidor?`
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
       <div class="field">
@@ -1077,6 +1157,13 @@ function renderDevoluciones(){
       </div>
     </div>`:""}
 
+    ${esRepartidor && S.devolSeleccion.size>0?`
+    <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <strong>${S.devolSeleccion.size} seleccionada${S.devolSeleccion.size!==1?"s":""}</strong>
+      <button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica()">📦 Dejar en fábrica</button>
+      <button class="btn btn-ghost btn-sm" onclick="S.devolSeleccion=new Set();render()">✕ Deseleccionar todo</button>
+    </div>`:""}
+
     ${esGestor?`
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <select class="inp" style="width:200px" onchange="S.devolucionFiltroSucursal=this.value;render()">
@@ -1086,6 +1173,7 @@ function renderDevoluciones(){
       <select class="inp" style="width:180px" onchange="S.devolucionFiltroEstado=this.value;render()">
         <option value="">Todos los estados</option>
         <option ${S.devolucionFiltroEstado==="Pendiente"?"selected":""}>Pendiente</option>
+        <option ${S.devolucionFiltroEstado==="En fábrica"?"selected":""}>En fábrica</option>
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
       </select>
@@ -1096,18 +1184,22 @@ function renderDevoluciones(){
       ${lista.map(d=>`
         <div class="card" style="padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
-            <div>
-              <strong>${escH(d.sucursal||"—")}</strong>
-              <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)} · ${escH(d.creadoPor||"—")}</span>
+            <div style="display:flex;align-items:flex-start;gap:8px">
+              ${esRepartidor && d.estado==="Pendiente"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccion.has(d.id)?"checked":""} onchange="toggleDevolSeleccion('${escH(d.id)}',this.checked)"/>`:""}
+              <div>
+                <strong>${escH(d.sucursal||"—")}</strong>
+                <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)} · ${escH(d.creadoPor||"—")}</span>
+              </div>
             </div>
             ${badge(d.estado, colorEstado(d.estado))}
           </div>
           <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
+          ${d.nombreRepartidor?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🚚 Levantada por ${escH(d.nombreRepartidor)}</p>`:""}
           ${d.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(d.respondidoPor||"—")}):</strong> ${escH(d.respuesta)}</div>`:""}
-          ${!d.respuesta && d.estado!=="Pendiente"?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
-          ${!esGestor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
-          ${esGestor && d.estado==="Pendiente"?`
+          ${!d.respuesta && !["Pendiente","En fábrica"].includes(d.estado)?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
+          ${!esGestor && !esRepartidor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
+          ${esGestor && d.estado==="En fábrica"?`
             ${S.devolucionAccionId===d.id?`
             <div class="field" style="margin-top:10px">
               <textarea id="devol-accion-texto" rows="2" placeholder="${S.devolucionAccionTipo==='confirmar'?'Comentario (opcional)...':'¿Qué faltó? (obligatorio)'}"
@@ -2613,6 +2705,7 @@ function renderModals(){
   if(S.modal==="tomar")     return wrapModal("m","Tomar transferencia",renderTomarModal(),420);
   if(S.modal==="tomarVarias") return wrapModal("m","Tomar varias transferencias",renderTomarVariasModal(),420);
   if(S.modal==="dejarBolsinesVarios") return wrapModal("m","Dejar bolsines",renderDejarBolsinesModal(),420);
+  if(S.modal==="dejarDevolucionesFabrica") return wrapModal("m","Dejar devoluciones en fábrica",renderDejarDevolucionesModal(),420);
   if(S.modal==="fabrica")   return wrapModal("m","Dejar en fábrica",renderFabricaModal(),420);
   if(S.modal==="entrega")   return wrapModal("m","Confirmar entrega",renderEntregaModal(),420);
   if(S.modal==="codigo")    return wrapModal("m","Confirmar recepción — Sucursal",renderCodigoModal(),420);
@@ -2896,6 +2989,10 @@ function renderDetalle(){
     ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
     ${r.recorrido?badge(r.recorrido,"var(--teal)"):""}
   </div>
+  ${esLogistica && !["Entregada","Rechazada"].includes(r.estado)?`
+  <button class="btn btn-primary btn-md btn-full" style="margin-bottom:16px" onclick="openGestionar('${escH(r.id)}')">
+    ✏️ Gestionar esta solicitud
+  </button>`:""}
   ${drow("Origen",origenLabel(r))}
   ${drow("Solicitante",solicitanteLabel(r))}
   ${drow("Destino",r.destino)}
