@@ -406,6 +406,7 @@ let S = {
   devolSeleccion: new Set(),
   dejarDevolucionesModal: {ids:[], dni:"", err:"", loading:false},
   adminTab: "solicitudes",
+  config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
   repSeleccion: new Set(),
@@ -591,13 +592,19 @@ function toCamelRows(rows){ return (rows||[]).map(toCamelRow); }
 async function sheetsLoadUsuarios(){
   if(!USE_SHEETS) return;
   try{
-    const [us,sucs]=await Promise.all([
+    const [us,sucs,cfg]=await Promise.all([
       sb.from("usuarios").select("*"),
       sb.from("sucursales").select("*"),
+      sb.from("config").select("*"),
     ]);
     if(us.error) throw us.error;
     if(sucs.error) throw sucs.error;
     S.usuarios = toCamelRows(us.data).filter(u=>u.activo!=="no");
+    if(!cfg.error && cfg.data){
+      const c = {};
+      cfg.data.forEach(row=>{ c[row.clave] = row.valor; });
+      S.config = c;
+    }
     const sucRows = toCamelRows(sucs.data);
     S.sucursales = sucRows.filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
     const info = {};
@@ -634,6 +641,27 @@ async function sheetsLoadDatos(){
 async function sheetsLoadAll(){
   if(!USE_SHEETS) return;
   await Promise.all([sheetsLoadUsuarios(), sheetsLoadDatos()]);
+}
+
+// ══════════════════════════════════════════════════════════
+//  CONFIG — flags globales editables desde Admin (tabla "config")
+// ══════════════════════════════════════════════════════════
+// Por defecto (si la tabla no existe todavía o no tiene la fila) el
+// módulo de bolsines queda ACTIVO — solo se apaga si dice "false" explícito.
+function bolsinesActivo(){
+  return S.config.bolsinesActivo !== "false";
+}
+async function toggleBolsinesActivo(){
+  const nuevoValor = bolsinesActivo() ? "false" : "true";
+  try{
+    const { error } = await sb.from("config").upsert({clave:"bolsinesActivo", valor:nuevoValor});
+    if(error) throw error;
+    S.config = {...S.config, bolsinesActivo: nuevoValor};
+    toast(nuevoValor==="true" ? "🎒 Bolsines activados" : "🎒 Bolsines desactivados");
+  }catch(e){
+    toast("⚠️ No se pudo guardar — ¿ya existe la tabla 'config' en Supabase?","warn");
+  }
+  render();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1683,6 +1711,13 @@ function renderPlanificacion(){
 // ── TESORERÍA VIEW ────────────────────────────────────────
 function renderTesoreria(){
   const u = S.user;
+  if(!bolsinesActivo()){
+    return `
+    <div style="animation:fadeUp .3s ease;text-align:center;padding:60px 20px">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:8px">🎒 Bolsines</h2>
+      <p style="color:var(--muted);font-size:14px">El módulo de Bolsines está desactivado por Administración por el momento.</p>
+    </div>`;
+  }
   const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId && r.destino!=="Tesorería");
   const pendientes    = pedidosBolsin.filter(r=>r.estado==="Pendiente Tesorería");
   const aprobadosParaListo = pedidosBolsin.filter(r=>r.estado==="Aprobada");
@@ -1866,9 +1901,31 @@ function renderAdmin(){
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${S.adminTab==="solicitudes"?"active":""}" onclick="S.adminTab='solicitudes';render()">📋 Solicitudes</button>
         <button class="tab ${S.adminTab==="usuarios"?"active":""}" onclick="S.adminTab='usuarios';render()">👤 Usuarios</button>
+        <button class="tab ${S.adminTab==="config"?"active":""}" onclick="S.adminTab='config';render()">⚙️ Configuración</button>
       </div>
     </div>
-    ${S.adminTab==="solicitudes"?renderAdminSolicitudes():renderAdminUsuarios()}
+    ${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():renderAdminConfig()}
+  </div>`;
+}
+
+function renderAdminConfig(){
+  const activo = bolsinesActivo();
+  return `
+  <div class="card" style="max-width:520px">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🎒 Módulo de Bolsines</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Cuando está desactivado, las sucursales no ven los botones de "Pedir bolsín" / "Enviar bolsín",
+      y la pantalla de Tesorería queda oculta. Los bolsines ya cargados no se borran, solo se deja de poder crear nuevos.
+    </p>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:var(--s2);border-radius:8px">
+      <div>
+        <strong style="font-size:14px">${activo?"Activado":"Desactivado"}</strong>
+        <p style="color:var(--muted);font-size:12px;margin-top:2px">${activo?"Las sucursales pueden pedir y enviar bolsines.":"Nadie puede pedir ni enviar bolsines por ahora."}</p>
+      </div>
+      <button class="btn ${activo?"btn-danger":"btn-success"} btn-md" onclick="toggleBolsinesActivo()">
+        ${activo?"Desactivar":"Activar"}
+      </button>
+    </div>
   </div>`;
 }
 
@@ -2226,8 +2283,9 @@ function renderSucursalArea(){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+        ${bolsinesActivo()?`
         <button class="btn btn-warn btn-md" onclick="openPedirBolsin()">🎒 Pedir bolsín</button>
-        <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>
+        <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>`:""}
       </div>
     </div>
     <div class="stats-grid">
