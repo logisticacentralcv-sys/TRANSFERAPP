@@ -252,25 +252,14 @@ function buscarEmailOrigen(origen){
 // ══════════════════════════════════════════════════════════
 
 // ══════════════════════════════════════════════════════════
-//  USUARIOS DEMO (solo cuando NO hay Sheets conectado)
-//  En producción todo viene de la hoja "Usuarios" de Sheets.
-//
-//  TIPOS: SUCURSAL | LOGISTICA | REPARTIDOR | AREA
+//  (Antes había acá un listado de usuarios demo hardcodeados,
+//  solo pensado como fallback para cuando no había Supabase
+//  conectado. Como la app SIEMPRE usa Supabase en producción,
+//  se eliminó: no aportaba nada y dejaba credenciales de
+//  ejemplo a la vista de cualquiera que mirase el código
+//  fuente del repositorio.)
 // ══════════════════════════════════════════════════════════
-const DEMO_USUARIOS = [
-  {usuario:"Logistica", password:"LogisticaCV", tipo:"LOGISTICA",  nombre:"Logística",       area:"",               recorrido:"",    activo:"si"},
-  {usuario:"Compras",      password:"compras123",  tipo:"AREA",          nombre:"Área Compras",     area:"Compras",        recorrido:"",    activo:"si"},
-  {usuario:"Planificacion",   password:"plan123",  tipo:"PLANIFICACION",  nombre:"Planificación",    area:"Planificación",  recorrido:"", activo:"si"},
-  {usuario:"Administracion",  password:"admin123", tipo:"ADMINISTRACION", nombre:"Administración",   area:"Administración", recorrido:"", activo:"si"},
-  {usuario:"RRHH",            password:"rrhh123",  tipo:"RRHH",           nombre:"Recursos Humanos", area:"RRHH",           recorrido:"", activo:"si"},
-  {usuario:"Precios",         password:"precios123",tipo:"PRECIOS",       nombre:"Precios",          area:"Precios",        recorrido:"", activo:"si"},
-  {usuario:"Deposito",        password:"deposito123",tipo:"DEPOSITO",      nombre:"Depósito",         area:"Depósito",       recorrido:"", activo:"si"},
-  {usuario:"Recepcionista",   password:"recep123",   tipo:"RECEPCIONISTA", nombre:"Recepcionista",    area:"Fábrica",        recorrido:"", activo:"si"},
-  {usuario:"RRHH",      password:"rrhh123",     tipo:"AREA",       nombre:"Recursos Humanos", area:"RRHH",           recorrido:"",    activo:"si"},
-  {usuario:"Admin",     password:"admin123",    tipo:"AREA",       nombre:"Administración",   area:"Administración", recorrido:"",    activo:"si"},
-  {usuario:"Carlos",    password:"reparto123",  tipo:"REPARTIDOR", nombre:"Carlos López",     area:"",               recorrido:"SUR", activo:"si"},
-  {usuario:"Martin",    password:"reparto123",  tipo:"REPARTIDOR", nombre:"Martín García",    area:"",               recorrido:"NORTE",activo:"si"},
-];
+const DEMO_USUARIOS = [];
 
 // ══════════════════════════════════════════════════════════
 //  DATOS FIJOS
@@ -401,6 +390,8 @@ let S = {
   quejaForm: {texto:"", area:"", motivo:"", loading:false, err:""},
   quejaFiltroSucursal: "",
   quejaFiltroEstado: "",
+  quejaFiltroDesde: "",
+  quejaFiltroHasta: "",
   quejaResponderId: "",
   quejaRespuestaTexto: "",
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
@@ -424,6 +415,7 @@ let S = {
 
   // UI – filtros repartidor
   fRepRecorrido:"",
+  fRepSucursal:"",
 
   // UI – tabs
   tabLog: "solicitudes",  // solicitudes | metricas
@@ -835,6 +827,8 @@ function renderQuejas(){
     if(areaGestion!=="TODAS") lista = lista.filter(q => q.areaDestino===areaGestion);
     if(S.quejaFiltroSucursal) lista = lista.filter(q=>(q.sucursal||q.area)===S.quejaFiltroSucursal);
     if(S.quejaFiltroEstado)   lista = lista.filter(q=>q.estado===S.quejaFiltroEstado);
+    if(S.quejaFiltroDesde)    lista = lista.filter(q=>q.createdAt && q.createdAt.slice(0,10)>=S.quejaFiltroDesde);
+    if(S.quejaFiltroHasta)    lista = lista.filter(q=>q.createdAt && q.createdAt.slice(0,10)<=S.quejaFiltroHasta);
   }
   const origenesUnicos = [...new Set(S.quejas.filter(q=>!esGestor||q.areaDestino===areaGestion).map(q=>q.sucursal||q.area).filter(Boolean))].sort();
 
@@ -891,10 +885,19 @@ function renderQuejas(){
         <option ${S.quejaFiltroEstado==="Pendiente"?"selected":""}>Pendiente</option>
         <option ${S.quejaFiltroEstado==="Resuelta"?"selected":""}>Resuelta</option>
       </select>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:12px;color:var(--muted)">Desde</label>
+        <input type="date" class="inp" style="width:150px" value="${escH(S.quejaFiltroDesde)}" onchange="S.quejaFiltroDesde=this.value;render()"/>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:12px;color:var(--muted)">Hasta</label>
+        <input type="date" class="inp" style="width:150px" value="${escH(S.quejaFiltroHasta)}" onchange="S.quejaFiltroHasta=this.value;render()"/>
+      </div>
+      ${(S.quejaFiltroSucursal||S.quejaFiltroEstado||S.quejaFiltroDesde||S.quejaFiltroHasta)?`<button class="btn btn-ghost btn-sm" onclick="S.quejaFiltroSucursal='';S.quejaFiltroEstado='';S.quejaFiltroDesde='';S.quejaFiltroHasta='';render()">✕ Limpiar filtros</button>`:""}
     </div>`:""}
 
     <div style="display:flex;flex-direction:column;gap:10px">
-      ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay quejas${S.quejaFiltroSucursal||S.quejaFiltroEstado?" con ese filtro":""}.</p>`:""}
+      ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay quejas${(S.quejaFiltroSucursal||S.quejaFiltroEstado||S.quejaFiltroDesde||S.quejaFiltroHasta)?" con ese filtro":""}.</p>`:""}
       ${lista.map(q=>`
         <div class="card" style="padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
@@ -1111,7 +1114,11 @@ function renderDevoluciones(){
   const esRepartidor = u.rol==="repartidor";
   let lista = S.devoluciones;
   if(esRepartidor){
-    lista = S.devoluciones; // ve todas — necesita saber qué hay para levantar en cualquier sucursal
+    // Ve todas las pendientes/en curso — pero una vez que producción/logística
+    // ya la confirmó (o la cerró como no confirmada), deja de ser relevante
+    // para el repartidor y se saca de su vista para no ensuciarla.
+    lista = S.devoluciones.filter(d => !["Confirmada","No confirmada"].includes(d.estado));
+    if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
   } else if(!esGestor){
     const norm = s=>(s||"").trim().toLowerCase();
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
@@ -1164,19 +1171,20 @@ function renderDevoluciones(){
       <button class="btn btn-ghost btn-sm" onclick="S.devolSeleccion=new Set();render()">✕ Deseleccionar todo</button>
     </div>`:""}
 
-    ${esGestor?`
+    ${esGestor||esRepartidor?`
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <select class="inp" style="width:200px" onchange="S.devolucionFiltroSucursal=this.value;render()">
         <option value="">Todas las sucursales</option>
         ${sucursalesUnicas.map(o=>`<option ${S.devolucionFiltroSucursal===o?"selected":""}>${escH(o)}</option>`).join("")}
       </select>
+      ${esGestor?`
       <select class="inp" style="width:180px" onchange="S.devolucionFiltroEstado=this.value;render()">
         <option value="">Todos los estados</option>
         <option ${S.devolucionFiltroEstado==="Pendiente"?"selected":""}>Pendiente</option>
         <option ${S.devolucionFiltroEstado==="En fábrica"?"selected":""}>En fábrica</option>
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
-      </select>
+      </select>`:""}
     </div>`:""}
 
     <div style="display:flex;flex-direction:column;gap:10px">
@@ -1324,19 +1332,10 @@ function validarDNI(dni){
 }
 
 // Datos demo si no hay Sheets
-function seedData(){
-  // Datos de ejemplo variados — en producción todo viene de Sheets
-  return [
-    {id:"TRF-2001",sucursal:"Paso",area:"",solicitante:"Ana Gómez",dniSolicitante:"12345678",destino:"Depósito Central",descripcion:"Resmas papel A4",cantidad:10,unidad:"Cajas",prioridad:"Media",fechaRequerida:"2025-06-10",estado:"Entregada",comentario:"Entregado sin novedad.",recorrido:"SUR",dniLogistica:"87654321",dniRepartidor:"11223344",nombreQuienLevanto:"Carlos López",dniEntrega:"22334455",nombreQuienEntrego:"Martín García",observaciones:"",createdAt:"2025-06-01T08:00:00Z",approvedAt:"2025-06-01T09:30:00Z",scheduledAt:"2025-06-02",deliveredAt:"2025-06-02T14:00:00Z",updatedAt:"2025-06-02T14:00:00Z"},
-    {id:"TRF-2002",sucursal:"Güemes",area:"",solicitante:"Carlos Pérez",dniSolicitante:"23456789",destino:"Casa Central",descripcion:"Cartuchos HP 664",cantidad:5,unidad:"Unidades",prioridad:"Alta",fechaRequerida:"2025-06-08",estado:"En tránsito",comentario:"Sale mañana a las 9hs.",recorrido:"CENTRO",dniLogistica:"87654321",dniRepartidor:"11223344",nombreQuienLevanto:"Martín García",dniEntrega:"",nombreQuienEntrego:"",observaciones:"",createdAt:"2025-06-02T10:00:00Z",approvedAt:"2025-06-02T11:00:00Z",scheduledAt:"2025-06-03",deliveredAt:null,updatedAt:"2025-06-03T08:00:00Z"},
-    {id:"TRF-2003",sucursal:"Edison",area:"",solicitante:"María Torres",dniSolicitante:"34567890",destino:"Administración",descripcion:"Sillas ergonómicas",cantidad:3,unidad:"Unidades",prioridad:"Baja",fechaRequerida:"2025-06-15",estado:"Aprobada",comentario:"Aprobado. Coordiná con el depósito.",recorrido:"NORTE",dniLogistica:"87654321",dniRepartidor:"",nombreRepartidor:"",observaciones:"Preferencia horario mañana",createdAt:"2025-06-03T11:00:00Z",approvedAt:"2025-06-03T14:00:00Z",scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-03T14:00:00Z"},
-    {id:"TRF-2004",sucursal:"Rioja",area:"",solicitante:"Pedro Suárez",dniSolicitante:"45123456",destino:"Casa Central",descripcion:"Botiquín primeros auxilios",cantidad:2,unidad:"Unidades",prioridad:"Urgente",fechaRequerida:"2025-06-07",estado:"Programada",comentario:"Programado para el 7/6.",recorrido:"SUR",dniLogistica:"87654321",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-04T07:30:00Z",approvedAt:"2025-06-04T08:00:00Z",scheduledAt:"2025-06-07",deliveredAt:null,updatedAt:"2025-06-04T08:00:00Z"},
-    {id:"TRF-2005",sucursal:"Administración",area:"Administración",solicitante:"Luis Sosa",dniSolicitante:"45678901",destino:"Güemes",descripcion:"Artículos de limpieza",cantidad:20,unidad:"Bultos",prioridad:"Media",fechaRequerida:"2025-06-12",estado:"Pendiente",comentario:"",recorrido:"",dniLogistica:"",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-05T09:00:00Z",approvedAt:null,scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-05T09:00:00Z"},
-    {id:"TRF-2006",sucursal:"Rioja",area:"",solicitante:"Paula Ríos",dniSolicitante:"56789012",destino:"Depósito Central",descripcion:"Equipos informáticos",cantidad:4,unidad:"Unidades",prioridad:"Alta",fechaRequerida:"2025-06-09",estado:"Rechazada",comentario:"Sin stock disponible en este momento.",recorrido:"",dniLogistica:"87654321",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-03T15:00:00Z",approvedAt:null,scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-04T10:00:00Z"},
-    {id:"TRF-2007",sucursal:"Compras",area:"Compras",solicitante:"Marta Vidal",dniSolicitante:"67890123",destino:"Administración",descripcion:"Archiveros metálicos",cantidad:6,unidad:"Unidades",prioridad:"Baja",fechaRequerida:"2025-06-20",estado:"En revisión",comentario:"",recorrido:"",dniLogistica:"",dniRepartidor:"",nombreRepartidor:"",observaciones:"",createdAt:"2025-06-05T10:30:00Z",approvedAt:null,scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-05T10:30:00Z"},
-    {id:"TRF-2008",sucursal:"Edison",area:"",solicitante:"María Torres",dniSolicitante:"34567890",destino:"Paunero",descripcion:"Material de oficina",cantidad:8,unidad:"Cajas",prioridad:"Media",fechaRequerida:"2025-06-15",estado:"Aprobada",comentario:"Aprobado. Sale mañana.",recorrido:"SUR",dniLogistica:"87654321",dniRepartidor:"",nombreQuienLevanto:"",dniEntrega:"",nombreQuienEntrego:"",observaciones:"",createdAt:"2025-06-05T11:00:00Z",approvedAt:"2025-06-05T12:00:00Z",scheduledAt:null,deliveredAt:null,updatedAt:"2025-06-05T12:00:00Z"},
-  ];
-}
+// (Antes había acá un seedData() con transferencias TRF-2001..2008 de
+// ejemplo. Se sacó: quedaban visibles un instante al iniciar sesión,
+// antes de que llegaran los datos reales de Supabase, y podían llegar
+// a inflar contadores como ABIERTAS/ME LLEGAN/HISTORIAL en ese instante.)
 
 // ══════════════════════════════════════════════════════════
 //  RENDER PRINCIPAL
@@ -2495,6 +2494,8 @@ function renderRepartidor(){
     return ["Entregada","Entregada (sin confirmar)"].includes(r.estado);
   });
   if(S.fRepRecorrido) list=list.filter(r=>r.recorrido===S.fRepRecorrido);
+  if(S.fRepSucursal) list=list.filter(r=>r.sucursal===S.fRepSucursal);
+  const sucursalesRepOpts=[...new Set(S.requests.map(r=>r.sucursal).filter(Boolean))].sort();
 
   const activas=S.requests.filter(r=>["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado));
   const entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
@@ -2521,6 +2522,12 @@ function renderRepartidor(){
         <select onchange="S.fRepRecorrido=this.value;render()">
           <option value="">Todos los recorridos</option>
           ${recOpts.map(r=>`<option ${S.fRepRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0;min-width:160px">
+        <select onchange="S.fRepSucursal=this.value;render()">
+          <option value="">Todas las sucursales</option>
+          ${sucursalesRepOpts.map(s=>`<option ${S.fRepSucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
         </select>
       </div>
       ${S.tabRep==="activas"?`
@@ -5407,16 +5414,9 @@ async function submitDni(){
 // ══════════════════════════════════════════════════════════
 //  ARRANQUE
 // ══════════════════════════════════════════════════════════
-S.requests = seedData();
+S.requests = [];   // se llena con sheetsLoadDatos() (Supabase) apenas carga
 S.recorridos = ["SUR","CENTRO","NORTE"];  // default — se reemplaza con Sheets
-S.usuarios = [
-  // Demo: usuarios de prueba. En producción vienen de Sheets
-  {nombre:"Taiel",dni:"87654321",usuario:"taiel",password:"logistica2025",rol:"logistica",activo:"si"},
-  {nombre:"Encargada Fresco",dni:"12345678",usuario:"fresco",password:"fresco2025",rol:"logistica",activo:"si"},
-  {nombre:"Carlos López",dni:"11223344",usuario:"carlos.lopez",password:"reparto2025",rol:"repartidor",recorrido:"SUR",activo:"si"},
-  {nombre:"Ana Gómez",dni:"12345678",usuario:"",password:"",rol:"sucursal",activo:"si"},
-  {nombre:"Luis Sosa",dni:"45678901",usuario:"luis.sosa",password:"admin2025",rol:"area",area:"Administración",activo:"si"},
-];
+S.usuarios = [];   // se llena con sheetsLoadUsuarios() (Supabase) apenas carga
 render();
 </script>
 
