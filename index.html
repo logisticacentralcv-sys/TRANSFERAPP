@@ -385,6 +385,20 @@ function esOrigenFabrica(r){
   return _fabNames.includes(suc);
 }
 
+// Perfil especial de recepcionista: prepara lo que pide Planificación /
+// Planificador Fresco (login compartido "RECEPCIONISTA" con área que
+// contenga "fresco", ej: "RECEPCION FRESCO").
+function esRecepcionFresco(){
+  const u = S.user;
+  return !!u && u.rol==="recepcionista" && normNotif(u.area).includes("fresco");
+}
+// Un pedido "de Planificación/Fresco" es el que se creó desde esos logins
+// (columna area = PLANIFICACION o PLANIFICADOR FRESCO / similar)
+function esPedidoPlanificacionFresco(r){
+  const a = normNotif(r.area);
+  return a.includes("planificacion") || a.includes("fresco");
+}
+
 // Detectar si el DESTINO es fábrica/depósito
 function esDestinoFabrica(r){
   return _fabNames.includes((r.destino||"").trim().toLowerCase());
@@ -516,6 +530,7 @@ let S = {
   confirmarCerradoModal: {id:"", dni:"", comentario:"", err:"", loading:false, nombreOk:""},
   pedirBolsinModal: {cantidad:"", motivo:"", err:"", loading:false},
   envioMasivoModal: {destinos:[], descripcion:"", cantidad:"", unidad:"Unidades", fechaRequerida:"", observaciones:"", err:{}, loading:false},
+  prepararFrescoModal: {id:"", dni:"", err:"", loading:false, nombreOk:""},
   enviarBolsinModal: {numero:"", monto:"", comentario:"", err:"", loading:false},
   pedidoTesoreriaModal: {id:"", accion:"aprobar", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
   nuevoLoteModal: {cantidades:{}, err:"", loading:false},
@@ -2241,6 +2256,7 @@ async function confirmarBorrarUsuario(usuarioId){
 }
 
 function renderRecepcionista(){
+  if(esRecepcionFresco()) return renderRecepcionFresco();
   const u = S.user;
 
   // ENTRANTES: destino = fábrica/depósito
@@ -2316,6 +2332,72 @@ function renderRecepcionista(){
     <div style="margin-top:16px;padding:12px 16px;background:var(--s2);border-radius:8px;font-size:13px;color:var(--muted);border-left:3px solid var(--teal)">
       📥 <strong>Entrantes:</strong> tocá <strong>Confirmar llegada</strong> cuando llega un repartidor — ingresás tu DNI y aparece la palabra para darle.<br/>
       📤 <strong>Salientes:</strong> tocá <strong>Lista para salir</strong> cuando tenés lista la mercadería para que retire el repartidor.
+    </div>
+  </div>`;
+}
+
+// ── RECEPCIÓN FRESCO — prepara lo que aprueba Planificación/Fresco ──
+// Circuito de DOS pasos (a diferencia del recepcionista genérico que
+// tiene uno solo): primero "Preparado" y recién después "Lista para
+// retirar" — así el repartidor no la ve como lista hasta que de verdad
+// está armada.
+function renderRecepcionFresco(){
+  const u = S.user;
+  const pedidos = S.requests.filter(r => ["Aprobada","Programada"].includes(r.estado) && esPedidoPlanificacionFresco(r));
+  const paraPreparar   = pedidos.filter(r=>!r.preparadoAt);
+  const faltaListo     = pedidos.filter(r=>r.preparadoAt && !r.listoAt);
+  const yaListas       = S.requests.filter(r=>esPedidoPlanificacionFresco(r) && r.listoAt &&
+                            ["Lista para retirar","En tránsito","En fábrica","Entregada","Entregada (sin confirmar)"].includes(r.estado))
+                          .sort((a,b)=>(b.listoAt||"").localeCompare(a.listoAt||""))
+                          .slice(0,15);
+
+  const fila = (r, accionHtml) => `
+    <div class="card" style="padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+        <div>
+          <strong>${escH(r.id)}</strong>
+          <span style="color:var(--faint);font-size:12px"> · ${escH(r.area||"—")} · para ${escH(r.destino||"—")}</span>
+        </div>
+        ${estadoBadges(r)}
+      </div>
+      <p style="margin-top:8px;font-size:14px">${escH(r.descripcion)} <span style="color:var(--muted)">— ${escH(String(r.cantidad))} ${escH(r.unidad)}</span></p>
+      ${r.observaciones?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">${escH(r.observaciones)}</p>`:""}
+      ${accionHtml}
+    </div>`;
+
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="margin-bottom:20px">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">🥬 Recepción Fresco</h2>
+      <p style="color:var(--muted);font-size:13px">${escH(u.nombre)} · Preparación de pedidos de Planificación / Planificador Fresco</p>
+    </div>
+    <div class="stats-grid">
+      ${statCard("📝","PARA PREPARAR",paraPreparar.length,"var(--amber)")}
+      ${statCard("✅","FALTA CONFIRMAR LISTO",faltaListo.length,"var(--teal)")}
+      ${statCard("🚚","ENVIADAS RECIENTES",yaListas.length,"#1fa86a")}
+    </div>
+
+    <h3 style="font-size:14px;font-weight:700;margin:18px 0 10px">📝 Para preparar</h3>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      ${paraPreparar.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos pendientes de preparar.</p>`:""}
+      ${paraPreparar.map(r=>fila(r,
+        `<div style="margin-top:10px"><button class="btn btn-warn btn-sm" onclick="openPrepararFresco('${escH(r.id)}')">📝 Marcar preparado</button></div>`
+      )).join("")}
+    </div>
+
+    <h3 style="font-size:14px;font-weight:700;margin:18px 0 10px">✅ Preparadas — falta confirmar "Listo"</h3>
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
+      ${faltaListo.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos esperando confirmación.</p>`:""}
+      ${faltaListo.map(r=>fila(r,
+        `<p style="margin-top:8px;font-size:12px;color:var(--muted)">📝 Preparado por ${escH(r.nombrePreparoPor||"—")}</p>
+         <div style="margin-top:6px"><button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar listo para retirar</button></div>`
+      )).join("")}
+    </div>
+
+    <h3 style="font-size:14px;font-weight:700;margin:18px 0 10px">🚚 Enviadas recientemente</h3>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      ${yaListas.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no enviaste ninguna.</p>`:""}
+      ${yaListas.map(r=>fila(r,""))}
     </div>
   </div>`;
 }
@@ -2877,6 +2959,7 @@ function renderModals(){
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
   if(S.modal==="notificaciones") return wrapModal("m","🔔 Notificaciones",renderNotificacionesModal(),480);
+  if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
@@ -3031,6 +3114,14 @@ function renderDetalle(){
   if(esFabFlow && r.recorridoEgreso && r.estado!=="Rechazada"){
     steps.push({dot:S_COLOR["Programada"], title:`Recorrido de egreso: ${r.recorridoEgreso}`,
       meta:"Recorrido asignado para llevar al destino final"});
+  }
+
+  // ── PASO 3a: Recepción Fresco marcó preparado ───────────
+  if(r.preparadoAt || r.nombrePreparoPor){
+    const metaPrep = verHoraTomaEntrega
+      ? `${r.preparadoAt?fdt(r.preparadoAt)+" · ":""}${r.nombrePreparoPor||"—"}`
+      : r.nombrePreparoPor ? `Por ${r.nombrePreparoPor}` : "";
+    steps.push({dot:"var(--amber)", title:"📝 Preparado", meta:metaPrep});
   }
 
   // ── PASO 3b: Sucursal origen confirmó que está lista ────
@@ -4271,6 +4362,7 @@ async function submitCambioEstadoMasivo(){
       if(d.recorrido) changes.recorrido = d.recorrido;
       if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
       if(esAprobar && x) crearNotificacion(x.sucursal||x.area||"", `✅ Tu solicitud ${id} fue aprobada — prepará y marcá "Lista para retirar"`, id);
+      if(esAprobar && x && esPedidoPlanificacionFresco(x)) crearNotificacion("RECEPCION FRESCO", `🥬 Nuevo pedido para preparar: ${id} — ${x.descripcion||""}`, id);
       return {id, changes};
     });
     const resultados = await Promise.all(
@@ -5124,6 +5216,48 @@ function openTomarTransferencia(id){
   render();
 }
 // Sucursal origen confirma que la transferencia está lista para retirar
+function openPrepararFresco(id){
+  S.prepararFrescoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
+  S.modal = "prepararFresco";
+  render();
+}
+function renderPrepararFrescoModal(){
+  const d = S.prepararFrescoModal;
+  return `
+  <div class="alert-info" style="margin-bottom:14px;font-size:13px">📝 Confirmá tu DNI para dejar registrado quién preparó este pedido.</div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="pf-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.prepararFrescoModal.dni=this.value;S.prepararFrescoModal.err=''"
+      onkeydown="if(event.key==='Enter')submitPrepararFresco()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-warn btn-md" onclick="submitPrepararFresco()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Guardando...`:"📝 Confirmar preparado"}
+    </button>
+  </div>`;
+}
+async function submitPrepararFresco(){
+  const d = S.prepararFrescoModal;
+  if(d.loading) return;
+  const dni = String($("pf-dni")?.value||d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.prepararFrescoModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.prepararFrescoModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+  const changes = {
+    preparadoAt: now(), dniPreparoPor: dni, nombrePreparoPor: check.nombre, updatedAt: now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`📝 ${check.nombre} marcó el pedido como preparado`);
+  sheetsUpdate(d.id, changes);
+}
+
 function openListo(id){
   S.listoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "listo";
@@ -5643,6 +5777,9 @@ async function aplicarGestionar(dniVal, usuario){
       if(a.estado==="Aprobada" && r){
         const origenNombre = r.sucursal||r.area||"";
         crearNotificacion(origenNombre, `✅ Tu solicitud ${savedId} fue aprobada — prepará y marcá "Lista para retirar"`, savedId);
+        if(esPedidoPlanificacionFresco(r)){
+          crearNotificacion("RECEPCION FRESCO", `🥬 Nuevo pedido para preparar: ${savedId} — ${r.descripcion||""}`, savedId);
+        }
         const email = buscarEmailOrigen(origenNombre);
         if(email){
           enviarMail(email,
