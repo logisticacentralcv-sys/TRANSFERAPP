@@ -482,7 +482,9 @@ let S = {
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
   devolucionAccionTexto: "",
   devolSeleccion: new Set(),
+  devolSeleccionTomar: new Set(),
   dejarDevolucionesModal: {ids:[], dni:"", err:"", loading:false},
+  tomarDevolucionesModal: {ids:[], dni:"", err:"", loading:false},
   adminTab: "solicitudes",
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
@@ -1150,12 +1152,83 @@ function toggleDevolSeleccion(id, checked){
   if(checked) S.devolSeleccion.add(id); else S.devolSeleccion.delete(id);
   render();
 }
+function toggleDevolSeleccionTomar(id, checked){
+  if(checked) S.devolSeleccionTomar.add(id); else S.devolSeleccionTomar.delete(id);
+  render();
+}
+
+// ── PASO 1: repartidor TOMA (levanta) la devolución de la sucursal ──
+function openTomarDevoluciones(){
+  if(S.devolSeleccionTomar.size===0) return;
+  const ids = [...S.devolSeleccionTomar].filter(id=>{
+    const d = S.devoluciones.find(x=>x.id===id);
+    return d && d.estado==="Pendiente";
+  });
+  if(!ids.length) return;
+  S.tomarDevolucionesModal = {ids, dni:"", err:"", loading:false};
+  S.modal = "tomarDevoluciones";
+  render();
+}
+function renderTomarDevolucionesModal(){
+  const d = S.tomarDevolucionesModal;
+  return `
+  <div style="background:#2de0c418;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
+    🤲 Vas a tomar <strong>${d.ids.length} devolucion${d.ids.length!==1?"es":""}</strong> de la sucursal, para llevarlas a fábrica.
+  </div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="td-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.tomarDevolucionesModal.dni=this.value;S.tomarDevolucionesModal.err=''"
+      onkeydown="if(event.key==='Enter')submitTomarDevoluciones()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-teal btn-md" onclick="submitTomarDevoluciones()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Registrando...`:`🤲 Tomar ${d.ids.length}`}
+    </button>
+  </div>`;
+}
+async function submitTomarDevoluciones(){
+  const d = S.tomarDevolucionesModal;
+  if(d.loading) return;
+  const dni = String(d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.tomarDevolucionesModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.tomarDevolucionesModal.err=check.msg; render(); return; }
+
+  d.loading = true; renderNow();
+
+  const nowTs = now();
+  const changes = {estado:"En camino", nombreQuienLevanto:check.nombre, dniQuienLevanto:dni, levantadoAt:nowTs, updatedAt:nowTs};
+  try{
+    const resultados = await Promise.all(
+      d.ids.map(id => sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",id))
+    );
+    const fallidas = resultados.filter(r=>r.error);
+    if(fallidas.length===0){
+      const idsSet = new Set(d.ids);
+      S.devoluciones = S.devoluciones.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
+      S.devolSeleccionTomar = new Set();
+      S.modal = null;
+      toast(`🤲 ${check.nombre} tomó ${d.ids.length} devolución${d.ids.length!==1?"es":""} — camino a fábrica`);
+    } else {
+      S.tomarDevolucionesModal.loading=false;
+      S.tomarDevolucionesModal.err = `No se pudieron tomar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
+    }
+  } catch(e){
+    S.tomarDevolucionesModal.loading=false;
+    S.tomarDevolucionesModal.err = "No se pudo conectar — probá de nuevo.";
+  }
+  render();
+}
 
 function openDejarDevolucionesFabrica(){
   if(S.devolSeleccion.size===0) return;
   const ids = [...S.devolSeleccion].filter(id=>{
     const d = S.devoluciones.find(x=>x.id===id);
-    return d && d.estado==="Pendiente";
+    return d && d.estado==="En camino";
   });
   if(!ids.length) return;
   S.dejarDevolucionesModal = {ids, dni:"", err:"", loading:false};
@@ -1240,8 +1313,7 @@ function renderDevoluciones(){
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
-  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : e==="En fábrica" ? "var(--teal)" : "var(--amber)";
-  const pendientesLevantar = S.devoluciones.filter(d=>d.estado==="Pendiente");
+  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
 
   return `
   <div style="animation:fadeUp .3s ease">
@@ -1277,11 +1349,16 @@ function renderDevoluciones(){
       </div>
     </div>`:""}
 
-    ${esRepartidor && S.devolSeleccion.size>0?`
+    ${esRepartidor && (S.devolSeleccionTomar.size>0 || S.devolSeleccion.size>0)?`
     <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-      <strong>${S.devolSeleccion.size} seleccionada${S.devolSeleccion.size!==1?"s":""}</strong>
-      <button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica()">📦 Dejar en fábrica</button>
-      <button class="btn btn-ghost btn-sm" onclick="S.devolSeleccion=new Set();render()">✕ Deseleccionar todo</button>
+      ${S.devolSeleccionTomar.size>0?`
+      <span><strong>${S.devolSeleccionTomar.size}</strong> para tomar</span>
+      <button class="btn btn-teal btn-sm" onclick="openTomarDevoluciones()">🤲 Tomar (${S.devolSeleccionTomar.size})</button>
+      <button class="btn btn-ghost btn-sm" onclick="S.devolSeleccionTomar=new Set();render()">✕</button>`:""}
+      ${S.devolSeleccion.size>0?`
+      <span><strong>${S.devolSeleccion.size}</strong> en camino</span>
+      <button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica()">📦 Dejar en fábrica (${S.devolSeleccion.size})</button>
+      <button class="btn btn-ghost btn-sm" onclick="S.devolSeleccion=new Set();render()">✕</button>`:""}
     </div>`:""}
 
     ${esGestor||esRepartidor?`
@@ -1295,6 +1372,7 @@ function renderDevoluciones(){
       <select class="inp" style="width:180px" onchange="S.devolucionFiltroEstado=this.value;render()">
         <option value="">Todos los estados</option>
         <option ${S.devolucionFiltroEstado==="Pendiente"?"selected":""}>Pendiente</option>
+        <option ${S.devolucionFiltroEstado==="En camino"?"selected":""}>En camino</option>
         <option ${S.devolucionFiltroEstado==="En fábrica"?"selected":""}>En fábrica</option>
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
@@ -1307,7 +1385,8 @@ function renderDevoluciones(){
         <div class="card" style="padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
             <div style="display:flex;align-items:flex-start;gap:8px">
-              ${esRepartidor && d.estado==="Pendiente"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccion.has(d.id)?"checked":""} onchange="toggleDevolSeleccion('${escH(d.id)}',this.checked)"/>`:""}
+              ${esRepartidor && d.estado==="Pendiente"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccionTomar.has(d.id)?"checked":""} onchange="toggleDevolSeleccionTomar('${escH(d.id)}',this.checked)"/>`:""}
+              ${esRepartidor && d.estado==="En camino"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccion.has(d.id)?"checked":""} onchange="toggleDevolSeleccion('${escH(d.id)}',this.checked)"/>`:""}
               <div>
                 <strong>${escH(d.sucursal||"—")}</strong>
                 <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)} · ${escH(d.creadoPor||"—")}</span>
@@ -1317,9 +1396,10 @@ function renderDevoluciones(){
           </div>
           <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
-          ${d.nombreRepartidor?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🚚 Levantada por ${escH(d.nombreRepartidor)}</p>`:""}
+          ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
+          ${d.nombreRepartidor?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">📦 Dejada en fábrica por ${escH(d.nombreRepartidor)}</p>`:""}
           ${d.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(d.respondidoPor||"—")}):</strong> ${escH(d.respuesta)}</div>`:""}
-          ${!d.respuesta && !["Pendiente","En fábrica"].includes(d.estado)?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
+          ${!d.respuesta && !["Pendiente","En camino","En fábrica"].includes(d.estado)?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
           ${!esGestor && !esRepartidor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
           ${esGestor && d.estado==="En fábrica"?`
             ${S.devolucionAccionId===d.id?`
@@ -2961,6 +3041,7 @@ function renderModals(){
   if(S.modal==="tomarVarias") return wrapModal("m","Tomar varias transferencias",renderTomarVariasModal(),420);
   if(S.modal==="dejarBolsinesVarios") return wrapModal("m","Dejar bolsines",renderDejarBolsinesModal(),420);
   if(S.modal==="dejarDevolucionesFabrica") return wrapModal("m","Dejar devoluciones en fábrica",renderDejarDevolucionesModal(),420);
+  if(S.modal==="tomarDevoluciones") return wrapModal("m","Tomar devoluciones",renderTomarDevolucionesModal(),420);
   if(S.modal==="fabrica")   return wrapModal("m","Dejar en fábrica",renderFabricaModal(),420);
   if(S.modal==="entrega")   return wrapModal("m","Confirmar entrega",renderEntregaModal(),420);
   if(S.modal==="codigo")    return wrapModal("m","Confirmar recepción — Sucursal",renderCodigoModal(),420);
