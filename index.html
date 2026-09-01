@@ -231,11 +231,73 @@ async function enviarMail(to, subject, body){
   }catch(e){ console.warn("Mail:",e); }
 }
 async function notificarNuevaSolicitud(d){
-  if(!MAIL_WEBHOOK_URL) return;
+  if(MAIL_WEBHOOK_URL){
+    try{
+      const payload = {action:"notificarNueva", data:d};
+      await fetch(MAIL_WEBHOOK_URL, {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:"payload="+encodeURIComponent(JSON.stringify(payload))});
+    }catch(e){ console.warn("Mail:",e); }
+  }
+  // Alerta interna — no depende de que el mail llegue o no.
+  crearNotificacion("LOGISTICA", `📋 Nueva solicitud ${d.id} — ${escH(d.sucursal||d.area||"—")} pide ${escH(d.descripcion||"")}`, d.id);
+}
+
+// ══════════════════════════════════════════════════════════
+//  NOTIFICACIONES INTERNAS — alerta dentro de la app, no mail.
+//  destinatario puede ser "LOGISTICA" (todo el rol) o el área/sucursal
+//  exacta (para que le llegue solo a quien corresponde).
+// ══════════════════════════════════════════════════════════
+function normNotif(s){ return (s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""); }
+function notifEsMia(n){
+  const u = S.user;
+  if(!u || !n) return false;
+  const dest = normNotif(n.destinatario);
+  if(dest==="logistica") return u.rol==="logistica";
+  if(dest==="admin") return u.rol==="admin";
+  if(dest==="recepcion fresco" || dest==="recepcionfresco") return u.rol==="recepcionista" && normNotif(u.area).includes("fresco");
+  return dest === normNotif(u.area);
+}
+async function crearNotificacion(destinatario, mensaje, solicitudId){
+  if(!USE_SHEETS) return;
   try{
-    const payload = {action:"notificarNueva", data:d};
-    await fetch(MAIL_WEBHOOK_URL, {method:"POST", headers:{"Content-Type":"application/x-www-form-urlencoded"}, body:"payload="+encodeURIComponent(JSON.stringify(payload))});
-  }catch(e){ console.warn("Mail:",e); }
+    await sb.from("notificaciones").insert(toSnakeRow({destinatario, mensaje, solicitudId: solicitudId||null, leida:false}));
+  }catch(e){ console.warn("No se pudo crear notificación (¿corriste el SQL de la tabla 'notificaciones'?):", e); }
+}
+async function cargarNotificaciones(){
+  if(!USE_SHEETS) return;
+  try{
+    const { data, error } = await sb.from("notificaciones").select("*").eq("leida",false).order("created_at",{ascending:false}).limit(200);
+    if(error) throw error;
+    S.notificaciones = toCamelRows(data);
+  }catch(e){ /* la tabla puede no existir todavía — no rompe el resto de la app */ }
+}
+function misNotificaciones(){ return S.notificaciones.filter(notifEsMia); }
+async function marcarNotificacionLeida(id){
+  S.notificaciones = S.notificaciones.filter(n=>n.id!==id);
+  render();
+  try{ await sb.from("notificaciones").update({leida:true}).eq("id",id); }catch(e){}
+}
+async function marcarTodasNotifLeidas(){
+  const ids = misNotificaciones().map(n=>n.id);
+  if(!ids.length) return;
+  S.notificaciones = S.notificaciones.filter(n=>!ids.includes(n.id));
+  render();
+  try{ await sb.from("notificaciones").update({leida:true}).in("id",ids); }catch(e){}
+}
+function abrirNotificaciones(){ S.modal="notificaciones"; render(); }
+function renderNotificacionesModal(){
+  const mias = misNotificaciones();
+  return `
+  ${mias.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">No tenés notificaciones pendientes 🎉</p>`:`
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button class="btn btn-ghost btn-sm" onclick="marcarTodasNotifLeidas()">✓ Marcar todas como leídas</button>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:8px;max-height:420px;overflow-y:auto">
+    ${mias.map(n=>`
+      <div class="card" style="padding:12px 14px;cursor:pointer" onclick="marcarNotificacionLeida('${escH(n.id)}')${n.solicitudId?`;openDetalle('${escH(n.solicitudId)}')`:""}">
+        <p style="font-size:13px">${escH(n.mensaje)}</p>
+        <p style="font-size:11px;color:var(--faint);margin-top:4px">${fdt(n.createdAt)} · tocá para marcar como leída</p>
+      </div>`).join("")}
+  </div>`}`;
 }
 // Busca el mail de quien pidió una solicitud (por sucursal/área de origen)
 // en los usuarios ya cargados en memoria — no hace falta ir a buscarlo.
@@ -409,6 +471,7 @@ let S = {
   dejarDevolucionesModal: {ids:[], dni:"", err:"", loading:false},
   adminTab: "solicitudes",
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
+  notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
   repSeleccion: new Set(),
@@ -638,6 +701,7 @@ async function sheetsLoadDatos(){
     S.recorridos = toCamelRows(recs.data).filter(r=>r.nombre).map(r=>r.nombre);
     S.destinos   = toCamelRows(dests.data).filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
   }catch(e){console.warn("Supabase load datos:",e);}
+  cargarNotificaciones(); // no bloquea — si falla (tabla no creada aún), no rompe nada
 }
 
 // Recarga completa (botón actualizar) — ambas fases
@@ -1609,6 +1673,12 @@ function renderApp(){
         📦 <span style="display:none" class="devol-lbl">Devoluciones</span>${S.devoluciones.filter(d=>d.estado==="Pendiente").length>0 && esGestorDevolucion()?` (${S.devoluciones.filter(d=>d.estado==="Pendiente").length})`:""}
       </button>
       <style>@media(min-width:480px){.devol-lbl{display:inline!important}}</style>`:""}
+      <!-- Separador -->
+      <span style="color:var(--border);font-size:16px">|</span>
+      <!-- Notificaciones -->
+      <button class="btn btn-ghost btn-sm" onclick="abrirNotificaciones()" title="Notificaciones">
+        🔔${misNotificaciones().length>0?` (${misNotificaciones().length})`:""}
+      </button>
       <!-- Separador -->
       <span style="color:var(--border);font-size:16px">|</span>
       <!-- Nombre usuario -->
@@ -2806,6 +2876,7 @@ function renderModals(){
   if(S.modal==="editar")     return wrapModal("m","Editar solicitud",renderEditarModal(),460);
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
+  if(S.modal==="notificaciones") return wrapModal("m","🔔 Notificaciones",renderNotificacionesModal(),480);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
@@ -4199,6 +4270,7 @@ async function submitCambioEstadoMasivo(){
       const changes = {estado:d.estado, comentario, updatedAt:nowTs, dniLogistica:dni, nombreLogistica:nombre};
       if(d.recorrido) changes.recorrido = d.recorrido;
       if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
+      if(esAprobar && x) crearNotificacion(x.sucursal||x.area||"", `✅ Tu solicitud ${id} fue aprobada — prepará y marcá "Lista para retirar"`, id);
       return {id, changes};
     });
     const resultados = await Promise.all(
@@ -5391,6 +5463,22 @@ function startAutoRefresh(){
       }
       if(!S.modal) render();
     })
+    .on("postgres_changes", {event:"*", schema:"public", table:"notificaciones"}, (payload)=>{
+      if(S.view!=="app") return;
+      if(payload.eventType==="DELETE"){
+        S.notificaciones = S.notificaciones.filter(n=>n.id!==payload.old.id);
+      } else {
+        const fila = toCamelRow(payload.new);
+        if(fila.leida){
+          S.notificaciones = S.notificaciones.filter(n=>n.id!==fila.id);
+        } else {
+          const existe = S.notificaciones.some(n=>n.id===fila.id);
+          S.notificaciones = existe ? S.notificaciones.map(n=>n.id===fila.id?fila:n) : [fila, ...S.notificaciones];
+          if(!existe && notifEsMia(fila)) toast(fila.mensaje);
+        }
+      }
+      if(!S.modal) render();
+    })
     .subscribe();
 }
 function stopAutoRefresh(){
@@ -5553,7 +5641,9 @@ async function aplicarGestionar(dniVal, usuario){
       sheetsUpdate(savedId, changes);
       // Avisar por mail a quien la pidió, si logística la acaba de aprobar
       if(a.estado==="Aprobada" && r){
-        const email = buscarEmailOrigen(r.sucursal||r.area);
+        const origenNombre = r.sucursal||r.area||"";
+        crearNotificacion(origenNombre, `✅ Tu solicitud ${savedId} fue aprobada — prepará y marcá "Lista para retirar"`, savedId);
+        const email = buscarEmailOrigen(origenNombre);
         if(email){
           enviarMail(email,
             `✅ Transferencia ${savedId} aprobada — preparala y marcala "Lista para retirar"`,
