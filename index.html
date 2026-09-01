@@ -452,6 +452,7 @@ let S = {
   cerradoModal:   {id:"", dni:"", aclaracion:"", err:"", loading:false, nombreOk:""},
   confirmarCerradoModal: {id:"", dni:"", comentario:"", err:"", loading:false, nombreOk:""},
   pedirBolsinModal: {cantidad:"", motivo:"", err:"", loading:false},
+  envioMasivoModal: {destinos:[], descripcion:"", cantidad:"", unidad:"Unidades", fechaRequerida:"", observaciones:"", err:{}, loading:false},
   enviarBolsinModal: {numero:"", monto:"", comentario:"", err:"", loading:false},
   pedidoTesoreriaModal: {id:"", accion:"aprobar", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
   nuevoLoteModal: {cantidades:{}, err:"", loading:false},
@@ -1661,7 +1662,10 @@ function renderPlanificacion(){
         <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">${escH(u.area||"Planificación")}</h2>
         <p style="color:var(--muted);font-size:13px">Solicitudes entre cualquier origen y destino</p>
       </div>
-      <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+        ${areaN==="rrhh"?`<button class="btn btn-teal btn-md" onclick="openEnvioMasivoRRHH()">📨 Enviar a varias sucursales</button>`:""}
+      </div>
     </div>
     <div class="stats-grid">
       ${statCard("📤","MIS PEDIDOS",mine.length,"var(--blue)")}
@@ -2801,6 +2805,7 @@ function renderModals(){
   if(S.modal==="confirmarCerrado") return wrapModal("m","Confirmar transferencia recibida",renderConfirmarCerradoModal(),420);
   if(S.modal==="editar")     return wrapModal("m","Editar solicitud",renderEditarModal(),460);
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
+  if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
@@ -4419,6 +4424,142 @@ async function submitNoMeLlego(){
 // ══════════════════════════════════════════════════════════
 //  BOLSINES — pedido individual de una sucursal (excepción)
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+//  RRHH — envío a varias sucursales de una (solicitudes SUELTAS,
+//  cada una independiente — a diferencia del lote de Tesorería,
+//  acá NO se agrupan con loteId).
+// ══════════════════════════════════════════════════════════
+function openEnvioMasivoRRHH(){
+  S.envioMasivoModal = {
+    destinos: [...getSucursales()], // arranca con todas tildadas
+    descripcion:"", cantidad:"", unidad:"Unidades", fechaRequerida:"", observaciones:"",
+    err:{}, loading:false,
+  };
+  S.modal = "envioMasivoRRHH";
+  render();
+}
+
+function toggleEnvioMasivoDestino(nombre, checked){
+  const d = S.envioMasivoModal;
+  if(checked){ if(!d.destinos.includes(nombre)) d.destinos.push(nombre); }
+  else { d.destinos = d.destinos.filter(x=>x!==nombre); }
+  render();
+}
+function envioMasivoTodos(marcar){
+  S.envioMasivoModal.destinos = marcar ? [...getSucursales()] : [];
+  render();
+}
+
+function renderEnvioMasivoModal(){
+  const d = S.envioMasivoModal;
+  const sucs = getSucursales();
+  return `
+  <div class="alert-info" style="margin-bottom:14px;font-size:13px">
+    📨 Esto crea <strong>una solicitud independiente por cada sucursal marcada</strong> (no un lote) —
+    misma descripción y cantidad para todas, con destino a cada una.
+  </div>
+  <div class="field">
+    <label>Descripción <span class="req">*</span></label>
+    <textarea id="em-desc" rows="2" placeholder="Ej: Sobre con cartelería" oninput="S.envioMasivoModal.descripcion=this.value">${escH(d.descripcion)}</textarea>
+    ${d.err.desc?`<span class="err-msg">${d.err.desc}</span>`:""}
+  </div>
+  <div class="g3">
+    <div class="field">
+      <label>Cantidad (por sucursal) <span class="req">*</span></label>
+      <input id="em-cant" type="number" min="1" class="inp" value="${escH(d.cantidad)}" oninput="S.envioMasivoModal.cantidad=this.value"/>
+      ${d.err.cant?`<span class="err-msg">${d.err.cant}</span>`:""}
+    </div>
+    <div class="field">
+      <label>Unidad</label>
+      <select id="em-unit" onchange="S.envioMasivoModal.unidad=this.value">
+        ${UNIDADES.map(u=>`<option ${d.unidad===u?"selected":""}>${u}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field">
+      <label>Fecha requerida</label>
+      <input id="em-fecha" type="date" class="inp" value="${escH(d.fechaRequerida)}" onchange="S.envioMasivoModal.fechaRequerida=this.value"/>
+    </div>
+  </div>
+  <div class="field">
+    <label>Observaciones <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <textarea id="em-obs" rows="2" oninput="S.envioMasivoModal.observaciones=this.value">${escH(d.observaciones)}</textarea>
+  </div>
+  <div class="field">
+    <label>Sucursales destino (${d.destinos.length} de ${sucs.length} seleccionadas) <span class="req">*</span></label>
+    <div style="display:flex;gap:8px;margin-bottom:8px">
+      <button class="btn btn-ghost btn-sm" onclick="envioMasivoTodos(true)">Marcar todas</button>
+      <button class="btn btn-ghost btn-sm" onclick="envioMasivoTodos(false)">Desmarcar todas</button>
+    </div>
+    <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;padding:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      ${sucs.map(s=>`
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="chk-round" ${d.destinos.includes(s)?"checked":""} onchange="toggleEnvioMasivoDestino('${escH(s)}',this.checked)"/>
+          ${escH(s)}
+        </label>`).join("")}
+    </div>
+    ${d.err.destinos?`<span class="err-msg">${d.err.destinos}</span>`:""}
+  </div>
+  ${d.err.gral?`<div class="alert-err">⚠️ ${escH(d.err.gral)}</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitEnvioMasivoRRHH()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Enviando...`:`📨 Crear ${d.destinos.length} solicitudes`}
+    </button>
+  </div>`;
+}
+
+async function submitEnvioMasivoRRHH(){
+  const d = S.envioMasivoModal;
+  if(d.loading) return;
+  const descripcion = ($("em-desc")?.value||d.descripcion||"").trim();
+  const cantidad    = $("em-cant")?.value||d.cantidad||"";
+  const unidad      = $("em-unit")?.value||d.unidad||"Unidades";
+  const fechaRequerida = $("em-fecha")?.value||d.fechaRequerida||"";
+  const observaciones  = ($("em-obs")?.value||d.observaciones||"").trim();
+
+  const err={};
+  if(!descripcion) err.desc="Describí qué se envía";
+  if(!cantidad||isNaN(+cantidad)||+cantidad<=0) err.cant="Cantidad inválida";
+  if(d.destinos.length===0) err.destinos="Marcá al menos una sucursal";
+  if(Object.keys(err).length){ S.envioMasivoModal.err=err; render(); return; }
+
+  // Se pide el DNI UNA sola vez (login compartido de RRHH) y con eso se
+  // firman todas las solicitudes que se crean en el lote.
+  S.dniModal = {
+    title:`Ingresá tu DNI para registrar estas ${d.destinos.length} solicitudes`,
+    field:"solicitante", val:"", err:"", loading:false, nombreOk:"",
+    cb: async (dniVal, usuarioEncontrado)=>{
+      const nombreSolicitante = usuarioEncontrado?.nombre || S.user.nombre || "RRHH";
+      S.envioMasivoModal.loading = true; S.modal=null; renderNow();
+      try{
+        const creadas = [];
+        for(const destino of d.destinos){
+          const nueva = {
+            id:"tmp-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),
+            sucursal:"", area:S.user.area||"RRHH",
+            solicitante:nombreSolicitante, dniSolicitante:dniVal,
+            destino, descripcion, cantidad:+cantidad, unidad,
+            prioridad:"Media", fechaRequerida: fechaRequerida||null,
+            observaciones, estado:"Pendiente", comentario:"", recorrido:"",
+            dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
+            createdAt:now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt:now(),
+          };
+          const creada = await sheetsAdd(nueva);
+          creadas.push(creada||nueva);
+        }
+        S.requests = [...creadas, ...S.requests];
+        toast(`📨 ${creadas.length} solicitudes creadas — una por sucursal`);
+        creadas.forEach(c=>notificarNuevaSolicitud(c));
+      }catch(e){
+        toast("⚠️ Algo falló creando las solicitudes — revisá y volvé a intentar","warn");
+      }
+      S.envioMasivoModal.loading = false;
+      render();
+    }
+  };
+  S.modal = "dniConfirm"; render();
+}
+
 function openPedirBolsin(){
   S.pedirBolsinModal = {cantidad:"", motivo:"", err:"", loading:false};
   S.modal = "pedirBolsin";
