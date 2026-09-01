@@ -381,6 +381,7 @@ let S = {
 
   // UI – filtros logística
   fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:"", fRecorrido:"", fSolicitante:"",
+  fFechaRequerida:"", fTexto:"",
   fSucFecha:"", fPlanFecha:"",
   logSeleccion: new Set(),
   modoSeleccion: false,
@@ -400,6 +401,7 @@ let S = {
   devolucionForm: {motivo:"", detalle:"", loading:false, err:""},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
+  devolucionFiltroFecha: "",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
   devolucionAccionTexto: "",
@@ -1147,12 +1149,14 @@ function renderDevoluciones(){
     // para el repartidor y se saca de su vista para no ensuciarla.
     lista = S.devoluciones.filter(d => !["Confirmada","No confirmada"].includes(d.estado));
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
+    if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
   } else if(!esGestor){
     const norm = s=>(s||"").trim().toLowerCase();
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
     if(S.devolucionFiltroEstado)   lista = lista.filter(d=>d.estado===S.devolucionFiltroEstado);
+    if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
   const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : e==="En fábrica" ? "var(--teal)" : "var(--amber)";
@@ -1205,6 +1209,7 @@ function renderDevoluciones(){
         <option value="">Todas las sucursales</option>
         ${sucursalesUnicas.map(o=>`<option ${S.devolucionFiltroSucursal===o?"selected":""}>${escH(o)}</option>`).join("")}
       </select>
+      <input type="date" class="inp" style="width:160px" value="${escH(S.devolucionFiltroFecha)}" onchange="S.devolucionFiltroFecha=this.value;render()"/>
       ${esGestor?`
       <select class="inp" style="width:180px" onchange="S.devolucionFiltroEstado=this.value;render()">
         <option value="">Todos los estados</option>
@@ -2375,11 +2380,18 @@ function renderLogTabla(){
     if(f.fDestino   && r.destino   !==f.fDestino)   return false;
     if(f.fPrioridad && r.prioridad !==f.fPrioridad) return false;
     if(f.fFecha     && !r.createdAt.startsWith(f.fFecha)) return false;
+    if(f.fFechaRequerida && !(r.fechaRequerida||"").startsWith(f.fFechaRequerida)) return false;
     if(f.fRecorrido && r.recorrido !==f.fRecorrido) return false;
     if(f.fSolicitante && !(solicitanteLabel(r)||"").toLowerCase().includes(f.fSolicitante.trim().toLowerCase())) return false;
+    if(f.fTexto){
+      const q = f.fTexto.trim().toLowerCase();
+      const campos = [r.id,r.descripcion,r.sucursal,r.area,r.destino,solicitanteLabel(r),r.observaciones,r.comentario,r.recorrido,r.unidad]
+        .map(v=>(v||"").toString().toLowerCase());
+      if(!campos.some(v=>v.includes(q))) return false;
+    }
     return true;
   });
-  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fRecorrido||f.fSolicitante;
+  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fFechaRequerida||f.fRecorrido||f.fSolicitante||f.fTexto;
   const reqs=S.requests;
   const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
 
@@ -2438,13 +2450,20 @@ function renderLogTabla(){
         <select onchange="S.fRecorrido=this.value;render()">
           <option value="">Todos</option>${recOpts.map(r=>`<option ${f.fRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
         </select></div>
-      <div class="field" style="margin-bottom:0"><label>Fecha</label>
+      <div class="field" style="margin-bottom:0"><label>Fecha (creación)</label>
         <input type="date" class="inp" value="${f.fFecha}" onchange="S.fFecha=this.value;render()"/>
+      </div>
+      <div class="field" style="margin-bottom:0"><label>Fecha requerida</label>
+        <input type="date" class="inp" value="${f.fFechaRequerida}" onchange="S.fFechaRequerida=this.value;render()"/>
       </div>
       <div class="field" style="margin-bottom:0"><label>Solicitante</label>
         <input type="text" id="f-solicitante" class="inp" placeholder="Buscar por nombre... (Enter)" value="${escH(f.fSolicitante)}"
           onkeydown="if(event.key==='Enter'){S.fSolicitante=this.value;render();}"
           onblur="S.fSolicitante=this.value;render();"/>
+      </div>
+      <div class="field" style="margin-bottom:0;grid-column:1/-1"><label>🔎 Buscar en todo (N°, descripción, origen, destino, comentario...)</label>
+        <input type="text" id="f-texto" class="inp" placeholder="Escribí y aparece todo lo que coincida..." value="${escH(f.fTexto)}"
+          oninput="S.fTexto=this.value;render()"/>
       </div>
     </div>
     ${hasF?`<div class="filter-bar"><span>${filtered.length} resultado${filtered.length!==1?"s":""}</span><button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Limpiar</button></div>`:""}
@@ -2888,6 +2907,10 @@ function renderDetalle(){
   // Logística ve horas internas; el DNI de nadie se muestra en ningún lado
   // — el DNI solo sirve para firmar la acción, nunca para exhibirlo.
   const esLogistica   = S.user?.rol === "logistica";
+  // Admin y Tesorería: ven la hora exacta de cuándo se TOMA y se ENTREGA
+  // algo (les sirve para el seguimiento operativo), pero NO la hora en que
+  // Logística aprobó — eso queda solo para Logística (ver paso 2 abajo).
+  const verHoraTomaEntrega = esLogistica || ["admin","tesoreria"].includes(S.user?.rol);
   // Sucursal destino ve la hora de entrega (les corresponde saberla)
   const esDestinoView = !esLogistica && S.user?.area &&
     (r.destino||"").trim().toLowerCase() === (S.user.area||"").trim().toLowerCase();
@@ -2953,7 +2976,7 @@ function renderDetalle(){
     const quien    = r.nombreQuienLevanto || "";
     const tsLev    = r.levantadoAt || "";
     const titleLev = esFabFlow ? "🚚 Levantado — viene a fábrica" : "🚚 Levantado — va al destino";
-    const metaLev  = esLogistica
+    const metaLev  = verHoraTomaEntrega
       ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"}`
       : quien ? `Por ${quien}` : "En camino";
     steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev});
@@ -2963,7 +2986,7 @@ function renderDetalle(){
   if(esFabFlow && (r.fabricaAt || r.estado==="En fábrica")){
     const ts      = r.fabricaAt || r.updatedAt;
     const quien   = r.nombreQuienLevanto || "";
-    const metaFab = esLogistica
+    const metaFab = verHoraTomaEntrega
       ? `${fdt(ts)} · ${quien||"—"}`
       : quien || "";
     steps.push({dot:S_COLOR["En fábrica"], title:"🏭 Llegó a fábrica", meta:metaFab});
@@ -2972,7 +2995,7 @@ function renderDetalle(){
   // ── PASO 4c: Salió de fábrica hacia destino ─────────────
   if(esFabFlow && r.nombreQuienEntrego){
     const tsSal   = r.salidaFabricaAt || "";
-    const metaSal = esLogistica
+    const metaSal = verHoraTomaEntrega
       ? `${tsSal?fdt(tsSal)+" · ":""}${r.nombreQuienEntrego}`
       : `Por ${r.nombreQuienEntrego}`;
     steps.push({dot:S_COLOR["En tránsito"], title:"🚚 Salió de fábrica → destino final", meta:metaSal});
@@ -2997,7 +3020,7 @@ function renderDetalle(){
   // ── PASO 5c: Dejada con sucursal cerrada (pendiente de confirmar) ──
   if(r.estado==="Entregada (sin confirmar)"){
     const quienDejo = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
-    const metaDejo = esLogistica
+    const metaDejo = verHoraTomaEntrega
       ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
       : `${quienDejo?"Por "+quienDejo:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
     steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
@@ -3009,22 +3032,22 @@ function renderDetalle(){
     // Si vino del flujo "sucursal cerrada", separamos en dos pasos: cuándo
     // la dejó el repartidor y cuándo la sucursal confirmó que la recibió.
     if(r.confirmadaSucursalAt){
-      const metaDejo = esLogistica
+      const metaDejo = verHoraTomaEntrega
         ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
         : `${quienEntrego?"Por "+quienEntrego:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
       steps.push({dot:"#c98a1f", title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
-      const metaConf = esLogistica
+      const metaConf = verHoraTomaEntrega
         ? `${fdt(r.confirmadaSucursalAt)} · ${r.nombreQuienRecibio||"—"}`
         : `Confirmada${r.nombreQuienRecibio?" por "+r.nombreQuienRecibio:""}`;
       steps.push({dot:"#34d399", title:"✅ Confirmada por la sucursal", meta:metaConf});
     } else {
-      const metaEntr = esLogistica
+      const metaEntr = verHoraTomaEntrega
         ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}`
         : `Entregada${quienEntrego?" por "+quienEntrego:""}`;
       steps.push({dot:S_COLOR["Entregada"], title:"✅ Entregada en destino", meta:metaEntr});
       // Quién recibió (sucursal destino) — solo nombre
       if(r.nombreQuienRecibio){
-        const metaRec = esLogistica
+        const metaRec = verHoraTomaEntrega
           ? r.nombreQuienRecibio
           : `Recibido por ${r.nombreQuienRecibio}`;
         steps.push({dot:"#a371f7", title:"🔑 Confirmado por la sucursal destino", meta:metaRec});
@@ -3830,7 +3853,7 @@ function checkOtraDireccion(){
   if(mark) mark.style.display = show ? "inline" : "none";
 }
 
-function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fRecorrido=S.fSolicitante=""; render(); }
+function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fFechaRequerida=S.fRecorrido=S.fSolicitante=S.fTexto=""; render(); }
 
 // ── Selección múltiple en la tabla de Logística ───────────
 function toggleRepSeleccion(id, checked){
@@ -4102,29 +4125,41 @@ function toggleLogSeleccionTodos(checked){
 function openCambioEstadoMasivo(){
   const estado = ($("log-estado-masivo")?.value||"").trim();
   if(!estado || S.logSeleccion.size===0) return;
-  S.cambioEstadoMasivoModal = {ids:[...S.logSeleccion], estado, dni:"", err:"", loading:false, nombreOk:""};
+  S.cambioEstadoMasivoModal = {ids:[...S.logSeleccion], estado, recorrido:"", dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "cambioEstadoMasivo";
   render();
 }
 
 function renderCambioEstadoMasivoModal(){
   const d = S.cambioEstadoMasivoModal;
+  const esLogistica = S.user?.rol==="logistica";
+  const esAprobar = d.estado==="Aprobada";
+  const recOpts = S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
+  const verbo = esAprobar ? "aprobar" : `cambiar a "${escH(d.estado)}"`;
   return `
   <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
-    ⚠️ Vas a cambiar <strong>${d.ids.length} solicitudes</strong> a <strong>${escH(d.estado)}</strong> de una sola vez. Esta acción queda registrada con tu DNI.
+    ${esAprobar?`✅ Vas a aprobar <strong>${d.ids.length} solicitudes</strong> de una sola vez.`:`⚠️ Vas a cambiar <strong>${d.ids.length} solicitudes</strong> a <strong>${escH(d.estado)}</strong> de una sola vez.`}
   </div>
   <div class="field">
+    <label>Recorrido a asignar ${esAprobar?"":"(opcional)"}</label>
+    <select id="cem-recorrido" class="inp" onchange="S.cambioEstadoMasivoModal.recorrido=this.value">
+      <option value="">— No asignar / dejar como está —</option>
+      ${recOpts.map(r=>`<option ${d.recorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
+    </select>
+  </div>
+  ${esLogistica?"":`
+  <div class="field" style="margin-top:12px">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="cem-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
       value="${escH(d.dni)}"
       oninput="S.cambioEstadoMasivoModal.dni=this.value;S.cambioEstadoMasivoModal.err=''"
       onkeydown="if(event.key==='Enter')submitCambioEstadoMasivo()"/>
     ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
-  </div>
+  </div>`}
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-success btn-md" onclick="submitCambioEstadoMasivo()" ${d.loading?"disabled":""}>
-      ${d.loading?`<span class="spinner"></span> Aplicando...`:`✅ Cambiar ${d.ids.length} a ${escH(d.estado)}`}
+      ${d.loading?`<span class="spinner"></span> Aplicando...`:`✅ ${esAprobar?`Aprobar ${d.ids.length}`:`Cambiar ${d.ids.length} a ${escH(d.estado)}`}`}
     </button>
   </div>`;
 }
@@ -4132,10 +4167,17 @@ function renderCambioEstadoMasivoModal(){
 async function submitCambioEstadoMasivo(){
   const d = S.cambioEstadoMasivoModal;
   if(d.loading) return;
-  const dni = String(d.dni||"").replace(/\D/g,"");
-  if(!dni){ S.cambioEstadoMasivoModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
-  if(!check.ok){ S.cambioEstadoMasivoModal.err=check.msg; render(); return; }
+  const esLogistica = S.user?.rol==="logistica";
+  let dni, nombre;
+  if(esLogistica){
+    dni = S.user.dni||""; nombre = S.user.nombre||"Logística";
+  } else {
+    dni = String(d.dni||"").replace(/\D/g,"");
+    if(!dni){ S.cambioEstadoMasivoModal.err="Ingresá tu DNI."; render(); return; }
+    const check = validarDNI(dni);
+    if(!check.ok){ S.cambioEstadoMasivoModal.err=check.msg; render(); return; }
+    nombre = check.nombre;
+  }
 
   d.loading = true; renderNow();
 
@@ -4144,11 +4186,15 @@ async function submitCambioEstadoMasivo(){
     // distinto, así que se actualiza una por una (Postgres lo hace seguro
     // aunque vayan todas juntas) para no perder el historial de cada una.
     const nowTs = now();
+    const esAprobar = d.estado==="Aprobada";
     const cambios = d.ids.map(id=>{
       const x = S.requests.find(r=>r.id===id);
-      const nota = `Cambio masivo a "${d.estado}" por ${check.nombre}`;
+      const nota = esAprobar ? `Aprobada por ${nombre}` : `Cambio a "${d.estado}" por ${nombre}`;
       const comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
-      return {id, changes:{estado:d.estado, comentario, updatedAt:nowTs}};
+      const changes = {estado:d.estado, comentario, updatedAt:nowTs, dniLogistica:dni, nombreLogistica:nombre};
+      if(d.recorrido) changes.recorrido = d.recorrido;
+      if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
+      return {id, changes};
     });
     const resultados = await Promise.all(
       cambios.map(c => sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id))
@@ -4162,7 +4208,7 @@ async function submitCambioEstadoMasivo(){
       S.logSeleccion = new Set();
       S.modoSeleccion = false;
       S.modal = null;
-      toast(`✅ ${cambios.length} solicitudes cambiadas a "${d.estado}"`);
+      toast(esAprobar ? `✅ ${cambios.length} solicitudes aprobadas` : `✅ ${cambios.length} solicitudes cambiadas a "${d.estado}"`);
     } else {
       S.cambioEstadoMasivoModal.loading=false;
       S.cambioEstadoMasivoModal.err = `No se pudieron cambiar ${fallidas.length} de ${cambios.length}. Probá de nuevo.`;
@@ -5302,11 +5348,25 @@ async function submitNueva(){
 // ── GESTIONAR (LOGÍSTICA) ──────────────────────────────────
 async function submitGestionar(){
   if(!S.action.estado){ toast("Seleccioná un estado","warn"); return; }
+
+  // El login "logística" lo usa una sola persona — pedirle DNI en cada
+  // acción es fricción sin sentido (a diferencia de repartidores/sucursales,
+  // que sí son logins compartidos entre varias personas distintas).
+  if(S.user?.rol==="logistica"){
+    await aplicarGestionar(S.user.dni||"", {nombre:S.user.nombre});
+    return;
+  }
+
   S.dniModal={
     title:"Confirmá tu DNI para registrar esta acción",
     field:"logistica",
     val:"", err:"", loading:false,
-    cb: async (dniVal, usuario)=>{
+    cb: async (dniVal, usuario)=> aplicarGestionar(dniVal, usuario)
+  };
+  S.modal="dniConfirm"; render();
+}
+
+async function aplicarGestionar(dniVal, usuario){
       // Obtener nombre del que firma — viene del objeto usuario encontrado por validarDNI
       const nombreFirmante = usuario?.nombre || S.user?.nombre || "Logística";
       S.saving=true; S.modal=null; renderNow();
@@ -5365,9 +5425,6 @@ async function submitGestionar(){
             ].join("\n"));
         }
       }
-    }
-  };
-  S.modal="dniConfirm"; render();
 }
 
 // ── CONFIRMAR ENTREGA (REPARTIDOR) ─────────────────────────
