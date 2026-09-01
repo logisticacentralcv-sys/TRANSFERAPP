@@ -534,6 +534,8 @@ let S = {
   pedirBolsinModal: {cantidad:"", motivo:"", err:"", loading:false},
   envioMasivoModal: {destinos:[], descripcion:"", cantidad:"", unidad:"Unidades", fechaRequerida:"", observaciones:"", err:{}, loading:false},
   prepararFrescoModal: {id:"", dni:"", err:"", loading:false, nombreOk:""},
+  quiebreStockModal: {area:"PLANIFICACION", descripcion:"", cantidad:"", unidad:"Kg", observaciones:"", err:{}, loading:false},
+  planificarCantidadModal: {id:"", cantidad:"", comentario:"", dni:"", err:{}, loading:false},
   enviarBolsinModal: {numero:"", monto:"", comentario:"", err:"", loading:false},
   pedidoTesoreriaModal: {id:"", accion:"aprobar", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
   nuevoLoteModal: {cantidades:{}, err:"", loading:false},
@@ -651,7 +653,7 @@ function snakeToCamel(s){ return s.replace(/_([a-z0-9])/g, (_,c) => c.toUpperCas
 const COLUMNAS_FECHA = new Set([
   "created_at","updated_at","approved_at","scheduled_at","delivered_at",
   "fabrica_at","listo_at","levantado_at","salida_fabrica_at",
-  "confirmada_sucursal_at","fecha_requerida",
+  "confirmada_sucursal_at","fecha_requerida","preparado_at","planificado_at",
 ]);
 function toSnakeRow(obj){
   const out={};
@@ -1833,6 +1835,21 @@ function renderPlanificacion(){
         ${areaN==="rrhh"?`<button class="btn btn-teal btn-md" onclick="openEnvioMasivoRRHH()">📨 Enviar a varias sucursales</button>`:""}
       </div>
     </div>
+    ${(()=>{
+      const pendQuiebre = mine.filter(r=>r.tipoPedido==="quiebreStock" && !r.planificadoAt);
+      if(!pendQuiebre.length) return "";
+      return `
+      <div class="card" style="margin-bottom:20px;padding:14px 16px;border-left:3px solid var(--red)">
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">🚨 Quiebre de stock — pendientes de planificar</h3>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          ${pendQuiebre.map(r=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--s2);border-radius:8px;padding:10px 12px">
+              <span style="font-size:13px"><strong>${escH(r.sucursal)}</strong> pide ${escH(String(r.cantidad))} ${escH(r.unidad)} de ${escH(r.descripcion)}</span>
+              <button class="btn btn-warn btn-sm" onclick="openPlanificarCantidad('${escH(r.id)}')">📋 Planificar cantidad</button>
+            </div>`).join("")}
+        </div>
+      </div>`;
+    })()}
     <div class="stats-grid">
       ${statCard("📤","MIS PEDIDOS",mine.length,"var(--blue)")}
       ${statCard("✅","APROBADAS",mine.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
@@ -1866,7 +1883,7 @@ function renderPlanificacion(){
               <td style="font-weight:500">${escH(origenLabel(r))}</td>
               <td class="muted-cell">${escH(r.destino)}</td>
               <td><div class="trunc">${escH(r.descripcion)}</div></td>
-              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
+              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}${r.tipoPedido==="quiebreStock"&&r.cantidadOriginal&&+r.cantidadOriginal!==+r.cantidad?` <span style="color:var(--faint);text-decoration:line-through;font-size:11px">${escH(String(r.cantidadOriginal))}</span>`:""}</td>
               <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
               <td>${estadoBadges(r)}</td>
               <td style="white-space:nowrap" onclick="event.stopPropagation()">
@@ -2539,6 +2556,7 @@ function renderSucursalArea(){
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+        ${u.rol==="sucursal"?`<button class="btn btn-danger btn-md" onclick="openQuiebreStock()">🚨 Quiebre de stock</button>`:""}
         ${bolsinesActivo()?`
         <button class="btn btn-warn btn-md" onclick="openPedirBolsin()">🎒 Pedir bolsín</button>
         <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>`:""}
@@ -3056,6 +3074,8 @@ function renderModals(){
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
   if(S.modal==="notificaciones") return wrapModal("m","🔔 Notificaciones",renderNotificacionesModal(),480);
   if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
+  if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
+  if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
@@ -5359,6 +5379,170 @@ async function submitPrepararFresco(){
   S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
   S.modal = null;
   toast(`📝 ${check.nombre} marcó el pedido como preparado`);
+  sheetsUpdate(d.id, changes);
+}
+
+// ══════════════════════════════════════════════════════════
+//  QUIEBRE DE STOCK — la sucursal pide algo puntual y urgente
+//  a Planificación / Planificador Fresco (no pasa por el circuito
+//  normal de transferencias). Planificación decide cuánto manda
+//  realmente (puede ser menos de lo pedido) y de ahí sigue el
+//  circuito normal: Logística aprueba → Recepción Fresco prepara →
+//  Reparto entrega.
+// ══════════════════════════════════════════════════════════
+function openQuiebreStock(){
+  S.quiebreStockModal = {area:"PLANIFICACION", descripcion:"", cantidad:"", unidad:"Kg", observaciones:"", err:{}, loading:false};
+  S.modal = "quiebreStock";
+  render();
+}
+function renderQuiebreStockModal(){
+  const d = S.quiebreStockModal;
+  return `
+  <div style="background:#f0525218;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--red)">
+    🚨 Usalo solo para pedidos <strong>puntuales y urgentes</strong> por quiebre de stock — no para pedidos de rutina.
+    Planificación va a revisar tu pedido y puede ajustar la cantidad según lo que haya disponible.
+  </div>
+  <div class="field">
+    <label>¿A quién va dirigido? <span class="req">*</span></label>
+    <select id="qs-area" class="inp" onchange="S.quiebreStockModal.area=this.value">
+      <option value="PLANIFICACION" ${d.area==="PLANIFICACION"?"selected":""}>Planificación</option>
+      <option value="PLANIFICADOR FRESCO" ${d.area==="PLANIFICADOR FRESCO"?"selected":""}>Planificador Fresco</option>
+    </select>
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Descripción <span class="req">*</span></label>
+    <textarea id="qs-desc" rows="2" placeholder="Ej: Morcillas">${escH(d.descripcion)}</textarea>
+    ${d.err.desc?`<span class="err-msg">${d.err.desc}</span>`:""}
+  </div>
+  <div class="g3">
+    <div class="field">
+      <label>Cantidad deseada <span class="req">*</span></label>
+      <input id="qs-cant" type="number" min="0.1" step="0.1" class="inp" value="${escH(d.cantidad)}" placeholder="Ej: 5"/>
+      ${d.err.cant?`<span class="err-msg">${d.err.cant}</span>`:""}
+    </div>
+    <div class="field">
+      <label>Unidad</label>
+      <select id="qs-unit" onchange="S.quiebreStockModal.unidad=this.value">
+        ${UNIDADES.map(u=>`<option ${d.unidad===u?"selected":""}>${u}</option>`).join("")}
+      </select>
+    </div>
+  </div>
+  <div class="field">
+    <label>Observaciones <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <textarea id="qs-obs" rows="2" placeholder="Contexto, para cuándo lo necesitás...">${escH(d.observaciones)}</textarea>
+  </div>
+  ${d.err.gral?`<div class="alert-err">⚠️ ${escH(d.err.gral)}</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-danger btn-md" onclick="submitQuiebreStock()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Enviando...`:"🚨 Enviar pedido"}
+    </button>
+  </div>`;
+}
+async function submitQuiebreStock(){
+  const d = S.quiebreStockModal;
+  if(d.loading) return;
+  const area = ($("qs-area")?.value||d.area||"PLANIFICACION").trim();
+  const descripcion = ($("qs-desc")?.value||d.descripcion||"").trim();
+  const cantidad = ($("qs-cant")?.value||d.cantidad||"").trim();
+  const unidad = ($("qs-unit")?.value||d.unidad||"Kg").trim();
+  const observaciones = ($("qs-obs")?.value||d.observaciones||"").trim();
+
+  const err={};
+  if(!descripcion) err.desc="Describí qué necesitás";
+  if(!cantidad||isNaN(+cantidad)||+cantidad<=0) err.cant="Cantidad inválida";
+  if(Object.keys(err).length){ S.quiebreStockModal.err=err; render(); return; }
+
+  const u = S.user;
+  const areaLabel = area==="PLANIFICADOR FRESCO" ? "Planificador Fresco" : "Planificación";
+  S.dniModal = {
+    title:"Ingresá tu DNI para registrar el pedido",
+    field:"solicitante", val:"", err:"", loading:false, nombreOk:"",
+    cb: async (dniVal, usuarioEncontrado)=>{
+      if(S.saving) return;
+      const nombreSolicitante = usuarioEncontrado?.nombre || u.nombre || "Sin nombre";
+      S.saving = true; S.modal = null; renderNow();
+      const nueva = {
+        id:"tmp-"+Date.now(),
+        sucursal: u.area, area: areaLabel,
+        solicitante: nombreSolicitante, dniSolicitante: dniVal,
+        destino: u.area, descripcion, cantidad:+cantidad, cantidadOriginal:+cantidad, unidad,
+        prioridad:"Urgente", fechaRequerida: null, observaciones,
+        estado:"Pendiente", comentario:"", recorrido:"", tipoPedido:"quiebreStock",
+        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
+        createdAt:now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt:now(),
+      };
+      const creada = await sheetsAdd(nueva);
+      S.requests = [creada||nueva, ...S.requests];
+      S.saving = false;
+      toast(`🚨 Pedido ${(creada||nueva).id} enviado a ${areaLabel}`);
+      render();
+      crearNotificacion(areaLabel, `🚨 Quiebre de stock — ${escH(u.area)} pide ${escH(descripcion)} (${cantidad} ${escH(unidad)})`, (creada||nueva).id);
+    }
+  };
+  S.modal="dniConfirm"; render();
+}
+
+// Planificación revisa un pedido de quiebre de stock y define cuánto
+// manda de verdad (puede ser menos de lo pedido) — el pedido SIGUE
+// pendiente después de esto, para que Logística lo apruebe como siempre.
+function openPlanificarCantidad(id){
+  const r = S.requests.find(x=>x.id===id);
+  S.planificarCantidadModal = {id, cantidad:String(r?.cantidad??""), comentario:"", dni:"", err:{}, loading:false};
+  S.modal = "planificarCantidad";
+  render();
+}
+function renderPlanificarCantidadModal(){
+  const d = S.planificarCantidadModal;
+  const r = S.requests.find(x=>x.id===d.id);
+  return `
+  ${r?`<div class="alert-info" style="margin-bottom:14px;font-size:13px">
+    <strong>${escH(r.sucursal)}</strong> pidió <strong>${escH(String(r.cantidadOriginal??r.cantidad))} ${escH(r.unidad)}</strong> de ${escH(r.descripcion)}.
+  </div>`:""}
+  <div class="field">
+    <label>Cantidad a planificar <span class="req">*</span></label>
+    <input id="pc-cant" type="number" min="0.1" step="0.1" class="inp" value="${escH(d.cantidad)}"/>
+    ${d.err.cant?`<span class="err-msg">${d.err.cant}</span>`:""}
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional — ej. motivo del ajuste)</span></label>
+    <textarea id="pc-coment" rows="2">${escH(d.comentario)}</textarea>
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="pc-dni" class="inp ${d.err.dni?"err":""}" type="number" placeholder="Ej: 30123456" value="${escH(d.dni)}"
+      oninput="S.planificarCantidadModal.dni=this.value"/>
+    ${d.err.dni?`<span class="err-msg">${d.err.dni}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitPlanificarCantidad()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Guardando...`:"📋 Confirmar cantidad"}
+    </button>
+  </div>`;
+}
+async function submitPlanificarCantidad(){
+  const d = S.planificarCantidadModal;
+  if(d.loading) return;
+  const cantidad = ($("pc-cant")?.value||d.cantidad||"").trim();
+  const comentario = ($("pc-coment")?.value||d.comentario||"").trim();
+  const dni = String($("pc-dni")?.value||d.dni||"").replace(/\D/g,"");
+  const err={};
+  if(!cantidad||isNaN(+cantidad)||+cantidad<=0) err.cant="Cantidad inválida";
+  if(!dni) err.dni="Ingresá tu DNI";
+  if(Object.keys(err).length){ S.planificarCantidadModal.err=err; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.planificarCantidadModal.err={dni:check.msg}; render(); return; }
+
+  d.loading = true; renderNow();
+  const changes = {
+    cantidad:+cantidad,
+    planificadoAt: now(), dniPlanificoPor: dni, nombrePlanificoPor: check.nombre,
+    comentarioPlanificacion: comentario, updatedAt: now(),
+  };
+  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`📋 ${check.nombre} planificó ${cantidad} — queda pendiente de aprobación de Logística`);
   sheetsUpdate(d.id, changes);
 }
 
