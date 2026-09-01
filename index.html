@@ -496,6 +496,7 @@ let S = {
   // UI – filtros repartidor
   fRepRecorrido:"",
   fRepSucursal:"",
+  fTesFecha:"", fTesSucursal:"", fTesTexto:"",
 
   // UI – tabs
   tabLog: "solicitudes",  // solicitudes | metricas
@@ -1818,8 +1819,15 @@ function renderTesoreria(){
   const historialPedidos = pedidosBolsin.filter(r=>!["Pendiente Tesorería","Aprobada"].includes(r.estado))
     .sort((a,b)=>(b.updatedAt||"").localeCompare(a.updatedAt||""));
   // Bolsines que las sucursales mandan HACIA Tesorería (con plata)
-  const bolsinesEnviados = S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería")
+  let bolsinesEnviados = S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería")
     .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
+  const sucursalesTesUnicas = [...new Set(bolsinesEnviados.map(r=>r.sucursal).filter(Boolean))].sort();
+  if(S.fTesFecha)    bolsinesEnviados = bolsinesEnviados.filter(r=>r.createdAt && r.createdAt.slice(0,10)===S.fTesFecha);
+  if(S.fTesSucursal) bolsinesEnviados = bolsinesEnviados.filter(r=>(r.sucursal||"").toLowerCase().includes(S.fTesSucursal.trim().toLowerCase()));
+  if(S.fTesTexto){
+    const q = S.fTesTexto.trim().toLowerCase();
+    bolsinesEnviados = bolsinesEnviados.filter(r=>[r.id,r.sucursal,r.descripcion,r.observaciones].map(v=>(v||"").toString().toLowerCase()).some(v=>v.includes(q)));
+  }
 
   // Agrupar por loteId (solo lo que tiene tipoPedido="bolsin" y loteId)
   const lotesMap = {};
@@ -1900,7 +1908,14 @@ function renderTesoreria(){
 
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📥 Bolsines recibidos de sucursales</h3>
-      ${bolsinesEnviados.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no llegó ningún bolsín.</p>`:`
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <input type="date" class="inp" style="width:160px" value="${escH(S.fTesFecha)}" onchange="S.fTesFecha=this.value;render()"/>
+        <input type="text" list="tes-sucursales" class="inp" style="width:200px" placeholder="Sucursal..." value="${escH(S.fTesSucursal)}" oninput="S.fTesSucursal=this.value;render()"/>
+        <datalist id="tes-sucursales">${sucursalesTesUnicas.map(s=>`<option value="${escH(s)}">`).join("")}</datalist>
+        <input type="text" class="inp" style="width:220px" placeholder="🔎 Buscar N°, descripción..." value="${escH(S.fTesTexto)}" oninput="S.fTesTexto=this.value;render()"/>
+        ${(S.fTesFecha||S.fTesSucursal||S.fTesTexto)?`<button class="btn btn-ghost btn-sm" onclick="S.fTesFecha='';S.fTesSucursal='';S.fTesTexto='';render()">✕ Limpiar</button>`:""}
+      </div>
+      ${bolsinesEnviados.length===0?`<p style="color:var(--muted);font-size:13px">${(S.fTesFecha||S.fTesSucursal||S.fTesTexto)?"No hay bolsines con ese filtro.":"Todavía no llegó ningún bolsín."}</p>`:`
       <div class="table-wrap">
         <table>
           <thead><tr><th>N°</th><th>Sucursal</th><th>Detalle</th><th>Enviado</th><th>Recibido en Tesorería</th><th>Estado</th><th></th></tr></thead>
@@ -4806,8 +4821,14 @@ async function submitPedirBolsin(){
 //  palabra clave (mismo criterio que el resto de los bolsines), y el
 //  repartidor lo puede levantar junto con transferencias y devoluciones.
 // ══════════════════════════════════════════════════════════
+// Sucursales tipo "market": entregan varios bolsines por caja —
+// se les agrega el campo "N° de caja" al enviar bolsines.
+const SUCURSALES_MARKET = ["independencia","alsina","arenales","paunero"];
+function esSucursalMarket(nombre){ return SUCURSALES_MARKET.includes(normNotif(nombre)); }
+
 function openEnviarBolsin(){
-  S.enviarBolsinModal = {numero:"", monto:"", comentario:"", err:"", loading:false};
+  const esMarket = esSucursalMarket(S.user?.area);
+  S.enviarBolsinModal = {cantidad:"", caja:"", comentario:"", err:"", loading:false, esMarket};
   S.modal = "enviarBolsin";
   render();
 }
@@ -4819,14 +4840,15 @@ function renderEnviarBolsinModal(){
     📤 Este bolsín va directo a Tesorería, ya queda listo para que el repartidor lo levante — no necesita aprobación previa ni palabra clave.
   </div>
   <div class="field">
-    <label>N° de bolsín <span class="req">*</span></label>
-    <input id="eb-numero" type="text" class="inp ${d.err&&d.err.numero?"err":""}" placeholder="Ej: 4521" value="${escH(d.numero)}"/>
-    ${d.err&&d.err.numero?`<span class="err-msg">${escH(d.err.numero)}</span>`:""}
+    <label>Cantidad de bolsines <span class="req">*</span></label>
+    <input id="eb-cantidad" type="number" min="1" class="inp ${d.err&&d.err.cantidad?"err":""}" placeholder="Ej: 3" value="${escH(d.cantidad)}"/>
+    ${d.err&&d.err.cantidad?`<span class="err-msg">${escH(d.err.cantidad)}</span>`:""}
   </div>
+  ${d.esMarket?`
   <div class="field" style="margin-top:12px">
-    <label>Monto <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
-    <input id="eb-monto" type="number" min="0" class="inp" placeholder="Ej: 50000" value="${escH(d.monto)}"/>
-  </div>
+    <label>N° de caja <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
+    <input id="eb-caja" type="text" class="inp" placeholder="Ej: 12" value="${escH(d.caja)}"/>
+  </div>`:""}
   <div class="field" style="margin-top:12px">
     <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
     <textarea id="eb-comentario" rows="2" placeholder="Alguna aclaración...">${escH(d.comentario||"")}</textarea>
@@ -4834,21 +4856,22 @@ function renderEnviarBolsinModal(){
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-teal btn-md" onclick="submitEnviarBolsin()" ${d.loading?"disabled":""}>
-      ${d.loading?`<span class="spinner"></span> Enviando...`:"📤 Enviar bolsín"}
+      ${d.loading?`<span class="spinner"></span> Enviando...`:"📤 Enviar bolsines"}
     </button>
   </div>`;
 }
 
 async function submitEnviarBolsin(){
   if(S.saving) return;
-  const numero = ($("eb-numero")?.value||"").trim();
-  const monto  = ($("eb-monto")?.value||"").trim();
-  const comentario = ($("eb-comentario")?.value||"").trim();
+  const cantidad    = ($("eb-cantidad")?.value||"").trim();
+  const caja        = ($("eb-caja")?.value||"").trim();
+  const comentario  = ($("eb-comentario")?.value||"").trim();
   const e={};
-  if(!numero) e.numero="Ingresá el número de bolsín";
+  if(!cantidad||isNaN(+cantidad)||+cantidad<=0) e.cantidad="Ingresá una cantidad válida";
   if(Object.keys(e).length){ S.enviarBolsinModal.err=e; render(); return; }
 
   const u = S.user;
+  const observacionesFinal = [caja?`Caja N° ${caja}`:"", comentario].filter(Boolean).join(" — ");
   S.dniModal = {
     title:"Ingresá tu DNI para registrar el envío",
     field:"solicitante",
@@ -4865,12 +4888,12 @@ async function submitEnviarBolsin(){
         solicitante: nombreSolicitante,
         dniSolicitante: dniVal,
         destino: "Tesorería",
-        descripcion: `Bolsín N° ${numero}` + (monto?` — $${monto}`:""),
-        cantidad: 1,
-        unidad: "Bolsín",
+        descripcion: `Bolsines`,
+        cantidad: +cantidad,
+        unidad: "Bolsines",
         prioridad: "Alta",
         fechaRequerida: fechaISO(),
-        observaciones: comentario,
+        observaciones: observacionesFinal,
         estado: "Lista para retirar",
         tipoPedido: "bolsin",
         comentario:"", recorrido:"",
