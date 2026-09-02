@@ -1429,21 +1429,21 @@ function renderDevoluciones(){
 // Para SUCURSAL: solo necesita el nombre de la sucursal como usuario, sin pass
 function buscarUsuario(usuario, password){
   const lista = USE_SHEETS ? S.usuarios : DEMO_USUARIOS;
-  const u = usuario.trim().toLowerCase();
+  // normNotif ya quita tildes/mayúsculas — así "guemes" o "Güemes" entran igual
+  const u = normNotif(usuario);
   const p = (password||"").trim();
 
   // ¿Es una sucursal conocida? (login sin contraseña)
-  // Comparamos normalizando espacios también
-  const esSucursal = getSucursales().find(s => s.trim().toLowerCase() === u.trim());
+  const esSucursal = getSucursales().find(s => normNotif(s) === u);
   if(esSucursal){
     // Buscar si existe en lista con tipo SUCURSAL, o aceptar directamente
-    const found = lista.find(x => x.usuario?.toLowerCase() === u && x.tipo === "SUCURSAL" && x.activo !== "no");
+    const found = lista.find(x => normNotif(x.usuario) === u && x.tipo === "SUCURSAL" && x.activo !== "no");
     if(USE_SHEETS && !found) return {ok:false, msg:"Esta sucursal no está habilitada. Consultá con logística."};
     return {ok:true, tipo:"SUCURSAL", nombre:esSucursal, area:esSucursal, recorrido:"", dni:found?.dni||""};
   }
 
   // Buscar usuario por nombre
-  const foundUser = lista.find(x => x.usuario?.toLowerCase() === u && x.activo !== "no");
+  const foundUser = lista.find(x => normNotif(x.usuario) === u && x.activo !== "no");
 
   if(!foundUser){
     return {ok:false, msg:"Usuario no encontrado."};
