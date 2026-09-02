@@ -208,6 +208,7 @@ tr:hover td{background:var(--s2)}
 // ══════════════════════════════════════════════════════════
 const SUPABASE_URL = "https://lrwwpulunfcavmvmwotd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_SrUcYrDVBIOvZgF-DSPcyg_qV0LXEDQ";
+const VAPID_PUBLIC_KEY = "BFqxEOootxcEIHMXModP4iZIpclbqsVnEHGjcwcaPbiikWu9VPkEl-iPoHKG-P1oo6ssoH4x0CTFVvIc652_9hE";
 const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatibilidad con el resto del código
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -261,6 +262,78 @@ async function crearNotificacion(destinatario, mensaje, solicitudId){
   try{
     await sb.from("notificaciones").insert(toSnakeRow({destinatario, mensaje, solicitudId: solicitudId||null, leida:false}));
   }catch(e){ console.warn("No se pudo crear notificación (¿corriste el SQL de la tabla 'notificaciones'?):", e); }
+  // Push real (llega aunque tengan la página cerrada) — no bloquea nada si falla
+  try{
+    fetch("/api/send-push", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({destinatario, mensaje, solicitudId})});
+  }catch(e){}
+}
+
+// ══════════════════════════════════════════════════════════
+//  ALERTAS PUSH — llegan aunque el navegador esté cerrado.
+//  Cada dispositivo/navegador que activa esto queda anotado con el
+//  "grupo" al que pertenece según quién esté logueado en ese momento.
+// ══════════════════════════════════════════════════════════
+function grupoNotifActual(){
+  const u = S.user;
+  if(!u) return "";
+  if(u.rol==="logistica") return "LOGISTICA";
+  if(u.rol==="admin") return "ADMIN";
+  if(esRecepcionFresco()) return "RECEPCION FRESCO";
+  return u.area || "";
+}
+function urlBase64ToUint8Array(base64String){
+  const padding = "=".repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g,"+").replace(/_/g,"/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map(c=>c.charCodeAt(0)));
+}
+async function pushEstaActivo(){
+  if(!("serviceWorker" in navigator) || !("PushManager" in window)) return false;
+  const reg = await navigator.serviceWorker.getRegistration();
+  if(!reg) return false;
+  const sub = await reg.pushManager.getSubscription();
+  return !!sub;
+}
+async function activarAlertasPush(){
+  if(!("serviceWorker" in navigator) || !("PushManager" in window)){
+    toast("Este navegador no soporta notificaciones push","warn");
+    return;
+  }
+  const grupo = grupoNotifActual();
+  if(!grupo){ toast("No pudimos identificar tu perfil — probá recargar la página","warn"); return; }
+  try{
+    const permiso = await Notification.requestPermission();
+    if(permiso!=="granted"){ toast("No diste permiso — no vamos a poder mandarte alertas","warn"); render(); return; }
+    const reg = await navigator.serviceWorker.register("/sw.js");
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly:true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    const subJson = sub.toJSON();
+    await sb.from("push_subscriptions").upsert({
+      endpoint: subJson.endpoint, keys: subJson.keys, grupo, user_agent: navigator.userAgent,
+    }, {onConflict:"endpoint"});
+    toast("🔔 Alertas activadas en este dispositivo");
+  }catch(e){
+    console.error(e);
+    toast("No se pudo activar — probá de nuevo","warn");
+  }
+  render();
+}
+async function desactivarAlertasPush(){
+  try{
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if(sub){
+      await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+      await sub.unsubscribe();
+    }
+    toast("🔕 Alertas desactivadas en este dispositivo");
+  }catch(e){}
+  render();
 }
 async function cargarNotificaciones(){
   if(!USE_SHEETS) return;
@@ -283,10 +356,19 @@ async function marcarTodasNotifLeidas(){
   render();
   try{ await sb.from("notificaciones").update({leida:true}).in("id",ids); }catch(e){}
 }
-function abrirNotificaciones(){ S.modal="notificaciones"; render(); }
+function abrirNotificaciones(){
+  S.modal="notificaciones"; render();
+  pushEstaActivo().then(v=>{ S.pushActivo=v; render(); });
+}
 function renderNotificacionesModal(){
   const mias = misNotificaciones();
   return `
+  <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:14px;padding:10px 12px;background:var(--s2);border-radius:8px;flex-wrap:wrap">
+    <span style="font-size:12px;color:var(--muted)">${S.pushActivo?"🔔 Alertas activadas en este dispositivo":"Activá las alertas para recibirlas aunque tengas la página cerrada"}</span>
+    ${S.pushActivo
+      ? `<button class="btn btn-ghost btn-sm" onclick="desactivarAlertasPush()">Desactivar</button>`
+      : `<button class="btn btn-teal btn-sm" onclick="activarAlertasPush()">🔔 Activar en este dispositivo</button>`}
+  </div>
   ${mias.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">No tenés notificaciones pendientes 🎉</p>`:`
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
     <button class="btn btn-ghost btn-sm" onclick="marcarTodasNotifLeidas()">✓ Marcar todas como leídas</button>
@@ -488,6 +570,7 @@ let S = {
   adminTab: "solicitudes",
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
+  pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
   repSeleccion: new Set(),
@@ -6189,6 +6272,12 @@ S.requests = [];   // se llena con sheetsLoadDatos() (Supabase) apenas carga
 S.recorridos = ["SUR","CENTRO","NORTE"];  // default — se reemplaza con Sheets
 S.usuarios = [];   // se llena con sheetsLoadUsuarios() (Supabase) apenas carga
 render();
+
+// Dejar el service worker registrado desde ya (no pide permiso todavía,
+// eso pasa recién cuando tocan "Activar alertas")
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("/sw.js").catch(e=>console.warn("SW:",e));
+}
 </script>
 
 <!-- ══════════════════════════════════════════════════════
