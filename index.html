@@ -474,11 +474,20 @@ function esRecepcionFresco(){
   const u = S.user;
   return !!u && u.rol==="recepcionista" && normNotif(u.area).includes("fresco");
 }
-// Un pedido "de Planificación/Fresco" es el que se creó desde esos logins
-// (columna area = PLANIFICACION o PLANIFICADOR FRESCO / similar)
+// Un pedido "de Planificación/Fresco" es el que viene de alguna de las
+// áreas que Admin configuró para Recepción Fresco (por defecto:
+// Planificación, Planificador Fresco y Logística — NO incluye RRHH ni
+// Administración, esos los sigue preparando el recepcionista genérico).
+function areasRecepcionFresco(){
+  const guardado = S.config.areasRecepcionFresco;
+  if(guardado){
+    try{ const arr = JSON.parse(guardado); if(Array.isArray(arr)&&arr.length) return arr; }catch(e){}
+  }
+  return ["Planificación","Planificador Fresco","Logística"];
+}
 function esPedidoPlanificacionFresco(r){
   const a = normNotif(r.area);
-  return a.includes("planificacion") || a.includes("fresco");
+  return areasRecepcionFresco().some(area=>normNotif(area)===a);
 }
 
 // Detectar si el DESTINO es fábrica/depósito
@@ -821,6 +830,21 @@ async function sheetsLoadAll(){
 function bolsinesActivo(){
   return S.config.bolsinesActivo !== "false";
 }
+const AREAS_OFICINA = ["Planificación","Planificador Fresco","Logística","RRHH","Administración","Compras","Producción","Precios","Depósito"];
+async function toggleAreaRecepcionFresco(area, marcado){
+  let actuales = areasRecepcionFresco();
+  actuales = marcado ? [...new Set([...actuales, area])] : actuales.filter(a=>normNotif(a)!==normNotif(area));
+  const valor = JSON.stringify(actuales);
+  try{
+    const { error } = await sb.from("config").upsert({clave:"areasRecepcionFresco", valor});
+    if(error) throw error;
+    S.config = {...S.config, areasRecepcionFresco: valor};
+  }catch(e){
+    toast("⚠️ No se pudo guardar","warn");
+  }
+  render();
+}
+
 async function toggleBolsinesActivo(){
   const nuevoValor = bolsinesActivo() ? "false" : "true";
   try{
@@ -2214,6 +2238,22 @@ function renderAdminConfig(){
       <button class="btn ${activo?"btn-danger":"btn-success"} btn-md" onclick="toggleBolsinesActivo()">
         ${activo?"Desactivar":"Activar"}
       </button>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:520px;margin-top:16px">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🥬 Recepción Fresco — qué áreas prepara</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Tildá las áreas cuyos pedidos aprobados debe preparar Recepción Fresco. Lo que no esté tildado
+      (ej: RRHH, Administración) lo sigue viendo el recepcionista genérico como hasta ahora.
+    </p>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${AREAS_OFICINA.map(area=>`
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="chk-round" ${areasRecepcionFresco().some(a=>normNotif(a)===normNotif(area))?"checked":""}
+            onchange="toggleAreaRecepcionFresco('${escH(area)}',this.checked)"/>
+          ${escH(area)}
+        </label>`).join("")}
     </div>
   </div>`;
 }
