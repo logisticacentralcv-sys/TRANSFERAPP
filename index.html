@@ -68,9 +68,9 @@ select option{background:#1a2338}
 .btn-warn{background:#f5a6231a;border-color:#f5a62350;color:var(--amber)}
 .btn-teal{background:#2de0c41a;border-color:#2de0c450;color:var(--teal)}
 .btn-ghost{background:transparent;border-color:var(--border);color:var(--muted)}
-.chk-round{appearance:none;-webkit-appearance:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--border);background:var(--s2);cursor:pointer;display:inline-block;vertical-align:middle;position:relative;transition:.15s}
+.chk-round{appearance:none;-webkit-appearance:none;width:24px;height:24px;border-radius:50%;border:2px solid var(--border);background:var(--s2);cursor:pointer;display:inline-block;vertical-align:middle;position:relative;transition:.15s;flex-shrink:0}
 .chk-round:checked{background:var(--blue);border-color:var(--blue)}
-.chk-round:checked::after{content:"";position:absolute;left:5px;top:1px;width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+.chk-round:checked::after{content:"";position:absolute;left:7px;top:2px;width:6px;height:11px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .spinner{width:12px;height:12px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .6s linear infinite;display:inline-block}
 
 /* BADGES */
@@ -3144,9 +3144,11 @@ function renderRepartidor(){
         const sel=[...S.repSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
         const nTomar = sel.filter(r=>["Lista para retirar","En fábrica"].includes(r.estado) || ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado))).length;
         const nBolsin = sel.filter(r=>r.tipoPedido==="bolsin" && r.estado==="En tránsito").length;
+        const entregables = sel.filter(r=>r.tipoPedido!=="bolsin" && r.estado==="En tránsito" && (!(r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si") || r.fabricaAt));
         return `
         ${nTomar>0?`<button class="btn btn-warn btn-sm" onclick="openTomarVarias()">🤲 Tomar (${nTomar})</button>`:""}
-        ${nBolsin>0?`<button class="btn btn-teal btn-sm" onclick="openDejarBolsinesVarios()">📦 Dejar bolsines (${nBolsin})</button>`:""}`;
+        ${nBolsin>0?`<button class="btn btn-teal btn-sm" onclick="openDejarBolsinesVarios()">📦 Dejar bolsines (${nBolsin})</button>`:""}
+        ${entregables.length>0?`<button class="btn btn-success btn-sm" onclick="openEntregarVarias()">✅ Entregar (${entregables.length})</button>`:""}`;
       })()}
       <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
     </div>`:""}
@@ -3170,14 +3172,14 @@ function renderRepartidor(){
         // Bolsines listos para entregar: van sin palabra clave, así que se
         // pueden dejar todos juntos con un solo DNI.
         const puedeDejarBolsin = r.tipoPedido==="bolsin" && puedeEntregar;
-        const puedeSeleccionar = puedeTomar || puedeDejarBolsin;
+        const puedeSeleccionar = puedeTomar || puedeDejarBolsin || (puedeEntregar && r.tipoPedido!=="bolsin");
         const puedeTomarFab  = r.estado === "En fábrica";
         const tomadaPor      = r.nombreQuienLevanto && estaEnTransito && !yaEsSegundaEtapa ? r.nombreQuienLevanto : "";
         const llevadoPor     = r.nombreQuienEntrego && yaEsSegundaEtapa ? r.nombreQuienEntrego : "";
         return `
         <div class="del-card">
           <div class="del-stripe" style="background:${ac}"></div>
-          <div class="del-body" onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+          <div class="del-body" onclick="${S.modoSeleccionRep && puedeSeleccionar ? `toggleRepSeleccion('${escH(r.id)}', !S.repSeleccion.has('${escH(r.id)}'))` : `openDetalle('${escH(r.id)}')`}" style="cursor:pointer">
 
             <!-- Header -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
@@ -3332,6 +3334,7 @@ function renderModals(){
   if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
   if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
   if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
+  if(S.modal==="entregarVarias") return wrapModal("m","✅ Entregar varias",renderEntregarVariasModal(),480);
   if(S.modal==="editarDevolucion") return wrapModal("m","✏️ Editar devolución",renderEditarDevolucionModal(),480);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
@@ -4068,6 +4071,23 @@ function renderCodigoModal(){
   <p style="text-align:center;font-size:12px;color:var(--faint);margin-top:12px">
     La entrega se confirma cuando el repartidor ingresa esta palabra en su app.
   </p>
+  ${(()=>{
+    if(!r) return "";
+    const otras = S.requests.filter(x=>x.id!==r.id && x.estado==="En tránsito" && !esOtraDireccion(x.destino)
+      && (x.destino||"").trim().toLowerCase()===(r.destino||"").trim().toLowerCase());
+    if(!otras.length) return "";
+    return `
+    <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border)">
+      <p style="font-size:12px;color:var(--muted);margin-bottom:8px">¿Te llegan más cosas del mismo viaje? Marcá cuáles y usá la misma palabra para todas:</p>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px">
+        ${otras.map(x=>`<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="chk-round" onchange="toggleOtraParaCodigo('${escH(x.id)}',this.checked)"/>
+          ${escH(x.id)} — ${escH(x.descripcion)}
+        </label>`).join("")}
+      </div>
+      <button class="btn btn-teal btn-sm" onclick="aplicarPalabraAOtras()">Aplicar la misma palabra a las marcadas</button>
+    </div>`;
+  })()}
   `}`;
 }
 
@@ -5912,10 +5932,30 @@ async function submitListo(){
 function openCodigoEntrega(id){
   const palabra = generarPalabra();
   S.codigoModal = {id, codigo:palabra, palabraGenerada:palabra, err:"", loading:false, confirmada:false,
-                   dni:"", nombreOk:"", dniConfirmado:false};
+                   dni:"", nombreOk:"", dniConfirmado:false, otrasSeleccionadas:new Set()};
   S.modal = "codigo";
   S.requests = S.requests.map(x=>x.id===id?{...x,codigoEntrega:palabra}:x);
   sheetsUpdate(id, {codigoEntrega:palabra, updatedAt:now()});
+  render();
+}
+
+function toggleOtraParaCodigo(id, checked){
+  if(checked) S.codigoModal.otrasSeleccionadas.add(id); else S.codigoModal.otrasSeleccionadas.delete(id);
+  render();
+}
+async function aplicarPalabraAOtras(){
+  const d = S.codigoModal;
+  const ids = [...d.otrasSeleccionadas];
+  if(!ids.length){ toast("Marcá al menos una","warn"); return; }
+  const palabra = d.palabraGenerada;
+  try{
+    await Promise.all(ids.map(id=>sb.from("solicitudes").update({codigo_entrega:palabra, updated_at:now()}).eq("id",id)));
+    S.requests = S.requests.map(x=>ids.includes(x.id)?{...x,codigoEntrega:palabra}:x);
+    toast(`✅ Misma palabra aplicada a ${ids.length} más`);
+    d.otrasSeleccionadas = new Set();
+  }catch(e){
+    toast("⚠️ No se pudo aplicar a todas — probá de nuevo","warn");
+  }
   render();
 }
 
@@ -5955,6 +5995,102 @@ function nuevaPalabra(id){
 function openIngresarPalabra(id){
   S.palabraModal = {id, palabraIngresada:"", err:"", loading:false};
   S.modal = "palabra";
+  render();
+}
+
+// ── Entregar varias de una — pide la palabra clave UNA sola vez y la
+// valida contra cada solicitud (funciona igual de bien si la sucursal
+// generó la misma palabra para todas, o si por las dudas se mezclaron
+// de sucursales distintas: las que no coincidan quedan reportadas). ──
+function openEntregarVarias(){
+  if(S.repSeleccion.size===0) return;
+  const ids = [...S.repSeleccion].filter(id=>{
+    const r = S.requests.find(x=>x.id===id);
+    if(!r || r.tipoPedido==="bolsin" || r.estado!=="En tránsito") return false;
+    const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
+    return !pasaPorFabrica || r.fabricaAt;
+  });
+  if(!ids.length) return;
+  const destinos = [...new Set(ids.map(id=>S.requests.find(r=>r.id===id)?.destino).filter(Boolean))];
+  S.entregarVariasModal = {ids, destinos, palabra:"", err:"", loading:false};
+  S.modal = "entregarVarias";
+  render();
+}
+function renderEntregarVariasModal(){
+  const d = S.entregarVariasModal;
+  return `
+  <div style="background:#2ecc7a18;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--green)">
+    ✅ Vas a entregar <strong>${d.ids.length} transferencias</strong>${d.destinos.length===1?` en <strong>${escH(d.destinos[0])}</strong>`:` (${d.destinos.map(escH).join(", ")})`}.
+    Pedile a la sucursal la palabra — si generaron una sola para todas, alcanza con ingresarla una vez.
+  </div>
+  <div class="field">
+    <label>Palabra de entrega <span class="req">*</span></label>
+    <input id="ev-palabra" class="inp ${d.err?"err":""}" style="text-transform:uppercase" placeholder="Ej: LIMON"
+      value="${escH(d.palabra)}"
+      oninput="S.entregarVariasModal.palabra=this.value;S.entregarVariasModal.err=''"
+      onkeydown="if(event.key==='Enter')submitEntregarVarias()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="submitEntregarVarias()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Entregando...`:`✅ Entregar ${d.ids.length}`}
+    </button>
+  </div>`;
+}
+async function submitEntregarVarias(){
+  const d = S.entregarVariasModal;
+  if(d.loading) return;
+  const ingresada = ($("ev-palabra")?.value||d.palabra||"").trim().toUpperCase();
+  if(!ingresada){ S.entregarVariasModal.err="Ingresá la palabra de entrega."; render(); return; }
+
+  d.loading = true; renderNow();
+
+  try{
+    // Traer el código real de cada una directo de la base (no de memoria)
+    const { data, error } = await sb.from("solicitudes").select("id,codigo_entrega").in("id", d.ids);
+    if(error) throw error;
+    const codigos = {};
+    (data||[]).forEach(row=>{ codigos[row.id] = (row.codigo_entrega||"").trim().toUpperCase(); });
+
+    const coinciden = d.ids.filter(id=>codigos[id] && codigos[id]===ingresada);
+    const noCoinciden = d.ids.filter(id=>!coinciden.includes(id));
+
+    if(coinciden.length){
+      const nowTs = now();
+      const cambios = coinciden.map(id=>{
+        const r = S.requests.find(x=>x.id===id);
+        const changes = {
+          estado:"Entregada", deliveredAt:nowTs,
+          nombreQuienEntrego: r?.nombreQuienLevanto || S.user.nombre || "",
+          dniEntrega: r?.dniRepartidor || "",
+          codigoEntrega: ingresada, updatedAt: nowTs,
+        };
+        return {id, changes};
+      });
+      await Promise.all(cambios.map(c=>sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id)));
+      S.requests = S.requests.map(x=>{
+        const c = cambios.find(c=>c.id===x.id);
+        return c ? {...x,...c.changes} : x;
+      });
+      S.repSeleccion = new Set(noCoinciden);
+    }
+
+    if(noCoinciden.length===0){
+      S.modoSeleccionRep = false;
+      S.modal = null;
+      toast(`✅ ${coinciden.length} transferencias entregadas`);
+    } else {
+      S.entregarVariasModal.loading = false;
+      S.entregarVariasModal.ids = noCoinciden;
+      S.entregarVariasModal.err = coinciden.length
+        ? `Se entregaron ${coinciden.length}. La palabra no coincidió en ${noCoinciden.length} — quedaron seleccionadas, fijate si son de otra sucursal.`
+        : "La palabra no coincidió con ninguna. Verificá con la sucursal.";
+    }
+  }catch(e){
+    S.entregarVariasModal.loading = false;
+    S.entregarVariasModal.err = "No se pudo conectar — probá de nuevo.";
+  }
   render();
 }
 
