@@ -2469,9 +2469,10 @@ function renderUsuarioFormModal(){
   const esEdicion = !!f.dniOriginal;
   return `
   <div class="field">
-    <label>Usuario (login) <span class="req">*</span> ${esEdicion?'<span style="color:var(--faint);font-size:12px">(no se puede cambiar)</span>':""}</label>
-    <input id="uf-usuario" class="inp ${f.err&&f.err.usuario?"err":""}" value="${escH(f.usuario)}" ${esEdicion?"disabled":""}
+    <label>Usuario (login) <span class="req">*</span></label>
+    <input id="uf-usuario" class="inp ${f.err&&f.err.usuario?"err":""}" value="${escH(f.usuario)}"
       oninput="S.usuarioForm.usuario=this.value"/>
+    ${esEdicion?`<span style="color:var(--faint);font-size:12px">Si lo cambiás, quien use este login va a tener que usar el nuevo nombre para entrar.</span>`:""}
   </div>
   <div class="g3" style="margin-top:10px">
     <div class="field">
