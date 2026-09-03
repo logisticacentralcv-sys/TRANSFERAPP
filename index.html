@@ -459,6 +459,17 @@ function solicitanteLabel(r){
 
 // Normalizar para comparar Fábrica/Depósito con o sin tilde
 const _fabNames = ["fábrica","fabrica","fábrica central","fabrica central","deposito","depósito","deposito central","depósito central"];
+// Solo fábrica (sin depósito) — para el recepcionista genérico, que no
+// tiene que ver lo que entra/sale de depósito, solo de fábrica.
+const _soloFabNames = ["fábrica","fabrica","fábrica central","fabrica central"];
+function esOrigenSoloFabrica(r){
+  const suc = (r.sucursal||r.area||"").trim().toLowerCase();
+  return _soloFabNames.includes(suc);
+}
+function esDestinoSoloFabrica(r){
+  const dest = (r.destino||"").trim().toLowerCase();
+  return _soloFabNames.includes(dest);
+}
 function esFabricaDestino(s){ return _fabNames.includes((s||"").trim().toLowerCase()); }
 
 // Detectar si el ORIGEN es fábrica/depósito — no necesita confirmación "Lista"
@@ -483,7 +494,7 @@ function areasRecepcionFresco(){
   if(guardado){
     try{ const arr = JSON.parse(guardado); if(Array.isArray(arr)&&arr.length) return arr; }catch(e){}
   }
-  return ["Planificación","Planificador Fresco","Logística"];
+  return ["Planificación","Planificador Fresco"];
 }
 function esPedidoPlanificacionFresco(r){
   const a = normNotif(r.area);
@@ -2573,13 +2584,13 @@ function renderRecepcionista(){
   if(esRecepcionFresco()) return renderRecepcionFresco();
   const u = S.user;
 
-  // ENTRANTES: destino = fábrica/depósito
-  const entrantes  = S.requests.filter(r=>esDestinoFabrica(r));
+  // ENTRANTES: destino = fábrica (no depósito)
+  const entrantes  = S.requests.filter(r=>esDestinoSoloFabrica(r));
   const entActivas = entrantes.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
   const entHist    = entrantes.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
 
-  // SALIENTES: origen = fábrica/depósito
-  const salientes  = S.requests.filter(r=>esOrigenFabrica(r));
+  // SALIENTES: origen = fábrica (no depósito)
+  const salientes  = S.requests.filter(r=>esOrigenSoloFabrica(r));
   const salActivas = salientes.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
   const salHist    = salientes.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
 
@@ -2615,7 +2626,7 @@ function renderRecepcionista(){
           <tbody>
             ${list.length===0?`<tr class="empty-row"><td colspan="8">Sin transferencias</td></tr>`:""}
             ${list.map(r=>{
-              const esSaliente   = esOrigenFabrica(r);
+              const esSaliente   = esOrigenSoloFabrica(r);
               const puedeRecibir = !esSaliente && r.estado==="En tránsito";
               const puedeLista   = esSaliente && ["Aprobada","Programada"].includes(r.estado);
               return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
