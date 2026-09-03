@@ -628,6 +628,7 @@ let S = {
   prepararFrescoModal: {id:"", dni:"", err:"", loading:false, nombreOk:""},
   quiebreStockModal: {area:"PLANIFICACION", descripcion:"", cantidad:"", unidad:"Kg", observaciones:"", err:{}, loading:false},
   planificarCantidadModal: {id:"", cantidad:"", comentario:"", dni:"", err:{}, loading:false},
+  editarDevolucionModal: {id:"", sucursal:"", motivo:"", estado:"", err:"", loading:false},
   enviarBolsinModal: {numero:"", monto:"", comentario:"", err:"", loading:false},
   pedidoTesoreriaModal: {id:"", accion:"aprobar", dni:"", motivo:"", err:"", loading:false, nombreOk:""},
   nuevoLoteModal: {cantidades:{}, err:"", loading:false},
@@ -1257,6 +1258,81 @@ async function confirmarAccionDevolucion(){
 }
 
 // ── Repartidor: seleccionar varias devoluciones y dejarlas en fábrica ──
+// ── Editar devolución (solo Admin, para corregir errores de carga) ──
+function openEditarDevolucion(id){
+  const d = S.devoluciones.find(x=>x.id===id);
+  if(!d) return;
+  S.editarDevolucionModal = {id, sucursal:d.sucursal||"", motivo:d.motivo||"", estado:d.estado||"Pendiente", err:"", loading:false};
+  S.modal = "editarDevolucion";
+  render();
+}
+function renderEditarDevolucionModal(){
+  const d = S.editarDevolucionModal;
+  const sucs = getSucursales();
+  return `
+  <div class="field">
+    <label>Sucursal</label>
+    <select id="ed-dev-sucursal" class="inp" onchange="S.editarDevolucionModal.sucursal=this.value">
+      ${sucs.map(s=>`<option ${d.sucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
+    </select>
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Motivo</label>
+    <textarea id="ed-dev-motivo" rows="3" oninput="S.editarDevolucionModal.motivo=this.value">${escH(d.motivo)}</textarea>
+  </div>
+  <div class="field" style="margin-top:12px">
+    <label>Estado</label>
+    <select id="ed-dev-estado" class="inp" onchange="S.editarDevolucionModal.estado=this.value">
+      ${["Pendiente","En camino","En fábrica","Confirmada","No confirmada"].map(e=>`<option ${d.estado===e?"selected":""}>${e}</option>`).join("")}
+    </select>
+  </div>
+  ${d.err?`<div class="alert-err" style="margin-top:12px">⚠️ ${escH(d.err)}</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:space-between;margin-top:16px">
+    <button class="btn btn-danger btn-md" onclick="eliminarDevolucion('${escH(d.id)}')">🗑️ Eliminar</button>
+    <div style="display:flex;gap:10px">
+      <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success btn-md" onclick="submitEditarDevolucion()" ${d.loading?"disabled":""}>
+        ${d.loading?`<span class="spinner"></span> Guardando...`:"Guardar cambios"}
+      </button>
+    </div>
+  </div>`;
+}
+async function submitEditarDevolucion(){
+  const d = S.editarDevolucionModal;
+  if(d.loading) return;
+  const sucursal = $("ed-dev-sucursal")?.value || d.sucursal;
+  const motivo   = ($("ed-dev-motivo")?.value ?? d.motivo ?? "").trim();
+  const estado   = $("ed-dev-estado")?.value || d.estado;
+  if(!motivo){ S.editarDevolucionModal.err="El motivo no puede quedar vacío."; render(); return; }
+
+  d.loading = true; renderNow();
+  const changes = {sucursal, motivo, estado, updatedAt:now()};
+  try{
+    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id", d.id);
+    if(error) throw error;
+    S.devoluciones = S.devoluciones.map(x=>x.id===d.id?{...x,...changes}:x);
+    S.modal = null;
+    toast("Devolución actualizada");
+  }catch(e){
+    S.editarDevolucionModal.loading = false;
+    S.editarDevolucionModal.err = "No se pudo guardar — probá de nuevo.";
+  }
+  render();
+}
+async function eliminarDevolucion(id){
+  if(!confirm("¿Eliminar esta devolución? No se puede deshacer.")) return;
+  try{
+    const { error } = await sb.from("devoluciones").delete().eq("id", id);
+    if(error) throw error;
+    S.devoluciones = S.devoluciones.filter(x=>x.id!==id);
+    S.modal = null;
+    toast("Devolución eliminada");
+  }catch(e){
+    toast("⚠️ No se pudo eliminar — probá de nuevo","warn");
+  }
+  render();
+}
+
 function toggleDevolSeleccion(id, checked){
   if(checked) S.devolSeleccion.add(id); else S.devolSeleccion.delete(id);
   render();
@@ -1501,7 +1577,10 @@ function renderDevoluciones(){
                 <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)} · ${escH(d.creadoPor||"—")}</span>
               </div>
             </div>
-            ${badge(d.estado, colorEstado(d.estado))}
+            <div style="display:flex;align-items:center;gap:6px">
+              ${badge(d.estado, colorEstado(d.estado))}
+              ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
+            </div>
           </div>
           <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
@@ -3199,6 +3278,7 @@ function renderModals(){
   if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
   if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
   if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
+  if(S.modal==="editarDevolucion") return wrapModal("m","✏️ Editar devolución",renderEditarDevolucionModal(),480);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
