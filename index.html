@@ -3631,6 +3631,18 @@ function renderDetalle(){
   </div>`:""}
   ${drow("Descripción",r.descripcion)}
   ${drow("Cantidad",r.cantidad+" "+r.unidad,true)}
+  ${r.detalleCajas?(()=>{
+    let cajas=[]; try{ cajas=JSON.parse(r.detalleCajas); }catch(e){}
+    if(!Array.isArray(cajas)||!cajas.length) return "";
+    return `<div class="field">
+      <label>Detalle por caja</label>
+      <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
+        ${cajas.map(c=>`<div style="display:flex;justify-content:space-between;background:var(--s2);border-radius:6px;padding:6px 10px;font-size:13px">
+          <span>${escH(c.caja?`Caja ${c.caja}`:"Sin número")}</span><span><strong>${escH(String(c.cantidad))}</strong> bolsines</span>
+        </div>`).join("")}
+      </div>
+    </div>`;
+  })():""}
   ${drow("Fecha requerida",fd(r.fechaRequerida),true)}
   ${r.observaciones?drow("Observaciones",r.observaciones):""}
   ${r.adjuntoUrl?`<div class="field"><label>Adjunto</label><a href="${escH(r.adjuntoUrl)}" target="_blank" rel="noopener">
@@ -4489,11 +4501,23 @@ async function submitDejarBolsinesVarios(){
 
 function renderTomarVariasModal(){
   const d = S.tomarVariasModal;
+  const bolsines = d.ids.map(id=>S.requests.find(r=>r.id===id)).filter(r=>r && r.tipoPedido==="bolsin");
   return `
   <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
     🤲 Vas a tomar <strong>${d.ids.length} transferencias</strong> de una sola vez.
   </div>
+  ${bolsines.length?`
   <div class="field">
+    <label>Cantidad real de bolsines <span style="color:var(--faint);font-size:12px">(corregí si no coincide con lo cargado)</span></label>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${bolsines.map(r=>`
+        <div style="display:flex;align-items:center;gap:8px;justify-content:space-between;background:var(--s2);border-radius:6px;padding:8px 10px">
+          <span style="font-size:13px">${escH(r.id)} — ${escH(r.sucursal||"")}</span>
+          <input type="number" min="0" class="inp" style="width:100px" id="tv-cant-${escH(r.id)}" value="${escH(String(r.cantidad))}"/>
+        </div>`).join("")}
+    </div>
+  </div>`:""}
+  <div class="field" style="margin-top:12px">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="tv-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
       value="${escH(d.dni)}"
@@ -4532,6 +4556,17 @@ async function submitTomarVarias(){
       const changes = esSegundaEtapa
         ? {estado:"En tránsito", nombreQuienEntrego:check.nombre, dniEntrega:dni, salidaFabricaAt:nowTs, updatedAt:nowTs}
         : {estado:"En tránsito", nombreQuienLevanto:check.nombre, dniRepartidor:dni, levantadoAt:nowTs, updatedAt:nowTs};
+      if(x && x.tipoPedido==="bolsin"){
+        const inputCant = $(`tv-cant-${id}`);
+        if(inputCant){
+          const nuevaCant = +inputCant.value;
+          if(!isNaN(nuevaCant) && nuevaCant>=0 && nuevaCant!==+x.cantidad){
+            changes.cantidad = nuevaCant;
+            const nota = `Cantidad corregida al tomar: ${nuevaCant} (cargado: ${x.cantidad})`;
+            changes.comentario = x.comentario ? x.comentario+" · "+nota : nota;
+          }
+        }
+      }
       return {id, changes};
     });
     const resultados = await Promise.all(
@@ -5186,9 +5221,21 @@ function esSucursalMarket(nombre){ return SUCURSALES_MARKET.includes(normNotif(n
 
 function openEnviarBolsin(){
   const esMarket = esSucursalMarket(S.user?.area);
-  S.enviarBolsinModal = {cantidad:"", caja:"", comentario:"", err:"", loading:false, esMarket};
+  S.enviarBolsinModal = {cantidad:"", comentario:"", err:"", loading:false, esMarket, cajas:[{caja:"",cantidad:""}]};
   S.modal = "enviarBolsin";
   render();
+}
+function agregarFilaCajaBolsin(){
+  S.enviarBolsinModal.cajas.push({caja:"", cantidad:""});
+  render();
+}
+function quitarFilaCajaBolsin(idx){
+  if(S.enviarBolsinModal.cajas.length<=1) return;
+  S.enviarBolsinModal.cajas.splice(idx,1);
+  render();
+}
+function actualizarFilaCajaBolsin(idx, campo, valor){
+  S.enviarBolsinModal.cajas[idx][campo] = valor;
 }
 
 function renderEnviarBolsinModal(){
@@ -5197,16 +5244,27 @@ function renderEnviarBolsinModal(){
   <div style="background:#2de0c418;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
     📤 Este bolsín va directo a Tesorería, ya queda listo para que el repartidor lo levante — no necesita aprobación previa ni palabra clave.
   </div>
+  ${d.esMarket?`
+  <div class="field">
+    <label>Cajas y cantidad de bolsines por caja <span class="req">*</span></label>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${d.cajas.map((c,i)=>`
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" class="inp" style="flex:1" placeholder="N° de caja (ej: 12)" value="${escH(c.caja)}"
+            oninput="actualizarFilaCajaBolsin(${i},'caja',this.value)"/>
+          <input type="number" min="1" class="inp" style="width:110px" placeholder="Cantidad" value="${escH(c.cantidad)}"
+            oninput="actualizarFilaCajaBolsin(${i},'cantidad',this.value)"/>
+          <button class="btn btn-ghost btn-sm" onclick="quitarFilaCajaBolsin(${i})" ${d.cajas.length<=1?"disabled":""}>✕</button>
+        </div>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="agregarFilaCajaBolsin()">+ Agregar caja</button>
+    ${d.err&&d.err.cajas?`<div class="err-msg" style="margin-top:6px">${escH(d.err.cajas)}</div>`:""}
+  </div>`:`
   <div class="field">
     <label>Cantidad de bolsines <span class="req">*</span></label>
     <input id="eb-cantidad" type="number" min="1" class="inp ${d.err&&d.err.cantidad?"err":""}" placeholder="Ej: 3" value="${escH(d.cantidad)}"/>
     ${d.err&&d.err.cantidad?`<span class="err-msg">${escH(d.err.cantidad)}</span>`:""}
-  </div>
-  ${d.esMarket?`
-  <div class="field" style="margin-top:12px">
-    <label>N° de caja <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
-    <input id="eb-caja" type="text" class="inp" placeholder="Ej: 12" value="${escH(d.caja)}"/>
-  </div>`:""}
+  </div>`}
   <div class="field" style="margin-top:12px">
     <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
     <textarea id="eb-comentario" rows="2" placeholder="Alguna aclaración...">${escH(d.comentario||"")}</textarea>
@@ -5221,15 +5279,25 @@ function renderEnviarBolsinModal(){
 
 async function submitEnviarBolsin(){
   if(S.saving) return;
-  const cantidad    = ($("eb-cantidad")?.value||"").trim();
-  const caja        = ($("eb-caja")?.value||"").trim();
-  const comentario  = ($("eb-comentario")?.value||"").trim();
-  const e={};
-  if(!cantidad||isNaN(+cantidad)||+cantidad<=0) e.cantidad="Ingresá una cantidad válida";
-  if(Object.keys(e).length){ S.enviarBolsinModal.err=e; render(); return; }
+  const d = S.enviarBolsinModal;
+  const comentario  = ($("eb-comentario")?.value||d.comentario||"").trim();
+  let cantidadTotal, detalleCajas = null, descripcion = "Bolsines";
+
+  if(d.esMarket){
+    const filas = d.cajas
+      .map(c=>({caja:(c.caja||"").trim(), cantidad:+((c.cantidad||"").toString().trim())}))
+      .filter(c=>c.cantidad>0);
+    if(!filas.length){ S.enviarBolsinModal.err={cajas:"Cargá al menos una caja con su cantidad."}; render(); return; }
+    cantidadTotal = filas.reduce((s,c)=>s+c.cantidad,0);
+    detalleCajas = JSON.stringify(filas);
+    descripcion = `Bolsines (${filas.length} caja${filas.length!==1?"s":""})`;
+  } else {
+    const cantidad = ($("eb-cantidad")?.value||d.cantidad||"").trim();
+    if(!cantidad||isNaN(+cantidad)||+cantidad<=0){ S.enviarBolsinModal.err={cantidad:"Ingresá una cantidad válida"}; render(); return; }
+    cantidadTotal = +cantidad;
+  }
 
   const u = S.user;
-  const observacionesFinal = [caja?`Caja N° ${caja}`:"", comentario].filter(Boolean).join(" — ");
   S.dniModal = {
     title:"Ingresá tu DNI para registrar el envío",
     field:"solicitante",
@@ -5246,12 +5314,13 @@ async function submitEnviarBolsin(){
         solicitante: nombreSolicitante,
         dniSolicitante: dniVal,
         destino: "Tesorería",
-        descripcion: `Bolsines`,
-        cantidad: +cantidad,
+        descripcion,
+        cantidad: cantidadTotal,
         unidad: "Bolsines",
         prioridad: "Alta",
         fechaRequerida: fechaISO(),
-        observaciones: observacionesFinal,
+        observaciones: comentario,
+        detalleCajas,
         estado: "Lista para retirar",
         tipoPedido: "bolsin",
         comentario:"", recorrido:"",
@@ -5262,7 +5331,7 @@ async function submitEnviarBolsin(){
       const creada = await sheetsAdd(optimista);
       S.requests = [creada||optimista, ...S.requests];
       S.saving = false;
-      toast(`📤 Bolsín N° ${numero} enviado a Tesorería — ${(creada||optimista).id}`);
+      toast(`📤 ${cantidadTotal} bolsines enviados a Tesorería — ${(creada||optimista).id}`);
       render();
     }
   };
