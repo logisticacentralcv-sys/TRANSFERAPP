@@ -601,6 +601,7 @@ let S = {
   // UI – filtros repartidor
   fRepRecorrido:"",
   fRepSucursal:"",
+  fRepNombre:"",
   fTesFecha:"", fTesSucursal:"", fTesTexto:"",
 
   // UI – tabs
@@ -3056,7 +3057,9 @@ function renderRepartidor(){
   });
   if(S.fRepRecorrido) list=list.filter(r=>r.recorrido===S.fRepRecorrido);
   if(S.fRepSucursal) list=list.filter(r=>r.sucursal===S.fRepSucursal);
+  if(S.fRepNombre) list=list.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
   const sucursalesRepOpts=[...new Set(S.requests.map(r=>r.sucursal).filter(Boolean))].sort();
+  const nombresRepOpts=[...new Set(S.requests.map(r=>r.nombreQuienLevanto).filter(Boolean))].sort();
 
   const activas=S.requests.filter(r=>["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado));
   const entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
@@ -3089,6 +3092,12 @@ function renderRepartidor(){
         <select onchange="S.fRepSucursal=this.value;render()">
           <option value="">Todas las sucursales</option>
           ${sucursalesRepOpts.map(s=>`<option ${S.fRepSucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="margin-bottom:0;min-width:160px">
+        <select onchange="S.fRepNombre=this.value;render()">
+          <option value="">Quién la tomó (todos)</option>
+          ${nombresRepOpts.map(n=>`<option ${S.fRepNombre===n?"selected":""}>${escH(n)}</option>`).join("")}
         </select>
       </div>
       ${S.tabRep==="activas"?`
