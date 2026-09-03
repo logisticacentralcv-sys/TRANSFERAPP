@@ -580,6 +580,7 @@ let S = {
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
+  tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
   devolucionAccionTexto: "",
@@ -1102,7 +1103,8 @@ function renderQuejas(){
       </div>
       ${S.quejaForm.err?`<span class="err-msg">${escH(S.quejaForm.err)}</span>`:""}
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
-        <input id="queja-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px"/>
+        <input id="queja-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px" onchange="previsualizarFoto(this,'queja-foto-preview')"/>
+        <img id="queja-foto-preview" style="display:none;max-width:140px;max-height:140px;border-radius:8px;margin-top:8px;object-fit:cover"/>
         <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitQueja()" ${S.quejaForm.loading?"disabled":""}>
           ${S.quejaForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar queja"}
         </button>
@@ -1272,7 +1274,7 @@ async function confirmarAccionDevolucion(){
 // ── Repartidor: seleccionar varias devoluciones y dejarlas en fábrica ──
 // ── Editar devolución (solo Admin, para corregir errores de carga) ──
 function openEditarDevolucion(id){
-  const d = S.devoluciones.find(x=>x.id===id);
+  const d = S.devoluciones.find(x=>String(x.id)===String(id));
   if(!d) return;
   S.editarDevolucionModal = {id, sucursal:d.sucursal||"", motivo:d.motivo||"", estado:d.estado||"Pendiente", err:"", loading:false};
   S.modal = "editarDevolucion";
@@ -1322,7 +1324,7 @@ async function submitEditarDevolucion(){
   try{
     const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id", d.id);
     if(error) throw error;
-    S.devoluciones = S.devoluciones.map(x=>x.id===d.id?{...x,...changes}:x);
+    S.devoluciones = S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
     S.modal = null;
     toast("Devolución actualizada");
   }catch(e){
@@ -1336,13 +1338,23 @@ async function eliminarDevolucion(id){
   try{
     const { error } = await sb.from("devoluciones").delete().eq("id", id);
     if(error) throw error;
-    S.devoluciones = S.devoluciones.filter(x=>x.id!==id);
+    S.devoluciones = S.devoluciones.filter(x=>String(x.id)!==String(id));
     S.modal = null;
     toast("Devolución eliminada");
   }catch(e){
     toast("⚠️ No se pudo eliminar — probá de nuevo","warn");
   }
   render();
+}
+
+function previsualizarFoto(inputEl, imgId){
+  const img = $(imgId);
+  const file = inputEl.files && inputEl.files[0];
+  if(!img) return;
+  if(!file){ img.style.display="none"; img.src=""; return; }
+  const reader = new FileReader();
+  reader.onload = e => { img.src = e.target.result; img.style.display="block"; };
+  reader.readAsDataURL(file);
 }
 
 function toggleDevolSeleccion(id, checked){
@@ -1358,7 +1370,7 @@ function toggleDevolSeleccionTomar(id, checked){
 function openTomarDevoluciones(){
   if(S.devolSeleccionTomar.size===0) return;
   const ids = [...S.devolSeleccionTomar].filter(id=>{
-    const d = S.devoluciones.find(x=>x.id===id);
+    const d = S.devoluciones.find(x=>String(x.id)===String(id));
     return d && d.estado==="Pendiente";
   });
   if(!ids.length) return;
@@ -1406,7 +1418,7 @@ async function submitTomarDevoluciones(){
     const fallidas = resultados.filter(r=>r.error);
     if(fallidas.length===0){
       const idsSet = new Set(d.ids);
-      S.devoluciones = S.devoluciones.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
+      S.devoluciones = S.devoluciones.map(x=>idsSet.has(String(x.id)) ? {...x,...changes} : x);
       S.devolSeleccionTomar = new Set();
       S.modal = null;
       toast(`🤲 ${check.nombre} tomó ${d.ids.length} devolución${d.ids.length!==1?"es":""} — camino a fábrica`);
@@ -1424,7 +1436,7 @@ async function submitTomarDevoluciones(){
 function openDejarDevolucionesFabrica(){
   if(S.devolSeleccion.size===0) return;
   const ids = [...S.devolSeleccion].filter(id=>{
-    const d = S.devoluciones.find(x=>x.id===id);
+    const d = S.devoluciones.find(x=>String(x.id)===String(id));
     return d && d.estado==="En camino";
   });
   if(!ids.length) return;
@@ -1474,7 +1486,7 @@ async function submitDejarDevolucionesFabrica(){
     const fallidas = resultados.filter(r=>r.error);
     if(fallidas.length===0){
       const idsSet = new Set(d.ids);
-      S.devoluciones = S.devoluciones.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
+      S.devoluciones = S.devoluciones.map(x=>idsSet.has(String(x.id)) ? {...x,...changes} : x);
       S.devolSeleccion = new Set();
       S.modal = null;
       toast(`📦 ${check.nombre} dejó ${d.ids.length} devolución${d.ids.length!==1?"es":""} en fábrica`);
@@ -1505,6 +1517,9 @@ function renderDevoluciones(){
     const norm = s=>(s||"").trim().toLowerCase();
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
+    lista = S.tabDevGestor==="historial"
+      ? S.devoluciones.filter(d=>["Confirmada","No confirmada"].includes(d.estado))
+      : S.devoluciones.filter(d=>!["Confirmada","No confirmada"].includes(d.estado));
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
     if(S.devolucionFiltroEstado)   lista = lista.filter(d=>d.estado===S.devolucionFiltroEstado);
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
@@ -1521,6 +1536,12 @@ function renderDevoluciones(){
       </div>
       <button class="btn btn-ghost btn-md" onclick="S.vista='main';render()">← Volver</button>
     </div>
+
+    ${esGestor?`
+    <div class="tabs" style="margin-bottom:16px">
+      <button class="tab ${S.tabDevGestor==="activas"?"active":""}" onclick="S.tabDevGestor='activas';render()">📋 Activas</button>
+      <button class="tab ${S.tabDevGestor==="historial"?"active":""}" onclick="S.tabDevGestor='historial';render()">🗂️ Historial</button>
+    </div>`:""}
 
     ${!esGestor && !esRepartidor?`
     <div class="card" style="margin-bottom:20px">
@@ -1539,7 +1560,10 @@ function renderDevoluciones(){
       </div>
       ${S.devolucionForm.err?`<span class="err-msg">${escH(S.devolucionForm.err)}</span>`:""}
       <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
-        <input id="devol-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px"/>
+        <div>
+          <input id="devol-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px" onchange="previsualizarFoto(this,'devol-foto-preview')"/>
+          <img id="devol-foto-preview" style="display:none;max-width:140px;max-height:140px;border-radius:8px;margin-top:8px;object-fit:cover"/>
+        </div>
         <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
           ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
         </button>
@@ -1601,7 +1625,7 @@ function renderDevoluciones(){
           ${d.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(d.respondidoPor||"—")}):</strong> ${escH(d.respuesta)}</div>`:""}
           ${!d.respuesta && !["Pendiente","En camino","En fábrica"].includes(d.estado)?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
           ${!esGestor && !esRepartidor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
-          ${esGestor && d.estado==="En fábrica"?`
+          ${esGestor && !["Confirmada","No confirmada"].includes(d.estado)?`
             ${S.devolucionAccionId===d.id?`
             <div class="field" style="margin-top:10px">
               <textarea id="devol-accion-texto" rows="2" placeholder="${S.devolucionAccionTipo==='confirmar'?'Comentario (opcional)...':'¿Qué faltó? (obligatorio)'}"
