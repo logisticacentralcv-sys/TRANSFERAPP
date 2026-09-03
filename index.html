@@ -2434,7 +2434,7 @@ function renderAdminUsuarios(){
               <td class="muted-cell">${escH(us.dni||"—")}</td>
               <td>${badge(us.activo==="no"?"Inactivo":"Activo", us.activo==="no"?"var(--red)":"#1fa86a")}</td>
               <td style="white-space:nowrap">
-                <button class="btn btn-primary btn-sm" onclick='abrirEditarUsuario(${JSON.stringify(us.usuario).replace(/'/g,"&#39;")})'>Editar</button>
+                <button class="btn btn-primary btn-sm" onclick='abrirEditarUsuario(${JSON.stringify(us.dni).replace(/'/g,"&#39;")})'>Editar</button>
                 <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick='confirmarBorrarUsuario(${JSON.stringify(us.usuario).replace(/'/g,"&#39;")})'>🗑️</button>
               </td>
             </tr>`).join("")}
@@ -2445,15 +2445,15 @@ function renderAdminUsuarios(){
 }
 
 function abrirNuevoUsuario(){
-  S.usuarioForm = {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false};
+  S.usuarioForm = {usuarioOriginal:"", dniOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false};
   S.modal = "usuarioForm";
   render();
 }
-function abrirEditarUsuario(usuarioId){
-  const us = S.usuarios.find(x=>x.usuario===usuarioId);
+function abrirEditarUsuario(dniId){
+  const us = S.usuarios.find(x=>x.dni===dniId);
   if(!us) return;
   S.usuarioForm = {
-    usuarioOriginal: us.usuario, usuario: us.usuario, password: us.password||"",
+    usuarioOriginal: us.usuario, dniOriginal: us.dni, usuario: us.usuario, password: us.password||"",
     tipo: us.tipo||"", nombre: us.nombre||"", area: us.area||"", recorrido: us.recorrido||"",
     dni: us.dni||"", email: us.email||"", activo: us.activo||"si", err:"", loading:false,
   };
@@ -2465,7 +2465,7 @@ const TIPOS_USUARIO = ["SUCURSAL","LOGISTICA","REPARTIDOR","AREA","PLANIFICACION
 
 function renderUsuarioFormModal(){
   const f = S.usuarioForm;
-  const esEdicion = !!f.usuarioOriginal;
+  const esEdicion = !!f.dniOriginal;
   return `
   <div class="field">
     <label>Usuario (login) <span class="req">*</span> ${esEdicion?'<span style="color:var(--faint);font-size:12px">(no se puede cambiar)</span>':""}</label>
@@ -2529,11 +2529,13 @@ async function guardarUsuario(){
   const f = S.usuarioForm;
   const usuario = ($("uf-usuario")?.value||f.usuario||"").trim();
   const tipo = ($("uf-tipo")?.value||f.tipo||"").trim();
+  const dni = ($("uf-dni")?.value||f.dni||"").trim();
   if(!usuario){ S.usuarioForm.err="El usuario (login) es obligatorio."; render(); return; }
   if(!tipo){ S.usuarioForm.err="Elegí un tipo."; render(); return; }
-  // Si es alta nueva, chequear que no exista ya ese usuario
-  if(!f.usuarioOriginal && S.usuarios.some(u=>u.usuario===usuario)){
-    S.usuarioForm.err="Ya existe un usuario con ese login."; render(); return;
+  if(!dni){ S.usuarioForm.err="El DNI es obligatorio — es lo que identifica a cada persona (varias pueden compartir el mismo login)."; render(); return; }
+  // El DNI es la clave real — si es alta nueva, que no choque con otra persona
+  if(!f.dniOriginal && S.usuarios.some(u=>u.dni===dni)){
+    S.usuarioForm.err="Ya existe una persona cargada con ese DNI."; render(); return;
   }
 
   const datos = {
@@ -2550,10 +2552,10 @@ async function guardarUsuario(){
 
   S.usuarioForm.loading = true; renderNow();
   try{
-    if(f.usuarioOriginal){
-      const { error } = await sb.from("usuarios").update(datos).eq("usuario", f.usuarioOriginal);
+    if(f.dniOriginal){
+      const { error } = await sb.from("usuarios").update(datos).eq("dni", f.dniOriginal);
       if(error) throw error;
-      S.usuarios = S.usuarios.map(u=>u.usuario===f.usuarioOriginal?datos:u);
+      S.usuarios = S.usuarios.map(u=>u.dni===f.dniOriginal?datos:u);
       toast(`✅ Usuario ${usuario} actualizado`);
     } else {
       const { error } = await sb.from("usuarios").insert(datos);
@@ -3298,7 +3300,7 @@ function renderModals(){
   if(S.modal==="cambioEstadoMasivo") return wrapModal("m","Confirmar cambio de estado",renderCambioEstadoMasivoModal(),420);
   if(S.modal==="reprogramarCopia") return wrapModal("m","Crear copia reprogramada",renderReprogramarCopiaModal(),420);
   if(S.modal==="noMeLlego") return wrapModal("m","No me llegó",renderNoMeLlegoModal(),420);
-  if(S.modal==="usuarioForm") return wrapModal("m",S.usuarioForm.usuarioOriginal?"Editar usuario":"Nuevo usuario",renderUsuarioFormModal(),460);
+  if(S.modal==="usuarioForm") return wrapModal("m",S.usuarioForm.dniOriginal?"Editar usuario":"Nuevo usuario",renderUsuarioFormModal(),460);
   return "";
 }
 
