@@ -559,7 +559,7 @@ let S = {
 
   // UI – filtros logística
   fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:"", fRecorrido:"", fSolicitante:"",
-  fFechaRequerida:"", fTexto:"",
+  fFechaRequerida:"", fTexto:"", fSoloActivas:false,
   fSucFecha:"", fPlanFecha:"",
   logSeleccion: new Set(),
   modoSeleccion: false,
@@ -2861,6 +2861,7 @@ function renderLogistica(){
 function renderLogTabla(){
   const f=S;
   const filtered=S.requests.filter(r=>{
+    if(f.fSoloActivas && !["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado)) return false;
     if(f.fEstado    && r.estado    !==f.fEstado)    return false;
     if(f.fSucursal  && r.sucursal!==f.fSucursal && r.area!==f.fSucursal && origenLabel(r)!==f.fSucursal) return false;
     if(f.fDestino   && r.destino   !==f.fDestino)   return false;
@@ -2877,7 +2878,7 @@ function renderLogTabla(){
     }
     return true;
   });
-  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fFechaRequerida||f.fRecorrido||f.fSolicitante||f.fTexto;
+  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fFechaRequerida||f.fRecorrido||f.fSolicitante||f.fTexto||f.fSoloActivas;
   const reqs=S.requests;
   const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
 
@@ -2913,6 +2914,12 @@ function renderLogTabla(){
     ${statCard("📦","ENTREGADAS",reqs.filter(r=>r.estado==="Entregada").length,"var(--teal)")}
   </div>
   <div class="card" style="margin-bottom:20px;padding:14px 16px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+      <button class="btn ${S.fSoloActivas?"btn-primary":"btn-ghost"} btn-sm" onclick="S.fSoloActivas=!S.fSoloActivas;render()">
+        🚚 Solo activas ${S.fSoloActivas?"✓":""}
+      </button>
+      <span style="font-size:12px;color:var(--muted)">Misma vista que tienen los repartidores: aprobadas, programadas, listas para retirar, en tránsito o en fábrica — para ir cerrando lo que quedó colgado.</span>
+    </div>
     <div class="filter-grid">
       <div class="field" style="margin-bottom:0"><label>Estado</label>
         <select onchange="S.fEstado=this.value;render()">
@@ -4362,7 +4369,7 @@ function checkOtraDireccion(){
   if(mark) mark.style.display = show ? "inline" : "none";
 }
 
-function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fFechaRequerida=S.fRecorrido=S.fSolicitante=S.fTexto=""; render(); }
+function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fFechaRequerida=S.fRecorrido=S.fSolicitante=S.fTexto=""; S.fSoloActivas=false; render(); }
 
 // ── Selección múltiple en la tabla de Logística ───────────
 function toggleRepSeleccion(id, checked){
