@@ -558,7 +558,7 @@ let S = {
   loginErr:  "", loginLoading: false,
 
   // UI – filtros logística
-  fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:"", fRecorrido:"", fSolicitante:"",
+  fEstado:"", fSucursal:"", fDestino:"", fPrioridad:"", fFecha:fechaISO(), fRecorrido:"", fSolicitante:"",
   fFechaRequerida:"", fTexto:"", fSoloActivas:false,
   fSucFecha:"", fPlanFecha:"",
   logSeleccion: new Set(),
@@ -3017,7 +3017,7 @@ function renderLogTabla(){
           ${filtered.map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
             ${S.modoSeleccion?`<td onclick="event.stopPropagation()"><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
             <td class="id-cell">${escH(r.id)}</td>
-            <td class="muted-cell">${fd(r.createdAt)}</td>
+            <td class="muted-cell">${fdt(r.createdAt)}</td>
             <td style="font-weight:500">${escH(origenLabel(r))}</td>
             <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
             <td class="muted-cell">${escH(r.destino)}</td>
