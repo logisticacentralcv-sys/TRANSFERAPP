@@ -715,7 +715,8 @@ function badge(label,color){
 // no se pisan — una solicitud puede estar Aprobada Y reprogramada a la vez)
 function estadoBadges(r){
   const esRepro = r.reprogramada===true||r.reprogramada==="true"||r.reprogramada==="si";
-  return badge(r.estado,S_COLOR[r.estado]) + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"");
+  const label = (r.tipoPedido==="bolsin" && r.estado==="Entregada (sin confirmar)") ? "📫 En el buzón" : r.estado;
+  return badge(label,S_COLOR[r.estado]) + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"");
 }
 function escH(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function toast(msg,type="success"){
@@ -2247,7 +2248,10 @@ function renderTesoreria(){
               <td class="muted-cell">${fdt(r.createdAt)}</td>
               <td class="muted-cell">${r.deliveredAt?fdt(r.deliveredAt):"—"}</td>
               <td>${estadoBadges(r)}</td>
-              <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button></td>
+              <td onclick="event.stopPropagation()">
+                <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
+                ${r.estado==="Entregada (sin confirmar)"?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openConfirmarCerrado('${escH(r.id)}')">✅ Confirmar retiro</button>`:""}
+              </td>
             </tr>`).join("")}
           </tbody>
         </table>
@@ -3566,7 +3570,7 @@ function renderDetalle(){
     const metaDejo = verHoraTomaEntrega
       ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
       : `${quienDejo?"Por "+quienDejo:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
-    steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+    steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:r.tipoPedido==="bolsin"?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
   }
 
   // ── PASO 5d: Entregada ──────────────────────────────────
@@ -3578,11 +3582,11 @@ function renderDetalle(){
       const metaDejo = verHoraTomaEntrega
         ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
         : `${quienEntrego?"Por "+quienEntrego:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
-      steps.push({dot:"#c98a1f", title:"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+      steps.push({dot:"#c98a1f", title:r.tipoPedido==="bolsin"?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
       const metaConf = verHoraTomaEntrega
         ? `${fdt(r.confirmadaSucursalAt)} · ${r.nombreQuienRecibio||"—"}`
         : `Confirmada${r.nombreQuienRecibio?" por "+r.nombreQuienRecibio:""}`;
-      steps.push({dot:"#34d399", title:"✅ Confirmada por la sucursal", meta:metaConf});
+      steps.push({dot:"#34d399", title:r.tipoPedido==="bolsin"?"✅ Retirado del buzón por Tesorería":"✅ Confirmada por la sucursal", meta:metaConf});
     } else {
       const metaEntr = verHoraTomaEntrega
         ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}`
@@ -4466,7 +4470,8 @@ function renderDejarBolsinesModal(){
   const d = S.dejarBolsinesModal;
   return `
   <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
-    📦 Vas a dejar <strong>${d.ids.length} bolsines</strong> de una sola vez — no hace falta palabra clave para ninguno.
+    📫 Vas a dejar <strong>${d.ids.length} bolsines</strong> en el buzón de Tesorería — no hace falta palabra clave.
+    Tesorería los va a retirar y confirmar la recepción desde su panel.
   </div>
   <div class="field">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
@@ -4479,7 +4484,7 @@ function renderDejarBolsinesModal(){
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-teal btn-md" onclick="submitDejarBolsinesVarios()" ${d.loading?"disabled":""}>
-      ${d.loading?`<span class="spinner"></span> Registrando...`:`📦 Dejar ${d.ids.length} bolsines`}
+      ${d.loading?`<span class="spinner"></span> Registrando...`:`📫 Dejar ${d.ids.length} en el buzón`}
     </button>
   </div>`;
 }
@@ -4495,7 +4500,7 @@ async function submitDejarBolsinesVarios(){
   d.loading = true; renderNow();
 
   const nowTs = now();
-  const changes = {estado:"Entregada", nombreQuienEntrego:check.nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
+  const changes = {estado:"Entregada (sin confirmar)", nombreQuienEntrego:check.nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
   try{
     const resultados = await Promise.all(
       d.ids.map(id => sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id))
@@ -4507,7 +4512,7 @@ async function submitDejarBolsinesVarios(){
       S.repSeleccion = new Set();
       S.modoSeleccionRep = false;
       S.modal = null;
-      toast(`📦 ${check.nombre} dejó ${d.ids.length} bolsines`);
+      toast(`📫 ${check.nombre} dejó ${d.ids.length} bolsines en el buzón — falta que Tesorería los retire`);
     } else {
       S.dejarBolsinesModal.loading=false;
       S.dejarBolsinesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
