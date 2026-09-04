@@ -5134,7 +5134,7 @@ async function submitEnvioMasivoRRHH(){
         for(const destino of d.destinos){
           const nueva = {
             id:"tmp-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),
-            sucursal:"", area:S.user.area||"RRHH",
+            sucursal:"Fábrica", area:S.user.area||"RRHH",
             solicitante:nombreSolicitante, dniSolicitante:dniVal,
             destino, descripcion, cantidad:+cantidad, unidad,
             prioridad:"Media", fechaRequerida: fechaRequerida||null,
