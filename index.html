@@ -3412,7 +3412,8 @@ function renderFormNueva(){
     </div>
     <div class="field">
       <label>Fecha requerida</label>
-      <input id="f-fecha" type="date" class="inp" value="${new Date().toISOString().slice(0,10)}"/>
+      <input id="f-fecha" type="date" class="inp" min="${fechaISO()}" value="${new Date().toISOString().slice(0,10)}"/>
+      ${e.fecha?`<span class="err-msg">${e.fecha}</span>`:""}
     </div>
   </div>
   <!-- Aviso Otra dirección — se muestra dinámicamente -->
@@ -5074,7 +5075,7 @@ function renderEnvioMasivoModal(){
     </div>
     <div class="field">
       <label>Fecha requerida</label>
-      <input id="em-fecha" type="date" class="inp" value="${escH(d.fechaRequerida)}" onchange="S.envioMasivoModal.fechaRequerida=this.value"/>
+      <input id="em-fecha" type="date" class="inp" min="${fechaISO()}" value="${escH(d.fechaRequerida||fechaISO())}" onchange="S.envioMasivoModal.fechaRequerida=this.value"/>
     </div>
   </div>
   <div class="field">
@@ -6409,6 +6410,7 @@ async function submitNueva(){
   if(!destino)                                         e.dest="Seleccioná un destino";
   if(!descripcion)                                     e.desc="Campo requerido";
   if(!cantidad||isNaN(+cantidad)||+cantidad<=0)        e.cant="Cantidad inválida";
+  if(fechaReq && fechaReq < fechaISO())                e.fecha="La fecha requerida no puede ser anterior a hoy";
   // Si el origen o el destino es "Otra dirección", la dirección exacta
   // (en Observaciones) pasa a ser obligatoria — si no, nadie sabe adónde ir.
   const origenPrevio = ($("f-origen")?.value||"").trim();
