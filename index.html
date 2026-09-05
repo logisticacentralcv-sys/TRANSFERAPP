@@ -3136,40 +3136,47 @@ function renderRepartidor(){
   const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
   const ACCION_COLOR={"Aprobada":"var(--green)","Programada":"var(--purple)","En tránsito":"var(--amber)","En fábrica":"var(--teal)","Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f"};
 
-  let list=S.requests.filter(r=>{
-    if(S.tabRep==="activas") return r.estado==="En tránsito" || puedeTomarAhora(r);
-    return ["Entregada","Entregada (sin confirmar)"].includes(r.estado);
-  });
-  if(S.fRepRecorrido) list=list.filter(r=>r.recorrido===S.fRepRecorrido);
-  if(S.fRepSucursal) list=list.filter(r=>r.sucursal===S.fRepSucursal);
-  if(S.fRepNombre) list=list.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
-  if(S.fRepSoloBolsin) list=list.filter(r=>r.tipoPedido==="bolsin");
+  // Base: todo lo que está activo (ni entregado ni devuelto), separado
+  // entre bolsines (van a su propia pestaña) y el resto.
+  let baseActivos = S.requests.filter(r=>r.estado==="En tránsito" || puedeTomarAhora(r));
+  if(S.fRepRecorrido) baseActivos = baseActivos.filter(r=>r.recorrido===S.fRepRecorrido);
+  if(S.fRepSucursal)  baseActivos = baseActivos.filter(r=>r.sucursal===S.fRepSucursal);
+  if(S.fRepNombre)    baseActivos = baseActivos.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
   if(S.miIdentidadRep){
     const miNombre = normNotif(S.miIdentidadRep.nombre);
-    list = list.filter(r=>{
+    baseActivos = baseActivos.filter(r=>{
       if(r.estado==="En fábrica") return true; // libre para cualquiera (necesita un segundo tramo)
       const quienLoTiene = r.nombreQuienEntrego || r.nombreQuienLevanto;
       if(!quienLoTiene) return true; // todavía nadie lo tomó
       return normNotif(quienLoTiene)===miNombre;
     });
   }
+  const noBolsin = baseActivos.filter(r=>r.tipoPedido!=="bolsin");
+  const bolsinesActivos = baseActivos.filter(r=>r.tipoPedido==="bolsin");
+  const paraTomarGeneral = noBolsin.filter(r=>r.estado!=="En tránsito");
+  const tomadasGeneral   = noBolsin.filter(r=>r.estado==="En tránsito");
+
+  let entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
+  if(S.fRepRecorrido) entregadas = entregadas.filter(r=>r.recorrido===S.fRepRecorrido);
+  if(S.fRepSucursal)  entregadas = entregadas.filter(r=>r.sucursal===S.fRepSucursal);
+  if(S.fRepNombre)    entregadas = entregadas.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
+
   const sucursalesRepOpts=[...new Set(S.requests.map(r=>r.sucursal).filter(Boolean))].sort();
   const nombresRepOpts=[...new Set(S.requests.map(r=>r.nombreQuienLevanto).filter(Boolean))].sort();
 
-  // Devoluciones para atender — se muestran como tarjetas más, mezcladas
-  // en el mismo panel, para no obligar al repartidor a cambiar de sección.
-  let devolucionesRep = [];
-  if(S.tabRep==="activas" && !S.fRepSoloBolsin){
-    devolucionesRep = S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado));
-    if(S.fRepSucursal) devolucionesRep = devolucionesRep.filter(d=>d.sucursal===S.fRepSucursal);
-    if(S.miIdentidadRep){
-      const miNombre = normNotif(S.miIdentidadRep.nombre);
-      devolucionesRep = devolucionesRep.filter(d=>!d.nombreQuienLevanto || normNotif(d.nombreQuienLevanto)===miNombre);
-    }
+  // Devoluciones — ahora es una pestaña propia, no algo mezclado siempre.
+  let devolucionesRep = S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado));
+  if(S.fRepSucursal) devolucionesRep = devolucionesRep.filter(d=>d.sucursal===S.fRepSucursal);
+  if(S.miIdentidadRep){
+    const miNombre = normNotif(S.miIdentidadRep.nombre);
+    devolucionesRep = devolucionesRep.filter(d=>!d.nombreQuienLevanto || normNotif(d.nombreQuienLevanto)===miNombre);
   }
 
-  const activas=S.requests.filter(r=>r.estado==="En tránsito" || puedeTomarAhora(r));
-  const entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
+  // Qué lista de solicitudes corresponde a la pestaña activa
+  const list = S.tabRep==="tomadas" ? tomadasGeneral
+             : S.tabRep==="bolsines" ? bolsinesActivos
+             : S.tabRep==="entregadas" ? entregadas
+             : paraTomarGeneral; // "activas" (default)
 
   return `
   <div style="animation:fadeUp .3s ease">
@@ -3188,18 +3195,18 @@ function renderRepartidor(){
       <button class="btn btn-warn btn-sm" onclick="abrirIdentificarRepartidor()">Identificarme</button>
     </div>`}
     <div class="stats-grid">
-      ${statCard("✅","PARA LEVANTAR",activas.filter(r=>r.estado==="Aprobada"||r.estado==="Programada").length,"var(--green)")}
-      ${statCard("🚚","EN CAMINO",activas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
-      ${statCard("🏭","EN FÁBRICA",activas.filter(r=>r.estado==="En fábrica").length,"var(--teal)")}
-      ${statCard("🎒","BOLSINES",activas.filter(r=>r.tipoPedido==="bolsin").length,S.fRepSoloBolsin?"var(--blue)":"var(--amber)","S.fRepSoloBolsin=!S.fRepSoloBolsin;render()")}
-      ${statCard("🔄","DEVOLUCIONES",S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado)).length,"var(--purple)")}
+      ${statCard("✅","PARA LEVANTAR",noBolsin.filter(r=>r.estado==="Aprobada"||r.estado==="Programada").length,"var(--green)")}
+      ${statCard("🚚","EN CAMINO",tomadasGeneral.length,"var(--amber)")}
+      ${statCard("🏭","EN FÁBRICA",noBolsin.filter(r=>r.estado==="En fábrica").length,"var(--teal)")}
       ${statCard("📦","ENTREGADAS HOY",entregadas.filter(r=>r.deliveredAt&&r.deliveredAt.startsWith(new Date().toISOString().slice(0,10))).length,"#1fa86a")}
     </div>
-    ${S.fRepSoloBolsin?`<p style="font-size:12px;color:var(--muted);margin:-10px 0 14px">🎒 Mostrando solo bolsines — tocá la tarjeta de nuevo para ver todo.</p>`:""}
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       <div class="tabs" style="margin-bottom:0">
-        <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${activas.length})</button>
+        <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${paraTomarGeneral.length})</button>
+        <button class="tab ${S.tabRep==="tomadas"?"active":""}" onclick="S.tabRep='tomadas';render()">Tomadas (${tomadasGeneral.length})</button>
         <button class="tab ${S.tabRep==="entregadas"?"active":""}" onclick="S.tabRep='entregadas';render()">Entregadas (${entregadas.length})</button>
+        <button class="tab ${S.tabRep==="bolsines"?"active":""}" onclick="S.tabRep='bolsines';render()">Bolsines (${bolsinesActivos.length})</button>
+        <button class="tab ${S.tabRep==="devoluciones"?"active":""}" onclick="S.tabRep='devoluciones';render()">Devoluciones (${devolucionesRep.length})</button>
       </div>
       <div class="field" style="margin-bottom:0;min-width:160px">
         <select onchange="S.fRepRecorrido=this.value;render()">
@@ -3219,7 +3226,7 @@ function renderRepartidor(){
           ${nombresRepOpts.map(n=>`<option ${S.fRepNombre===n?"selected":""}>${escH(n)}</option>`).join("")}
         </select>
       </div>
-      ${S.tabRep==="activas"?`
+      ${["activas","tomadas","bolsines"].includes(S.tabRep)?`
       <button class="btn ${S.modoSeleccionRep?"btn-primary":"btn-ghost"} btn-sm" style="margin-left:auto" onclick="S.modoSeleccionRep=!S.modoSeleccionRep; if(!S.modoSeleccionRep) S.repSeleccion=new Set(); render()">
         ${S.modoSeleccionRep?"✕ Cancelar selección":"◯ Seleccionar"}
       </button>`:""}
@@ -3239,29 +3246,28 @@ function renderRepartidor(){
       })()}
       <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
     </div>`:""}
-    ${devolucionesRep.length>0?`
-    <div style="margin-bottom:14px">
-      <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px">🔄 Devoluciones para atender (${devolucionesRep.length})</h3>
-      <div class="del-grid">
-        ${devolucionesRep.map(d=>`
-          <div class="card" style="padding:14px 16px;cursor:pointer" onclick="verDetalleDevolucionRep('${escH(d.id)}')">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-              <div>
-                <strong>${escH(d.sucursal||"—")}</strong>
-                <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)}</span>
-              </div>
-              ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
-            </div>
-            <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
-            <div style="margin-top:10px" onclick="event.stopPropagation()">
-              ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
-              ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
-            </div>
-          </div>`).join("")}
-      </div>
-    </div>`:""}
+    ${S.tabRep==="devoluciones"?`
     <div class="del-grid">
-      ${list.length===0 && devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="activas"?"No hay transferencias activas":"Sin entregas registradas"}</div>`:""}
+      ${devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">No hay devoluciones pendientes.</div>`:""}
+      ${devolucionesRep.map(d=>`
+        <div class="card" style="padding:14px 16px;cursor:pointer" onclick="verDetalleDevolucionRep('${escH(d.id)}')">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div>
+              <strong>${escH(d.sucursal||"—")}</strong>
+              <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)}</span>
+            </div>
+            ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
+          </div>
+          <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
+          <div style="margin-top:10px" onclick="event.stopPropagation()">
+            ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
+            ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+          </div>
+        </div>`).join("")}
+    </div>
+    `:`
+    <div class="del-grid">
+      ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
       ${(()=>{ const _cardRepHtml = r=>{
         const ac = ACCION_COLOR[r.estado]||"var(--muted)";
         const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
@@ -3309,30 +3315,21 @@ function renderRepartidor(){
             </div>
 
             <!-- Descripción -->
-            <div style="font-size:14px;color:var(--muted);margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(r.descripcion)}</div>
+            <div style="font-size:14px;color:var(--muted);margin-bottom:10px">${escH(r.descripcion)}</div>
 
             <!-- Info chips -->
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:10px">
-              <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
-                <div style="color:var(--faint);margin-bottom:2px">Cantidad</div>
-                <div style="font-weight:600;font-family:var(--mono)">${escH(String(r.cantidad))} ${escH(r.unidad)}</div>
-              </div>
+            <div style="display:grid;grid-template-columns:1fr;gap:6px;font-size:12px;margin-bottom:10px">
               <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
                 <div style="color:var(--faint);margin-bottom:2px">Recorrido</div>
                 <div style="font-weight:600;color:var(--teal)">${escH(r.recorrido||"—")}</div>
               </div>
               ${r.scheduledAt?`
-              <div style="background:var(--s2);border-radius:6px;padding:7px 10px;grid-column:1/-1">
+              <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
                 <div style="color:var(--faint);margin-bottom:2px">📅 Fecha programada</div>
                 <div style="font-weight:600">${fd(r.scheduledAt)}</div>
               </div>`:""}
             </div>
 
-            <!-- Comentario logística -->
-            ${r.comentario?`
-            <div style="margin-bottom:10px;padding:7px 10px;background:var(--s2);border-radius:6px;font-size:12px;border-left:3px solid var(--blue)">
-              <span style="color:var(--muted)">Logística: </span>${escH(r.comentario)}
-            </div>`:""}
             ${r.aclaracionListo?`
             <div style="margin-bottom:10px;padding:7px 10px;background:#34d39912;border-radius:6px;font-size:12px;border-left:3px solid #34d399">
               <span style="color:var(--muted)">Sucursal: </span>${escH(r.aclaracionListo)}
@@ -3389,7 +3386,7 @@ function renderRepartidor(){
           </div>
         </div>`;
       };
-      if(S.tabRep!=="activas") return list.map(_cardRepHtml).join("");
+      if(S.tabRep!=="bolsines") return list.map(_cardRepHtml).join("");
       const paraTomar = list.filter(r=>r.estado!=="En tránsito");
       const misTomadas = list.filter(r=>r.estado==="En tránsito");
       return `
@@ -3400,6 +3397,7 @@ function renderRepartidor(){
       `;
       })()}
     </div>
+    `}
   </div>`;
 }
 
@@ -4383,6 +4381,7 @@ function renderNoLevantaModal(){
       <span style="font-size:12px;color:var(--muted)">Registrando...</span>
     </div>
   `:`
+    ${S.miIdentidadRep?`<p style="font-size:12px;color:var(--muted);margin-bottom:14px">👤 Confirmando como <strong>${escH(S.miIdentidadRep.nombre)}</strong></p>`:`
     <div class="field">
       <label>Tu DNI (sin puntos) <span class="req">*</span></label>
       <input id="nolev-dni" class="inp ${d.err&&!d.motivo?"err":""}"
@@ -4390,7 +4389,7 @@ function renderNoLevantaModal(){
         value="${escH(d.dni)}"
         oninput="S.noLevantaModal.dni=this.value;S.noLevantaModal.err=''"/>
       ${d.err&&!d.motivo?`<span class="err-msg">${escH(d.err)}</span>`:""}
-    </div>
+    </div>`}
     <div class="field">
       <label>Motivo <span class="req">*</span></label>
       <select id="nolev-motivo" class="${d.err&&d.dni?"err":""}"
@@ -4966,7 +4965,26 @@ function openGestionar(id){
   S.modal="gestionar";
   render();
 }
+async function ejecutarDejarEnFabrica(id, dni, nombre){
+  const changes = {
+    estado:               "En fábrica",
+    nombreQuienLevanto:   nombre,
+    dniRepartidor:        dni,
+    fabricaAt:            now(),
+    pasaPorFabrica:       true,          // confirma el flag
+    updatedAt:            now(),
+  };
+  S.requests = S.requests.map(x=>x.id===id ? {...x,...changes} : x);
+  S.modal = null;
+  toast(`🏭 ${nombre} dejó la ${id} en fábrica`);
+  render();
+  sheetsUpdate(id, changes);
+}
 function openDejarEnFabrica(id){
+  if(S.miIdentidadRep){
+    ejecutarDejarEnFabrica(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
+    return;
+  }
   S.fabricaModal = {id, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "fabrica";
   render();
@@ -4980,24 +4998,12 @@ async function submitDejarEnFabrica(){
   const check = validarDNI(dni);
   if(!check.ok){ S.fabricaModal.err=check.msg; render(); return; }
 
-  const cb = check; // capture
   S.fabricaModal.loading  = true;
   S.fabricaModal.nombreOk = check.nombre;
   renderNow();
   await new Promise(r=>setTimeout(r,450));
 
-  const changes = {
-    estado:               "En fábrica",
-    nombreQuienLevanto:   check.nombre,
-    dniRepartidor:        dni,
-    fabricaAt:            now(),
-    pasaPorFabrica:       true,          // confirma el flag
-    updatedAt:            now(),
-  };
-  S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
-  S.modal = null;
-  toast(`🏭 ${check.nombre} dejó la ${d.id} en fábrica`);
-  sheetsUpdate(d.id, changes);
+  await ejecutarDejarEnFabrica(d.id, dni, check.nombre);
 }
 
 // ── Repartidor deja la transferencia porque la sucursal está cerrada ──
@@ -5807,6 +5813,10 @@ async function submitLoteRecorrido(){
 }
 
 function openTomarTransferencia(id){
+  if(S.miIdentidadRep){
+    ejecutarTomarTransferencia(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
+    return;
+  }
   S.tomarModal = {id, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "tomar";
   render();
@@ -6289,27 +6299,33 @@ function openNoLevanta(id){
 async function submitNoLevanta(){
   const d = S.noLevantaModal;
   if(d.loading) return;
-  const dni     = String($("nolev-dni")?.value||d.dni||"").replace(/\D/g,"");
   const motivo  = ($("nolev-motivo")?.value||d.motivo||"").trim();
   const detalle = ($("nolev-detalle")?.value||d.detalle||"").trim();
-  if(!dni)    { S.noLevantaModal.err="Ingresá tu DNI."; render(); return; }
   if(!motivo) { S.noLevantaModal.err="Seleccioná el motivo."; render(); return; }
-  const check = validarDNI(dni);
-  if(!check.ok){ S.noLevantaModal.err=check.msg; render(); return; }
+  let dni, nombre;
+  if(S.miIdentidadRep){ dni=S.miIdentidadRep.dni; nombre=S.miIdentidadRep.nombre; }
+  else{
+    dni = String($("nolev-dni")?.value||d.dni||"").replace(/\D/g,"");
+    if(!dni){ S.noLevantaModal.err="Ingresá tu DNI."; render(); return; }
+    const check = validarDNI(dni);
+    if(!check.ok){ S.noLevantaModal.err=check.msg; render(); return; }
+    nombre = check.nombre;
+  }
   S.noLevantaModal.loading  = true;
-  S.noLevantaModal.nombreOk = check.nombre;
+  S.noLevantaModal.nombreOk = nombre;
   renderNow();
   await new Promise(r=>setTimeout(r,450));
   const motivoCompleto = detalle ? `${motivo} — ${detalle}` : motivo;
   const changes = {
     estado:       "No levantada",
-    comentario:   `⚠️ No levantada por ${check.nombre}: ${motivoCompleto}`,
+    comentario:   `⚠️ No levantada por ${nombre}: ${motivoCompleto}`,
     dniRepartidor: dni,
     updatedAt:    now(),
   };
   S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
   S.modal = null;
   toast(`⚠️ Registrado — Logística fue notificada`);
+  render();
   sheetsUpdate(d.id, changes);
 }
 
@@ -6360,6 +6376,10 @@ function openConfirmarEntrega(id){
   const r = S.requests.find(x=>x.id===id);
   if(!r) return;
   if(esOtraDireccion(r.destino) || r.tipoPedido==="bolsin"){
+    if(S.miIdentidadRep){
+      ejecutarEntregaDirecta(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
+      return;
+    }
     // Sin código — confirmación directa
     S.delivModal={id,dni:"",err:"",loading:false};
     S.modal="entrega";
@@ -6744,6 +6764,36 @@ async function aplicarGestionar(dniVal, usuario){
 
 // ── CONFIRMAR ENTREGA (REPARTIDOR) ─────────────────────────
 // ── TOMAR TRANSFERENCIA (repartidor levanta) ───────────────
+async function ejecutarTomarTransferencia(id, dni, nombre){
+  const r = S.requests.find(x=>x.id===id);
+  const esSegundaEtapa = r?.estado === "En fábrica";
+  const tsAhora = now();
+  const changes = {
+    estado:     "En tránsito",
+    updatedAt:  tsAhora,
+  };
+  if(esSegundaEtapa){
+    // Segunda etapa: sale de fábrica → destino final
+    changes.nombreQuienEntrego = nombre;
+    changes.dniEntrega         = dni;
+    changes.salidaFabricaAt    = tsAhora;  // timestamp salida de fábrica
+    changes.pasaPorFabrica     = true;
+  } else {
+    // Primera etapa: levanta de sucursal
+    changes.nombreQuienLevanto = nombre;
+    changes.dniRepartidor      = dni;
+    changes.levantadoAt        = tsAhora;  // timestamp levantamiento
+  }
+  // OPTIMISTIC UPDATE
+  S.requests = S.requests.map(x => x.id===id ? {...x,...changes} : x);
+  S.modal    = null;
+  const msg  = esSegundaEtapa
+    ? `🚚 ${nombre} lleva la ${id} al destino final`
+    : `🚚 ${nombre} tomó la ${id}`;
+  toast(msg);
+  render();
+  sheetsUpdate(id, changes);
+}
 async function submitTomar(){
   const d   = S.tomarModal;
   const dni = String(d.dni||"").replace(/\D/g,"");
@@ -6759,35 +6809,23 @@ async function submitTomar(){
   renderNow();
   await new Promise(r=>setTimeout(r,500));
 
-  const r = S.requests.find(x=>x.id===d.id);
-  const esSegundaEtapa = r?.estado === "En fábrica";
-  const tsAhora = now();
-  const changes = {
-    estado:     "En tránsito",
-    updatedAt:  tsAhora,
-  };
-  if(esSegundaEtapa){
-    // Segunda etapa: sale de fábrica → destino final
-    changes.nombreQuienEntrego = check.nombre;
-    changes.dniEntrega         = dni;
-    changes.salidaFabricaAt    = tsAhora;  // timestamp salida de fábrica
-    changes.pasaPorFabrica     = true;
-  } else {
-    // Primera etapa: levanta de sucursal
-    changes.nombreQuienLevanto = check.nombre;
-    changes.dniRepartidor      = dni;
-    changes.levantadoAt        = tsAhora;  // timestamp levantamiento
-  }
-  // OPTIMISTIC UPDATE
-  S.requests = S.requests.map(x => x.id===d.id ? {...x,...changes} : x);
-  S.modal    = null;
-  const msg  = esSegundaEtapa
-    ? `🚚 ${check.nombre} lleva la ${d.id} al destino final`
-    : `🚚 ${check.nombre} tomó la ${d.id}`;
-  toast(msg);
-  sheetsUpdate(d.id, changes);
+  await ejecutarTomarTransferencia(d.id, dni, check.nombre);
 }
 
+async function ejecutarEntregaDirecta(id, dni, nombre){
+  const changes = {
+    estado:              "Entregada",
+    deliveredAt:         now(),
+    dniEntrega:          dni,
+    nombreQuienEntrego:  nombre,
+    updatedAt:           now(),
+  };
+  S.requests = S.requests.map(x=>x.id===id?{...x,...changes}:x);
+  S.modal    = null;
+  toast(`Entrega confirmada — ${nombre} ✓`);
+  render();
+  sheetsUpdate(id, changes);
+}
 async function submitEntrega(){
   const d      = S.delivModal;
   const dni    = String(d.dni||"").replace(/\D/g,"");
@@ -6798,18 +6836,7 @@ async function submitEntrega(){
   if(!check.ok){ S.delivModal.err=check.msg; render(); return; }
 
   S.delivModal.loading = true; renderNow();
-  const changes = {
-    estado:              "Entregada",
-    deliveredAt:         now(),
-    dniEntrega:          dni,             // DNI de quien entregó (distinto de quien levantó)
-    nombreQuienEntrego:  check.nombre,    // nombre de quien entregó
-    updatedAt:           now(),
-  };
-  // OPTIMISTIC UPDATE: mostrar cambio inmediatamente, Sheets en background
-  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
-  S.modal    = null;
-  toast(`Entrega confirmada — ${check.nombre} ✓`);
-  sheetsUpdate(d.id, changes); // sin await
+  await ejecutarEntregaDirecta(d.id, dni, check.nombre);
 }
 
 // ── VALIDAR DNI en modal ───────────────────────────────────
