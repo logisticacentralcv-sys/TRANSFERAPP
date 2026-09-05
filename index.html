@@ -1369,9 +1369,10 @@ function toggleDevolSeleccionTomar(id, checked){
 }
 
 // ── PASO 1: repartidor TOMA (levanta) la devolución de la sucursal ──
-function openTomarDevoluciones(){
-  if(S.devolSeleccionTomar.size===0) return;
-  const ids = [...S.devolSeleccionTomar].filter(id=>{
+function openTomarDevoluciones(idsExplicitos){
+  const base = idsExplicitos || [...S.devolSeleccionTomar];
+  if(base.length===0) return;
+  const ids = base.filter(id=>{
     const d = S.devoluciones.find(x=>String(x.id)===String(id));
     return d && d.estado==="Pendiente";
   });
@@ -1435,9 +1436,10 @@ async function submitTomarDevoluciones(){
   render();
 }
 
-function openDejarDevolucionesFabrica(){
-  if(S.devolSeleccion.size===0) return;
-  const ids = [...S.devolSeleccion].filter(id=>{
+function openDejarDevolucionesFabrica(idsExplicitos){
+  const base = idsExplicitos || [...S.devolSeleccion];
+  if(base.length===0) return;
+  const ids = base.filter(id=>{
     const d = S.devoluciones.find(x=>String(x.id)===String(id));
     return d && d.estado==="En camino";
   });
@@ -1512,7 +1514,7 @@ function renderDevoluciones(){
     // Ve todas las pendientes/en curso — pero una vez que producción/logística
     // ya la confirmó (o la cerró como no confirmada), deja de ser relevante
     // para el repartidor y se saca de su vista para no ensuciarla.
-    lista = S.devoluciones.filter(d => !["Confirmada","No confirmada"].includes(d.estado));
+    lista = S.devoluciones.filter(d => ["Pendiente","En camino"].includes(d.estado));
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
   } else if(!esGestor){
@@ -3099,6 +3101,14 @@ function renderRepartidor(){
   const sucursalesRepOpts=[...new Set(S.requests.map(r=>r.sucursal).filter(Boolean))].sort();
   const nombresRepOpts=[...new Set(S.requests.map(r=>r.nombreQuienLevanto).filter(Boolean))].sort();
 
+  // Devoluciones para atender — se muestran como tarjetas más, mezcladas
+  // en el mismo panel, para no obligar al repartidor a cambiar de sección.
+  let devolucionesRep = [];
+  if(S.tabRep==="activas" && !S.fRepSoloBolsin){
+    devolucionesRep = S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado));
+    if(S.fRepSucursal) devolucionesRep = devolucionesRep.filter(d=>d.sucursal===S.fRepSucursal);
+  }
+
   const activas=S.requests.filter(r=>["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado));
   const entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
 
@@ -3113,6 +3123,7 @@ function renderRepartidor(){
       ${statCard("✅","PARA LEVANTAR",activas.filter(r=>r.estado==="Aprobada"||r.estado==="Programada").length,"var(--green)")}
       ${statCard("🚚","EN CAMINO",activas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
       ${statCard("🏭","EN FÁBRICA",activas.filter(r=>r.estado==="En fábrica").length,"var(--teal)")}
+      ${statCard("🔄","DEVOLUCIONES",S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado)).length,"var(--purple)")}
       ${statCard("📦","ENTREGADAS HOY",entregadas.filter(r=>r.deliveredAt&&r.deliveredAt.startsWith(new Date().toISOString().slice(0,10))).length,"#1fa86a")}
     </div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
@@ -3160,8 +3171,29 @@ function renderRepartidor(){
       })()}
       <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
     </div>`:""}
+    ${devolucionesRep.length>0?`
+    <div style="margin-bottom:14px">
+      <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px">🔄 Devoluciones para atender (${devolucionesRep.length})</h3>
+      <div class="del-grid">
+        ${devolucionesRep.map(d=>`
+          <div class="card" style="padding:14px 16px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div>
+                <strong>${escH(d.sucursal||"—")}</strong>
+                <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)}</span>
+              </div>
+              ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
+            </div>
+            <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
+            <div style="margin-top:10px">
+              ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
+              ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+            </div>
+          </div>`).join("")}
+      </div>
+    </div>`:""}
     <div class="del-grid">
-      ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="activas"?"No hay transferencias activas":"Sin entregas registradas"}</div>`:""}
+      ${list.length===0 && devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="activas"?"No hay transferencias activas":"Sin entregas registradas"}</div>`:""}
       ${list.map(r=>{
         const ac = ACCION_COLOR[r.estado]||"var(--muted)";
         const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
