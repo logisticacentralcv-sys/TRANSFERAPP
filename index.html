@@ -1389,6 +1389,7 @@ function renderTomarDevolucionesModal(){
   <div style="background:#2de0c418;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
     🤲 Vas a tomar <strong>${d.ids.length} devolucion${d.ids.length!==1?"es":""}</strong> de la sucursal, para llevarlas a fábrica.
   </div>
+  ${S.miIdentidadRep?`<p style="font-size:12px;color:var(--muted);margin-bottom:14px">👤 Confirmando como <strong>${escH(S.miIdentidadRep.nombre)}</strong></p>`:`
   <div class="field">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="td-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
@@ -1396,7 +1397,7 @@ function renderTomarDevolucionesModal(){
       oninput="S.tomarDevolucionesModal.dni=this.value;S.tomarDevolucionesModal.err=''"
       onkeydown="if(event.key==='Enter')submitTomarDevoluciones()"/>
     ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
-  </div>
+  </div>`}
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-teal btn-md" onclick="submitTomarDevoluciones()" ${d.loading?"disabled":""}>
@@ -1407,15 +1408,20 @@ function renderTomarDevolucionesModal(){
 async function submitTomarDevoluciones(){
   const d = S.tomarDevolucionesModal;
   if(d.loading) return;
-  const dni = String(d.dni||"").replace(/\D/g,"");
-  if(!dni){ S.tomarDevolucionesModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
-  if(!check.ok){ S.tomarDevolucionesModal.err=check.msg; render(); return; }
+  let dni, nombre;
+  if(S.miIdentidadRep){ dni=S.miIdentidadRep.dni; nombre=S.miIdentidadRep.nombre; }
+  else{
+    dni = String(d.dni||"").replace(/\D/g,"");
+    if(!dni){ S.tomarDevolucionesModal.err="Ingresá tu DNI."; render(); return; }
+    const check = validarDNI(dni);
+    if(!check.ok){ S.tomarDevolucionesModal.err=check.msg; render(); return; }
+    nombre = check.nombre;
+  }
 
   d.loading = true; renderNow();
 
   const nowTs = now();
-  const changes = {estado:"En camino", nombreQuienLevanto:check.nombre, dniQuienLevanto:dni, levantadoAt:nowTs, updatedAt:nowTs};
+  const changes = {estado:"En camino", nombreQuienLevanto:nombre, dniQuienLevanto:dni, levantadoAt:nowTs, updatedAt:nowTs};
   try{
     const resultados = await Promise.all(
       d.ids.map(id => sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",id))
@@ -1426,7 +1432,7 @@ async function submitTomarDevoluciones(){
       S.devoluciones = S.devoluciones.map(x=>idsSet.has(String(x.id)) ? {...x,...changes} : x);
       S.devolSeleccionTomar = new Set();
       S.modal = null;
-      toast(`🤲 ${check.nombre} tomó ${d.ids.length} devolución${d.ids.length!==1?"es":""} — camino a fábrica`);
+      toast(`🤲 ${nombre} tomó ${d.ids.length} devolución${d.ids.length!==1?"es":""} — camino a fábrica`);
     } else {
       S.tomarDevolucionesModal.loading=false;
       S.tomarDevolucionesModal.err = `No se pudieron tomar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
@@ -1458,12 +1464,13 @@ function renderDejarDevolucionesModal(){
     📦 Vas a dejar <strong>${d.ids.length} devolucion${d.ids.length!==1?"es":""}</strong> en fábrica de una sola vez.
   </div>
   <div class="field">
+  ${S.miIdentidadRep?`<p style="font-size:12px;color:var(--muted)">👤 Confirmando como <strong>${escH(S.miIdentidadRep.nombre)}</strong></p>`:`
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="dd-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
       value="${escH(d.dni)}"
       oninput="S.dejarDevolucionesModal.dni=this.value;S.dejarDevolucionesModal.err=''"
       onkeydown="if(event.key==='Enter')submitDejarDevolucionesFabrica()"/>
-    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}`}
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
@@ -1476,15 +1483,20 @@ function renderDejarDevolucionesModal(){
 async function submitDejarDevolucionesFabrica(){
   const d = S.dejarDevolucionesModal;
   if(d.loading) return;
-  const dni = String(d.dni||"").replace(/\D/g,"");
-  if(!dni){ S.dejarDevolucionesModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
-  if(!check.ok){ S.dejarDevolucionesModal.err=check.msg; render(); return; }
+  let dni, nombre;
+  if(S.miIdentidadRep){ dni=S.miIdentidadRep.dni; nombre=S.miIdentidadRep.nombre; }
+  else{
+    dni = String(d.dni||"").replace(/\D/g,"");
+    if(!dni){ S.dejarDevolucionesModal.err="Ingresá tu DNI."; render(); return; }
+    const check = validarDNI(dni);
+    if(!check.ok){ S.dejarDevolucionesModal.err=check.msg; render(); return; }
+    nombre = check.nombre;
+  }
 
   d.loading = true; renderNow();
 
   const nowTs = now();
-  const changes = {estado:"En fábrica", nombreRepartidor:check.nombre, dejadoFabricaAt:nowTs, updatedAt:nowTs};
+  const changes = {estado:"En fábrica", nombreRepartidor:nombre, dejadoFabricaAt:nowTs, updatedAt:nowTs};
   try{
     const resultados = await Promise.all(
       d.ids.map(id => sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",id))
@@ -1495,7 +1507,7 @@ async function submitDejarDevolucionesFabrica(){
       S.devoluciones = S.devoluciones.map(x=>idsSet.has(String(x.id)) ? {...x,...changes} : x);
       S.devolSeleccion = new Set();
       S.modal = null;
-      toast(`📦 ${check.nombre} dejó ${d.ids.length} devolución${d.ids.length!==1?"es":""} en fábrica`);
+      toast(`📦 ${nombre} dejó ${d.ids.length} devolución${d.ids.length!==1?"es":""} en fábrica`);
     } else {
       S.dejarDevolucionesModal.loading=false;
       S.dejarDevolucionesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
@@ -3086,14 +3098,20 @@ function renderMetricas(){
 // ══════════════════════════════════════════════════════════
 //  VISTA REPARTIDOR
 // ══════════════════════════════════════════════════════════
+// ¿El repartidor puede tomarla YA? (no alcanza con que esté "Aprobada" si
+// todavía la sucursal no la preparó — salvo que salga de fábrica o vaya a
+// "Otra dirección", esos casos no necesitan ese paso previo)
+function puedeTomarAhora(r){
+  return ["Lista para retirar","En fábrica"].includes(r.estado) ||
+         ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado));
+}
 function renderRepartidor(){
   const u=S.user;
   const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
-  const VISIBLES=["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"];
   const ACCION_COLOR={"Aprobada":"var(--green)","Programada":"var(--purple)","En tránsito":"var(--amber)","En fábrica":"var(--teal)","Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f"};
 
   let list=S.requests.filter(r=>{
-    if(S.tabRep==="activas") return VISIBLES.includes(r.estado);
+    if(S.tabRep==="activas") return r.estado==="En tránsito" || puedeTomarAhora(r);
     return ["Entregada","Entregada (sin confirmar)"].includes(r.estado);
   });
   if(S.fRepRecorrido) list=list.filter(r=>r.recorrido===S.fRepRecorrido);
@@ -3124,7 +3142,7 @@ function renderRepartidor(){
     }
   }
 
-  const activas=S.requests.filter(r=>["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado));
+  const activas=S.requests.filter(r=>r.estado==="En tránsito" || puedeTomarAhora(r));
   const entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
 
   return `
@@ -3185,7 +3203,7 @@ function renderRepartidor(){
       <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
       ${(()=>{
         const sel=[...S.repSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
-        const nTomar = sel.filter(r=>["Lista para retirar","En fábrica"].includes(r.estado) || ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado))).length;
+        const nTomar = sel.filter(r=>puedeTomarAhora(r)).length;
         const nBolsin = sel.filter(r=>r.tipoPedido==="bolsin" && r.estado==="En tránsito").length;
         const entregables = sel.filter(r=>r.tipoPedido!=="bolsin" && r.estado==="En tránsito" && (!(r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si") || r.fabricaAt));
         return `
@@ -4507,8 +4525,7 @@ function openTomarVarias(){
   const ids = [...S.repSeleccion].filter(id=>{
     const r = S.requests.find(x=>x.id===id);
     if(!r) return false;
-    return ["Lista para retirar","En fábrica"].includes(r.estado) ||
-           ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado));
+    return puedeTomarAhora(r);
   });
   if(!ids.length) return;
   S.tomarVariasModal = {ids, dni:"", err:"", loading:false, nombreOk:""};
@@ -4536,12 +4553,13 @@ function renderDejarBolsinesModal(){
     Tesorería los va a retirar y confirmar la recepción desde su panel.
   </div>
   <div class="field">
+  ${S.miIdentidadRep?`<p style="font-size:12px;color:var(--muted)">👤 Confirmando como <strong>${escH(S.miIdentidadRep.nombre)}</strong></p>`:`
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="db-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
       value="${escH(d.dni)}"
       oninput="S.dejarBolsinesModal.dni=this.value;S.dejarBolsinesModal.err=''"
       onkeydown="if(event.key==='Enter')submitDejarBolsinesVarios()"/>
-    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}`}
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
@@ -4554,15 +4572,20 @@ function renderDejarBolsinesModal(){
 async function submitDejarBolsinesVarios(){
   const d = S.dejarBolsinesModal;
   if(d.loading) return;
-  const dni = String(d.dni||"").replace(/\D/g,"");
-  if(!dni){ S.dejarBolsinesModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
-  if(!check.ok){ S.dejarBolsinesModal.err=check.msg; render(); return; }
+  let dni, nombre;
+  if(S.miIdentidadRep){ dni=S.miIdentidadRep.dni; nombre=S.miIdentidadRep.nombre; }
+  else{
+    dni = String(d.dni||"").replace(/\D/g,"");
+    if(!dni){ S.dejarBolsinesModal.err="Ingresá tu DNI."; render(); return; }
+    const check = validarDNI(dni);
+    if(!check.ok){ S.dejarBolsinesModal.err=check.msg; render(); return; }
+    nombre = check.nombre;
+  }
 
   d.loading = true; renderNow();
 
   const nowTs = now();
-  const changes = {estado:"Entregada (sin confirmar)", nombreQuienEntrego:check.nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
+  const changes = {estado:"Entregada (sin confirmar)", nombreQuienEntrego:nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
   try{
     const resultados = await Promise.all(
       d.ids.map(id => sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id))
@@ -4574,7 +4597,7 @@ async function submitDejarBolsinesVarios(){
       S.repSeleccion = new Set();
       S.modoSeleccionRep = false;
       S.modal = null;
-      toast(`📫 ${check.nombre} dejó ${d.ids.length} bolsines en el buzón — falta que Tesorería los retire`);
+      toast(`📫 ${nombre} dejó ${d.ids.length} bolsines en el buzón — falta que Tesorería los retire`);
     } else {
       S.dejarBolsinesModal.loading=false;
       S.dejarBolsinesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
@@ -4605,12 +4628,13 @@ function renderTomarVariasModal(){
     </div>
   </div>`:""}
   <div class="field" style="margin-top:12px">
+  ${S.miIdentidadRep?`<p style="font-size:12px;color:var(--muted)">👤 Confirmando como <strong>${escH(S.miIdentidadRep.nombre)}</strong></p>`:`
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="tv-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
       value="${escH(d.dni)}"
       oninput="S.tomarVariasModal.dni=this.value;S.tomarVariasModal.err=''"
       onkeydown="if(event.key==='Enter')submitTomarVarias()"/>
-    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}`}
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
@@ -4623,10 +4647,15 @@ function renderTomarVariasModal(){
 async function submitTomarVarias(){
   const d = S.tomarVariasModal;
   if(d.loading) return;
-  const dni = String(d.dni||"").replace(/\D/g,"");
-  if(!dni){ S.tomarVariasModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
-  if(!check.ok){ S.tomarVariasModal.err=check.msg; render(); return; }
+  let dni, nombre;
+  if(S.miIdentidadRep){ dni=S.miIdentidadRep.dni; nombre=S.miIdentidadRep.nombre; }
+  else{
+    dni = String(d.dni||"").replace(/\D/g,"");
+    if(!dni){ S.tomarVariasModal.err="Ingresá tu DNI."; render(); return; }
+    const check = validarDNI(dni);
+    if(!check.ok){ S.tomarVariasModal.err=check.msg; render(); return; }
+    nombre = check.nombre;
+  }
 
   d.loading = true; renderNow();
 
@@ -4641,8 +4670,8 @@ async function submitTomarVarias(){
       const x = S.requests.find(r=>r.id===id);
       const esSegundaEtapa = x && x.estado==="En fábrica";
       const changes = esSegundaEtapa
-        ? {estado:"En tránsito", nombreQuienEntrego:check.nombre, dniEntrega:dni, salidaFabricaAt:nowTs, updatedAt:nowTs}
-        : {estado:"En tránsito", nombreQuienLevanto:check.nombre, dniRepartidor:dni, levantadoAt:nowTs, updatedAt:nowTs};
+        ? {estado:"En tránsito", nombreQuienEntrego:nombre, dniEntrega:dni, salidaFabricaAt:nowTs, updatedAt:nowTs}
+        : {estado:"En tránsito", nombreQuienLevanto:nombre, dniRepartidor:dni, levantadoAt:nowTs, updatedAt:nowTs};
       if(x && x.tipoPedido==="bolsin"){
         const inputCant = $(`tv-cant-${id}`);
         if(inputCant){
@@ -4669,7 +4698,7 @@ async function submitTomarVarias(){
       S.repSeleccion = new Set();
       S.modoSeleccionRep = false;
       S.modal = null;
-      toast(`🚚 ${check.nombre} tomó ${cambios.length} transferencias`);
+      toast(`🚚 ${nombre} tomó ${cambios.length} transferencias`);
     } else {
       S.tomarVariasModal.loading=false;
       S.tomarVariasModal.err = `No se pudieron tomar ${fallidas.length} de ${cambios.length}. Probá de nuevo.`;
@@ -6508,6 +6537,17 @@ function cambiarIdentidadRepartidor(){
   try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
   S.miIdentidadRep = null;
   abrirIdentificarRepartidor();
+}
+// Si ya identificamos a la persona en este celular, usamos eso directo
+// (sin volver a pedir DNI en cada acción). Si no, cae al campo de DNI
+// del modal correspondiente.
+function resolverIdentidadAccion(inputId){
+  if(S.miIdentidadRep) return {ok:true, dni:S.miIdentidadRep.dni, nombre:S.miIdentidadRep.nombre};
+  const dni = String($(inputId)?.value||"").replace(/\D/g,"");
+  if(!dni) return {ok:false, msg:"Ingresá tu DNI."};
+  const check = validarDNI(dni);
+  if(!check.ok) return {ok:false, msg:check.msg};
+  return {ok:true, dni, nombre:check.nombre};
 }
 
 // ── NUEVA SOLICITUD ────────────────────────────────────────
