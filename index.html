@@ -2035,6 +2035,14 @@ function renderApp(){
         📦 <span style="display:none" class="devol-lbl">Devoluciones</span>${S.devoluciones.filter(d=>d.estado==="Pendiente").length>0 && esGestorDevolucion()?` (${S.devoluciones.filter(d=>d.estado==="Pendiente").length})`:""}
       </button>
       <style>@media(min-width:480px){.devol-lbl{display:inline!important}}</style>`:""}
+      ${S.user?.rol==="logistica"?`
+      <!-- Separador -->
+      <span style="color:var(--border);font-size:16px">|</span>
+      <!-- Flota -->
+      <a class="btn btn-ghost btn-sm" href="https://dashboard-wheat-pi-94.vercel.app/" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">
+        🚛 <span style="display:none" class="flota-lbl">&nbsp;Flota</span>
+      </a>
+      <style>@media(min-width:480px){.flota-lbl{display:inline!important}}</style>`:""}
       <!-- Separador -->
       <span style="color:var(--border);font-size:16px">|</span>
       <!-- Notificaciones -->
