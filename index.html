@@ -2451,7 +2451,8 @@ function renderAdminSolicitudes(){
               <td>${estadoBadges(r)}</td>
               <td style="white-space:nowrap" onclick="event.stopPropagation()">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-                <button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Editar</button>
+                <button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>
+                <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>
                 <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick="confirmarBorrarSolicitud('${escH(r.id)}')">🗑️</button>
               </td>
             </tr>`).join("")}
@@ -4237,10 +4238,35 @@ function renderPalabraModal(){
 function renderEditarModal(){
   const d = S.editarModal;
   const r = S.requests.find(x=>x.id===d.id);
+  const esAdmin = S.user?.rol==="admin";
   return `
   ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
     ${badge(r.id,"var(--blue)")} ${estadoBadges(r)}<br/><br/>
     <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong>
+  </div>`:""}
+  ${esAdmin?`
+  <div class="alert-info" style="margin-bottom:14px;font-size:12px">🔑 Como Admin podés corregir origen, destino y área — usalo para arreglar datos mal cargados.</div>
+  <div class="g2">
+    <div class="field">
+      <label>Sucursal / origen</label>
+      <input id="ed-sucursal" type="text" class="inp" value="${escH(d.sucursal??r?.sucursal??"")}" placeholder="Ej: Fábrica, Güemes..."/>
+    </div>
+    <div class="field">
+      <label>Destino</label>
+      <input id="ed-destino" type="text" class="inp" value="${escH(d.destino??r?.destino??"")}"/>
+    </div>
+  </div>
+  <div class="g2">
+    <div class="field">
+      <label>Área (solicitante)</label>
+      <input id="ed-area" type="text" class="inp" value="${escH(d.area??r?.area??"")}" placeholder="Ej: Planificación, RRHH..."/>
+    </div>
+    <div class="field">
+      <label>Unidad</label>
+      <select id="ed-unidad">
+        ${UNIDADES.map(u=>`<option ${((d.unidad||r?.unidad)===u)?"selected":""}>${u}</option>`).join("")}
+      </select>
+    </div>
   </div>`:""}
   <div class="field">
     <label>Descripción</label>
@@ -4277,7 +4303,7 @@ function renderEditarModal(){
 function openEditar(id){
   const r = S.requests.find(x=>x.id===id);
   if(!r) return;
-  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", err:"", loading:false};
+  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", sucursal:r.sucursal||"", destino:r.destino||"", area:r.area||"", unidad:r.unidad||"", err:"", loading:false};
   S.modal = "editar";
   render();
 }
@@ -4291,8 +4317,19 @@ async function submitEditar(){
   const obs     = ($("ed-obs")?.value||"").trim();
   if(!desc){ S.editarModal.err="La descripción es obligatoria."; render(); return; }
   if(!cant||isNaN(+cant)||+cant<=0){ S.editarModal.err="Cantidad inválida."; render(); return; }
-  S.editarModal.loading = true; renderNow();
   const changes = { descripcion:desc, cantidad:+cant, fechaRequerida:fecha||null, observaciones:obs, updatedAt:now() };
+  if(S.user?.rol==="admin"){
+    const sucursal = ($("ed-sucursal")?.value||"").trim();
+    const destino  = ($("ed-destino")?.value||"").trim();
+    const area     = ($("ed-area")?.value||"").trim();
+    const unidad   = ($("ed-unidad")?.value||"").trim();
+    if(!destino){ S.editarModal.err="El destino es obligatorio."; render(); return; }
+    changes.sucursal = sucursal;
+    changes.destino  = destino;
+    changes.area     = area;
+    if(unidad) changes.unidad = unidad;
+  }
+  S.editarModal.loading = true; renderNow();
   S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
   S.modal = null;
   toast("Solicitud actualizada");
