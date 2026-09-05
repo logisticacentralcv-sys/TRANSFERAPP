@@ -603,6 +603,7 @@ let S = {
   fRepRecorrido:"",
   fRepSucursal:"",
   fRepNombre:"",
+  fRepSoloBolsin:false,
   fTesFecha:"", fTesSucursal:"", fTesTexto:"",
 
   // UI – tabs
@@ -3094,6 +3095,7 @@ function renderRepartidor(){
   if(S.fRepRecorrido) list=list.filter(r=>r.recorrido===S.fRepRecorrido);
   if(S.fRepSucursal) list=list.filter(r=>r.sucursal===S.fRepSucursal);
   if(S.fRepNombre) list=list.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
+  if(S.fRepSoloBolsin) list=list.filter(r=>r.tipoPedido==="bolsin");
   const sucursalesRepOpts=[...new Set(S.requests.map(r=>r.sucursal).filter(Boolean))].sort();
   const nombresRepOpts=[...new Set(S.requests.map(r=>r.nombreQuienLevanto).filter(Boolean))].sort();
 
@@ -3118,6 +3120,8 @@ function renderRepartidor(){
         <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${activas.length})</button>
         <button class="tab ${S.tabRep==="entregadas"?"active":""}" onclick="S.tabRep='entregadas';render()">Entregadas (${entregadas.length})</button>
       </div>
+      <button class="btn btn-ghost btn-sm" onclick="abrirDevoluciones()">📦 Devoluciones</button>
+      <button class="btn ${S.fRepSoloBolsin?"btn-primary":"btn-ghost"} btn-sm" onclick="S.fRepSoloBolsin=!S.fRepSoloBolsin;render()">🎒 Solo bolsines</button>
       <div class="field" style="margin-bottom:0;min-width:160px">
         <select onchange="S.fRepRecorrido=this.value;render()">
           <option value="">Todos los recorridos</option>
@@ -6303,6 +6307,7 @@ async function doLogin(){
   // Entrar inmediatamente — FASE 2 carga datos en background
   S.view = "app";
   S.lastRefresh = Date.now();
+  try{ localStorage.setItem("tl_sesion", JSON.stringify(S.user)); }catch(e){}
   render(); // mostrar app ya
 
   // Cargar solicitudes, recorridos y destinos en background sin bloquear
@@ -6388,7 +6393,10 @@ async function doRefresh(){
   toast("Datos actualizados ✓");
 }
 
-function doLogout(){ stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render(); }
+function doLogout(){
+  try{ localStorage.removeItem("tl_sesion"); }catch(e){}
+  stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
+}
 
 // ── NUEVA SOLICITUD ────────────────────────────────────────
 async function submitNueva(){
@@ -6657,7 +6665,27 @@ async function submitDni(){
 S.requests = [];   // se llena con sheetsLoadDatos() (Supabase) apenas carga
 S.recorridos = ["SUR","CENTRO","NORTE"];  // default — se reemplaza con Sheets
 S.usuarios = [];   // se llena con sheetsLoadUsuarios() (Supabase) apenas carga
-render();
+
+// Restaurar sesión guardada (si el navegador recargó la página, no hace
+// falta loguearse de nuevo — típico en celulares que matan pestañas en
+// segundo plano para ahorrar batería).
+let _sesionRestaurada = null;
+try{
+  const guardada = localStorage.getItem("tl_sesion");
+  if(guardada) _sesionRestaurada = JSON.parse(guardada);
+}catch(e){}
+
+if(_sesionRestaurada){
+  S.user = _sesionRestaurada;
+  S.view = "app";
+  S.lastRefresh = Date.now();
+  render();
+  if(USE_SHEETS) sheetsLoadUsuarios();
+  sheetsLoadDatos().then(()=>{ render(); });
+  startAutoRefresh();
+} else {
+  render();
+}
 
 // Dejar el service worker registrado desde ya (no pide permiso todavía,
 // eso pasa recién cuando tocan "Activar alertas")
