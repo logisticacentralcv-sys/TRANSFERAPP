@@ -604,6 +604,8 @@ let S = {
   fRepSucursal:"",
   fRepNombre:"",
   fRepSoloBolsin:false,
+  miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
+  identidadRepModal: {dni:"", err:"", loading:false},
   fTesFecha:"", fTesSucursal:"", fTesTexto:"",
 
   // UI – tabs
@@ -3098,6 +3100,15 @@ function renderRepartidor(){
   if(S.fRepSucursal) list=list.filter(r=>r.sucursal===S.fRepSucursal);
   if(S.fRepNombre) list=list.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
   if(S.fRepSoloBolsin) list=list.filter(r=>r.tipoPedido==="bolsin");
+  if(S.miIdentidadRep){
+    const miNombre = normNotif(S.miIdentidadRep.nombre);
+    list = list.filter(r=>{
+      if(r.estado==="En fábrica") return true; // libre para cualquiera (necesita un segundo tramo)
+      const quienLoTiene = r.nombreQuienEntrego || r.nombreQuienLevanto;
+      if(!quienLoTiene) return true; // todavía nadie lo tomó
+      return normNotif(quienLoTiene)===miNombre;
+    });
+  }
   const sucursalesRepOpts=[...new Set(S.requests.map(r=>r.sucursal).filter(Boolean))].sort();
   const nombresRepOpts=[...new Set(S.requests.map(r=>r.nombreQuienLevanto).filter(Boolean))].sort();
 
@@ -3107,6 +3118,10 @@ function renderRepartidor(){
   if(S.tabRep==="activas" && !S.fRepSoloBolsin){
     devolucionesRep = S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado));
     if(S.fRepSucursal) devolucionesRep = devolucionesRep.filter(d=>d.sucursal===S.fRepSucursal);
+    if(S.miIdentidadRep){
+      const miNombre = normNotif(S.miIdentidadRep.nombre);
+      devolucionesRep = devolucionesRep.filter(d=>!d.nombreQuienLevanto || normNotif(d.nombreQuienLevanto)===miNombre);
+    }
   }
 
   const activas=S.requests.filter(r=>["Aprobada","Programada","Lista para retirar","En tránsito","En fábrica"].includes(r.estado));
@@ -3119,6 +3134,15 @@ function renderRepartidor(){
       <p style="color:var(--muted);font-size:13px">Hola <strong style="color:var(--text)">${escH(u.nombre)}</strong>
         ${u.recorrido?`· Recorrido: ${badge(u.recorrido,"var(--teal)")}`:""}</p>
     </div>
+    ${S.miIdentidadRep?`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--muted)">
+      👤 En este celular: <strong style="color:var(--text)">${escH(S.miIdentidadRep.nombre)}</strong>
+      <button class="btn btn-ghost btn-sm" onclick="cambiarIdentidadRepartidor()">Cambiar</button>
+    </div>`:`
+    <div class="card" style="margin-bottom:16px;padding:12px 16px;border-left:3px solid var(--amber);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+      <span style="font-size:13px">👤 Todavía no sabemos quién sos en este celular — por eso ves lo de todos.</span>
+      <button class="btn btn-warn btn-sm" onclick="abrirIdentificarRepartidor()">Identificarme</button>
+    </div>`}
     <div class="stats-grid">
       ${statCard("✅","PARA LEVANTAR",activas.filter(r=>r.estado==="Aprobada"||r.estado==="Programada").length,"var(--green)")}
       ${statCard("🚚","EN CAMINO",activas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
@@ -3371,6 +3395,7 @@ function renderModals(){
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
   if(S.modal==="notificaciones") return wrapModal("m","🔔 Notificaciones",renderNotificacionesModal(),480);
+  if(S.modal==="identidadRep") return wrapModal("m","👤 ¿Quién sos?",renderIdentidadRepModal(),420);
   if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
   if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
   if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
@@ -6340,6 +6365,7 @@ async function doLogin(){
   S.view = "app";
   S.lastRefresh = Date.now();
   try{ localStorage.setItem("tl_sesion", JSON.stringify(S.user)); }catch(e){}
+  if(S.user.rol==="repartidor") cargarIdentidadRepartidor();
   render(); // mostrar app ya
 
   // Cargar solicitudes, recorridos y destinos en background sin bloquear
@@ -6428,6 +6454,60 @@ async function doRefresh(){
 function doLogout(){
   try{ localStorage.removeItem("tl_sesion"); }catch(e){}
   stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
+}
+
+// ══════════════════════════════════════════════════════════
+//  IDENTIDAD DEL REPARTIDOR EN ESTE CELULAR — el login de reparto
+//  es compartido entre varias personas, así que la app no sabe quién
+//  está mirando la pantalla salvo que se lo preguntemos una vez.
+//  Con eso filtramos: lo no tomado lo ve cualquiera, lo ya tomado
+//  solo lo sigue viendo quien lo tomó.
+// ══════════════════════════════════════════════════════════
+function cargarIdentidadRepartidor(){
+  try{
+    const guardada = localStorage.getItem("tl_rep_identidad");
+    if(guardada) S.miIdentidadRep = JSON.parse(guardada);
+  }catch(e){}
+}
+function abrirIdentificarRepartidor(){
+  S.identidadRepModal = {dni:"", err:"", loading:false};
+  S.modal = "identidadRep";
+  render();
+}
+function renderIdentidadRepModal(){
+  const d = S.identidadRepModal;
+  return `
+  <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Como el login de reparto lo usan varias personas, necesitamos saber quién sos en este celular — así solo te mostramos lo que vos tomaste (lo que nadie tomó todavía lo ven todos).</p>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="idrep-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.identidadRepModal.dni=this.value;S.identidadRepModal.err=''"
+      onkeydown="if(event.key==='Enter')confirmarIdentidadRepartidor()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    <button class="btn btn-success btn-md" onclick="confirmarIdentidadRepartidor()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Verificando...`:"✅ Soy yo"}
+    </button>
+  </div>`;
+}
+function confirmarIdentidadRepartidor(){
+  const d = S.identidadRepModal;
+  const dni = String($("idrep-dni")?.value||d.dni||"").replace(/\D/g,"");
+  if(!dni){ S.identidadRepModal.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ S.identidadRepModal.err=check.msg; render(); return; }
+  S.miIdentidadRep = {dni, nombre:check.nombre};
+  try{ localStorage.setItem("tl_rep_identidad", JSON.stringify(S.miIdentidadRep)); }catch(e){}
+  S.modal = null;
+  toast(`👤 Listo, ${check.nombre}`);
+  render();
+}
+function cambiarIdentidadRepartidor(){
+  try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
+  S.miIdentidadRep = null;
+  abrirIdentificarRepartidor();
 }
 
 // ── NUEVA SOLICITUD ────────────────────────────────────────
@@ -6711,6 +6791,7 @@ if(_sesionRestaurada){
   S.user = _sesionRestaurada;
   S.view = "app";
   S.lastRefresh = Date.now();
+  cargarIdentidadRepartidor();
   render();
   if(USE_SHEETS) sheetsLoadUsuarios();
   sheetsLoadDatos().then(()=>{ render(); });
