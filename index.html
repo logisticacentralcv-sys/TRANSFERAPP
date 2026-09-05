@@ -606,6 +606,7 @@ let S = {
   fRepSoloBolsin:false,
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   identidadRepModal: {dni:"", err:"", loading:false},
+  selDevolucionId: null,
   fTesFecha:"", fTesSucursal:"", fTesTexto:"",
 
   // UI – tabs
@@ -1371,6 +1372,29 @@ function toggleDevolSeleccionTomar(id, checked){
 }
 
 // ── PASO 1: repartidor TOMA (levanta) la devolución de la sucursal ──
+function verDetalleDevolucionRep(id){
+  S.selDevolucionId = id;
+  S.modal = "detalleDevolucionRep";
+  render();
+}
+function renderDetalleDevolucionRep(){
+  const d = S.devoluciones.find(x=>String(x.id)===String(S.selDevolucionId));
+  if(!d) return `<p style="color:var(--muted)">No se encontró la devolución.</p>`;
+  const drow=(l,v)=>`<div class="field"><label>${l}</label><div style="font-size:14px">${escH(v||"—")}</div></div>`;
+  return `
+  ${drow("Sucursal", d.sucursal)}
+  ${drow("Motivo", d.motivo)}
+  <div class="field"><label>Estado</label>${badge(d.estado, d.estado==="En camino"?"var(--blue)":d.estado==="En fábrica"?"var(--teal)":"var(--amber)")}</div>
+  ${drow("Cargada", fdt(d.createdAt))}
+  ${d.nombreQuienLevanto?drow("Tomada por", d.nombreQuienLevanto):""}
+  ${d.nombreRepartidor?drow("Dejada en fábrica por", d.nombreRepartidor):""}
+  ${d.fotoUrl?`<div class="field"><label>Foto</label><img src="${escH(d.fotoUrl)}" style="max-width:100%;border-radius:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/></div>`:""}
+  <div style="display:flex;gap:8px;margin-top:14px">
+    ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
+    ${d.estado==="En camino"?`<button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+  </div>`;
+}
+
 function openTomarDevoluciones(idsExplicitos){
   const base = idsExplicitos || [...S.devolSeleccionTomar];
   if(base.length===0) return;
@@ -3099,11 +3123,13 @@ function renderMetricas(){
 //  VISTA REPARTIDOR
 // ══════════════════════════════════════════════════════════
 // ¿El repartidor puede tomarla YA? (no alcanza con que esté "Aprobada" si
-// todavía la sucursal no la preparó — salvo que salga de fábrica o vaya a
-// "Otra dirección", esos casos no necesitan ese paso previo)
+// todavía nadie la confirmó como lista — solo se salta esa espera cuando
+// el origen es "Otra dirección", porque ahí no hay ninguna cuenta que
+// pueda confirmarla desde la app)
 function puedeTomarAhora(r){
+  const origenSinApp = esOtraDireccion(r.sucursal||r.area);
   return ["Lista para retirar","En fábrica"].includes(r.estado) ||
-         ((esOtraDireccion(r.destino)||esOrigenFabrica(r)) && ["Aprobada","Programada"].includes(r.estado));
+         (origenSinApp && ["Aprobada","Programada"].includes(r.estado));
 }
 function renderRepartidor(){
   const u=S.user;
@@ -3173,8 +3199,6 @@ function renderRepartidor(){
         <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${activas.length})</button>
         <button class="tab ${S.tabRep==="entregadas"?"active":""}" onclick="S.tabRep='entregadas';render()">Entregadas (${entregadas.length})</button>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="abrirDevoluciones()">📦 Devoluciones</button>
-      <button class="btn ${S.fRepSoloBolsin?"btn-primary":"btn-ghost"} btn-sm" onclick="S.fRepSoloBolsin=!S.fRepSoloBolsin;render()">🎒 Solo bolsines</button>
       <div class="field" style="margin-bottom:0;min-width:160px">
         <select onchange="S.fRepRecorrido=this.value;render()">
           <option value="">Todos los recorridos</option>
@@ -3218,7 +3242,7 @@ function renderRepartidor(){
       <h3 style="font-size:13px;font-weight:700;color:var(--muted);margin-bottom:8px">🔄 Devoluciones para atender (${devolucionesRep.length})</h3>
       <div class="del-grid">
         ${devolucionesRep.map(d=>`
-          <div class="card" style="padding:14px 16px">
+          <div class="card" style="padding:14px 16px;cursor:pointer" onclick="verDetalleDevolucionRep('${escH(d.id)}')">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
               <div>
                 <strong>${escH(d.sucursal||"—")}</strong>
@@ -3227,7 +3251,7 @@ function renderRepartidor(){
               ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
             </div>
             <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
-            <div style="margin-top:10px">
+            <div style="margin-top:10px" onclick="event.stopPropagation()">
               ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
               ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
             </div>
@@ -3236,7 +3260,7 @@ function renderRepartidor(){
     </div>`:""}
     <div class="del-grid">
       ${list.length===0 && devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="activas"?"No hay transferencias activas":"Sin entregas registradas"}</div>`:""}
-      ${list.map(r=>{
+      ${(()=>{ const _cardRepHtml = r=>{
         const ac = ACCION_COLOR[r.estado]||"var(--muted)";
         const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
         const estaEnTransito = r.estado === "En tránsito";
@@ -3328,7 +3352,6 @@ function renderRepartidor(){
 
             <!-- Acciones -->
             <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
-              <button class="btn btn-ghost btn-sm" style="flex:1;min-width:60px" onclick="openDetalle('${escH(r.id)}')">Ver</button>
               ${puedeTomar && r.estado==="Lista para retirar"?`
               <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
@@ -3341,17 +3364,7 @@ function renderRepartidor(){
                 🤲 Llevar a destino
               </button>`:""}
               ${(()=>{
-                // Solo se saltea la espera de "Lista" cuando el ORIGEN es
-                // "Otra dirección" — ahí no hay ninguna cuenta (sucursal,
-                // área o recepcionista) que pueda confirmarla desde la app.
-                // Si el origen es fábrica/depósito SÍ hace falta esperar:
-                // la confirma el área que la pidió o el recepcionista de
-                // fábrica/depósito, igual que cualquier sucursal.
                 const origenSinApp = esOtraDireccion(r.sucursal||r.area);
-                if(["Aprobada","Programada"].includes(r.estado) && !origenSinApp) return `
-              <div style="flex:2;background:var(--s2);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--muted);text-align:center;border:1px solid var(--border)">
-                ⏳ Esperando que la sucursal confirme que está lista
-              </div>`;
                 if(["Aprobada","Programada"].includes(r.estado) && origenSinApp) return `
               <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
@@ -3373,7 +3386,17 @@ function renderRepartidor(){
 
           </div>
         </div>`;
-      }).join("")}
+      };
+      if(S.tabRep!=="activas") return list.map(_cardRepHtml).join("");
+      const paraTomar = list.filter(r=>r.estado!=="En tránsito");
+      const misTomadas = list.filter(r=>r.estado==="En tránsito");
+      return `
+        ${paraTomar.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:4px 0 0">📥 Para tomar (${paraTomar.length})</h3>`:""}
+        ${paraTomar.map(_cardRepHtml).join("")}
+        ${misTomadas.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:14px 0 0">🚚 Las que tomé yo (${misTomadas.length})</h3>`:""}
+        ${misTomadas.map(_cardRepHtml).join("")}
+      `;
+      })()}
     </div>
   </div>`;
 }
@@ -3414,6 +3437,7 @@ function renderModals(){
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
   if(S.modal==="notificaciones") return wrapModal("m","🔔 Notificaciones",renderNotificacionesModal(),480);
   if(S.modal==="identidadRep") return wrapModal("m","👤 ¿Quién sos?",renderIdentidadRepModal(),420);
+  if(S.modal==="detalleDevolucionRep") return wrapModal("m",`Devolución — ${escH(S.selDevolucionId)}`,renderDetalleDevolucionRep(),460);
   if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
   if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
   if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
@@ -4880,13 +4904,17 @@ async function submitCambioEstadoMasivo(){
     const esAprobar = d.estado==="Aprobada";
     const cambios = d.ids.map(id=>{
       const x = S.requests.find(r=>r.id===id);
-      const nota = esAprobar ? `Aprobada por ${nombre}` : `Cambio a "${d.estado}" por ${nombre}`;
-      const comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
-      const changes = {estado:d.estado, comentario, updatedAt:nowTs, dniLogistica:dni, nombreLogistica:nombre};
+      const estadoRealmenteCambia = !x || x.estado!==d.estado;
+      const changes = {updatedAt:nowTs, dniLogistica:dni, nombreLogistica:nombre};
+      if(estadoRealmenteCambia){
+        changes.estado = d.estado;
+        const nota = esAprobar ? `Aprobada por ${nombre}` : `Cambio a "${d.estado}" por ${nombre}`;
+        changes.comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
+        if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
+        if(esAprobar && x) crearNotificacion(x.sucursal||x.area||"", `✅ Tu solicitud ${id} fue aprobada — prepará y marcá "Lista para retirar"`, id);
+        if(esAprobar && x && esPedidoPlanificacionFresco(x)) crearNotificacion("RECEPCION FRESCO", `🥬 Nuevo pedido para preparar: ${id} — ${x.descripcion||""}`, id);
+      }
       if(d.recorrido) changes.recorrido = d.recorrido;
-      if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
-      if(esAprobar && x) crearNotificacion(x.sucursal||x.area||"", `✅ Tu solicitud ${id} fue aprobada — prepará y marcá "Lista para retirar"`, id);
-      if(esAprobar && x && esPedidoPlanificacionFresco(x)) crearNotificacion("RECEPCION FRESCO", `🥬 Nuevo pedido para preparar: ${id} — ${x.descripcion||""}`, id);
       return {id, changes};
     });
     const resultados = await Promise.all(
