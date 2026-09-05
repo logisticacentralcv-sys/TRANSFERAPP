@@ -2108,7 +2108,7 @@ function renderPlanificacion(){
         <div style="display:flex;flex-direction:column;gap:8px">
           ${pendQuiebre.map(r=>`
             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--s2);border-radius:8px;padding:10px 12px">
-              <span style="font-size:13px"><strong>${escH(r.sucursal)}</strong> pide ${escH(String(r.cantidad))} ${escH(r.unidad)} de ${escH(r.descripcion)}</span>
+              <span style="font-size:13px"><strong>${escH(r.destino)}</strong> pide ${escH(String(r.cantidad))} ${escH(r.unidad)} de ${escH(r.descripcion)}</span>
               <button class="btn btn-warn btn-sm" onclick="openPlanificarCantidad('${escH(r.id)}')">📋 Planificar cantidad</button>
             </div>`).join("")}
         </div>
@@ -5946,7 +5946,7 @@ async function submitQuiebreStock(){
       S.saving = true; S.modal = null; renderNow();
       const nueva = {
         id:"tmp-"+Date.now(),
-        sucursal: u.area, area: areaLabel,
+        sucursal: "Fábrica", area: areaLabel,
         solicitante: nombreSolicitante, dniSolicitante: dniVal,
         destino: u.area, descripcion, cantidad:+cantidad, cantidadOriginal:+cantidad, unidad,
         prioridad:"Urgente", fechaRequerida: null, observaciones,
@@ -5979,7 +5979,7 @@ function renderPlanificarCantidadModal(){
   const r = S.requests.find(x=>x.id===d.id);
   return `
   ${r?`<div class="alert-info" style="margin-bottom:14px;font-size:13px">
-    <strong>${escH(r.sucursal)}</strong> pidió <strong>${escH(String(r.cantidadOriginal??r.cantidad))} ${escH(r.unidad)}</strong> de ${escH(r.descripcion)}.
+    <strong>${escH(r.destino)}</strong> pidió <strong>${escH(String(r.cantidadOriginal??r.cantidad))} ${escH(r.unidad)}</strong> de ${escH(r.descripcion)}.
   </div>`:""}
   <div class="field">
     <label>Cantidad a planificar <span class="req">*</span></label>
