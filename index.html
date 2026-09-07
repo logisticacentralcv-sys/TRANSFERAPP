@@ -3588,13 +3588,20 @@ function renderDetalle(){
   // Paso 2: Acción de Logística (aprobación, rechazo, o marcado pasa por fábrica)
   // ── PASO 2: Acción de Logística ─────────────────────────
   if(r.dniLogistica || r.approvedAt || r.estado==="Rechazada"){
-    const esRechazada    = r.estado==="Rechazada";
+    const esRechazada = r.estado==="Rechazada";
+    // Si está "Rechazada" pero nunca pasó por la acción de Logística
+    // (no tiene nombreLogistica/dniLogistica), fue el propio solicitante
+    // quien la canceló — no hay que atribuírsela a Logística.
+    const fueCanceladoPorSolicitante = esRechazada && !r.nombreLogistica && !r.dniLogistica;
     const esFabricaFlow2 = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
-    const tituloLog = esRechazada ? "Rechazada por Logística"
-                    : esFabricaFlow2 ? "Aprobada — pasa por fábrica"
-                    : "Aprobada por Logística";
+    const tituloLog = fueCanceladoPorSolicitante ? "Cancelada por el solicitante"
+                     : esRechazada ? "Rechazada por Logística"
+                     : esFabricaFlow2 ? "Aprobada — pasa por fábrica"
+                     : "Aprobada por Logística";
     const nombreLog = r.nombreLogistica || "Logística";
-    const metaLog = esLogistica
+    const metaLog = fueCanceladoPorSolicitante
+      ? `${fdt(r.updatedAt)} · ${solicitanteLabel(r)}`
+      : esLogistica
       // Logística: hora + quién aprobó + comentario (nunca DNI)
       ? `${fdt(r.approvedAt||r.updatedAt)} · ${nombreLog}${r.comentario?" · "+r.comentario:""}`
       // Repartidor: SOLO la instrucción específica para ellos, nada más
