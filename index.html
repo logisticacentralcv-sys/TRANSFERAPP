@@ -851,12 +851,20 @@ async function sheetsLoadDatos(){
 //  Si Flota todavía no está armada o falla, esto NUNCA debe romper
 //  TransferApp — por eso todo va en un try/catch bien amplio.
 // ══════════════════════════════════════════════════════════
+// Fecha de "hoy" en horario LOCAL (no UTC) — toISOString() sola convierte
+// a UTC, y como Argentina está 3hs atrás, cerca de la medianoche podía
+// devolver la fecha de mañana. Esto se usa para cruzar datos con Flota.
+function hoyLocalISO(){
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,10);
+}
 async function cargarEstadoFlotaHoy(){
   try{
-    const hoy = new Date().toISOString().slice(0,10);
+    const hoy = hoyLocalISO();
     const [viajesRes, regsRes] = await Promise.all([
       sb.from("flota_viajes").select("*").eq("fecha", hoy),
-      sb.from("flota_registros_qr").select("*").gte("ts", hoy+"T00:00:00").order("ts",{ascending:true}),
+      sb.from("flota_registros_qr").select("*").gte("ts", hoy+"T00:00:00-03:00").order("ts",{ascending:true}),
     ]);
     if(viajesRes.error || regsRes.error) throw (viajesRes.error||regsRes.error);
     const registros = regsRes.data||[];
