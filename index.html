@@ -591,6 +591,7 @@ let S = {
   adminTab: "solicitudes",
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
+  flotaHoy: [], // visibilidad cruzada con Flota (tabla flota_viajes/flota_registros_qr)
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
@@ -842,6 +843,66 @@ async function sheetsLoadDatos(){
     S.destinos   = toCamelRows(dests.data).filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
   }catch(e){console.warn("Supabase load datos:",e);}
   cargarNotificaciones(); // no bloquea — si falla (tabla no creada aún), no rompe nada
+  cargarEstadoFlotaHoy(); // idem — cross-proyecto con Flota, nunca debe romper TransferApp
+}
+
+// ══════════════════════════════════════════════════════════
+//  FLOTA — visibilidad cruzada (mismo Supabase, tablas flota_*)
+//  Si Flota todavía no está armada o falla, esto NUNCA debe romper
+//  TransferApp — por eso todo va en un try/catch bien amplio.
+// ══════════════════════════════════════════════════════════
+async function cargarEstadoFlotaHoy(){
+  try{
+    const hoy = new Date().toISOString().slice(0,10);
+    const [viajesRes, regsRes] = await Promise.all([
+      sb.from("flota_viajes").select("*").eq("fecha", hoy),
+      sb.from("flota_registros_qr").select("*").gte("ts", hoy+"T00:00:00").order("ts",{ascending:true}),
+    ]);
+    if(viajesRes.error || regsRes.error) throw (viajesRes.error||regsRes.error);
+    const registros = regsRes.data||[];
+    S.flotaHoy = (viajesRes.data||[]).map(v=>{
+      const paradas = registros.filter(r=>r.id_viaje===v.id && r.sucursal!=="FABRICA" && String(r.evento||"").toUpperCase()==="LLEGADA");
+      const ultima = paradas[paradas.length-1] || null;
+      return {
+        recorrido: v.recorrido,
+        repartidor: [v.nombre_rep1, v.nombre_rep2].filter(Boolean).join(" / "),
+        estado: v.estado, // ACTIVO | FINALIZADO
+        horaSalida: v.hora_salida,
+        horaLlegada: v.hora_llegada,
+        ultimaParada: ultima ? {sucursal: ultima.sucursal, ts: ultima.ts} : null,
+        paradasHechas: paradas.map(p=>p.sucursal),
+      };
+    });
+  }catch(e){
+    S.flotaHoy = []; // Flota no disponible todavía — TransferApp sigue funcionando igual
+  }
+  render();
+}
+
+// Widget compacto para pantallas principales (sucursal, planificación, logística)
+function renderWidgetFlotaHoy(){
+  if(!S.flotaHoy || !S.flotaHoy.length) return "";
+  const horaCorta = iso => iso ? new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}) : "—";
+  return `
+  <div class="card" style="margin-bottom:16px;padding:14px 18px">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:13px;font-weight:700;color:var(--muted)">🚚 RECORRIDOS DE HOY</span>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${S.flotaHoy.map(v=>{
+        const activo = v.estado==="ACTIVO";
+        const color = activo ? "var(--amber)" : "#1fa86a";
+        const estadoTxt = activo
+          ? (v.ultimaParada ? `Última parada: ${escH(v.ultimaParada.sucursal)} (${horaCorta(v.ultimaParada.ts)})` : `Salió ${horaCorta(v.horaSalida)} — en camino`)
+          : `Finalizado ${horaCorta(v.horaLlegada)}`;
+        return `<div style="background:var(--s2);border-radius:8px;padding:8px 14px;border-left:3px solid ${color};min-width:180px">
+          <div style="font-weight:700;font-size:13px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
+          <div style="font-size:11px;color:var(--muted)">${escH(v.repartidor||"—")}</div>
+          <div style="font-size:12px;margin-top:3px">${estadoTxt}</div>
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
 }
 
 // Recarga completa (botón actualizar) — ambas fases
@@ -2106,6 +2167,7 @@ function renderPlanificacion(){
 
   return `
   <div style="animation:fadeUp .3s ease">
+    ${renderWidgetFlotaHoy()}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div>
         <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">${escH(u.area||"Planificación")}</h2>
@@ -2861,6 +2923,7 @@ function renderSucursalArea(){
 
   return `
   <div style="animation:fadeUp .3s ease">
+    ${renderWidgetFlotaHoy()}
     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div>
         <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Mis Solicitudes</h2>
@@ -2942,6 +3005,7 @@ function renderSucursalArea(){
 function renderLogistica(){
   return `
   <div style="animation:fadeUp .3s ease">
+    ${renderWidgetFlotaHoy()}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${S.tabLog==="solicitudes"?"active":""}" onclick="S.tabLog='solicitudes';render()">📋 Solicitudes</button>
