@@ -2286,6 +2286,14 @@ function renderTesoreria(){
 
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📥 Bolsines recibidos de sucursales</h3>
+      ${(()=>{
+        const enBuzon = S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería" && r.estado==="Entregada (sin confirmar)");
+        const totalEnBuzon = enBuzon.reduce((s,r)=>s+(+r.cantidad||0),0);
+        if(!enBuzon.length) return "";
+        return `<div style="display:flex;align-items:center;gap:10px;background:#f5a62318;border-left:3px solid var(--amber);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+          📫 <strong>${totalEnBuzon} bolsines</strong> esperando en el buzón (${enBuzon.length} solicitud${enBuzon.length!==1?"es":""}) — tocá "✅ Confirmar retiro" en cada una cuando los retires.
+        </div>`;
+      })()}
       <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
         <input type="date" class="inp" style="width:160px" value="${escH(S.fTesFecha)}" onchange="S.fTesFecha=this.value;render()"/>
         <input type="text" list="tes-sucursales" class="inp" style="width:200px" placeholder="Sucursal..." value="${escH(S.fTesSucursal)}" oninput="S.fTesSucursal=this.value;render()"/>
@@ -4087,6 +4095,12 @@ function renderConfirmarCerradoModal(){
         onkeydown="if(event.key==='Enter')submitConfirmarCerrado()"/>
       ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
     </div>
+    ${r && r.tipoPedido==="bolsin"?`
+    <div class="field" style="margin-top:12px">
+      <label>Cantidad de bolsines que retiraste <span class="req">*</span></label>
+      <input id="confcerrado-cantidad" type="number" min="0" class="inp" value="${escH(String(r.cantidad))}"/>
+      <span style="font-size:12px;color:var(--muted)">Se declararon ${escH(String(r.cantidad))} — corregí si al contarlos te dio otro número.</span>
+    </div>`:""}
     <div class="field" style="margin-top:12px">
       <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional — ej. "llegó incompleto", "una caja rota")</span></label>
       <textarea id="confcerrado-comentario" rows="2" oninput="S.confirmarCerradoModal.comentario=this.value">${escH(d.comentario||"")}</textarea>
@@ -5123,6 +5137,7 @@ async function submitConfirmarCerrado(){
   await new Promise(r=>setTimeout(r,450));
 
   const comentario = ($("confcerrado-comentario")?.value||d.comentario||"").trim();
+  const r = S.requests.find(x=>x.id===d.id);
   const changes = {
     estado:               "Entregada",
     nombreQuienRecibio:   check.nombre,
@@ -5130,7 +5145,16 @@ async function submitConfirmarCerrado(){
     confirmadaSucursalAt: now(),
     updatedAt:            now(),
   };
-  if(comentario) changes.motivoNoRecibido = comentario; // reusamos el campo también para observaciones de recepción
+  let comentarioFinal = comentario;
+  if(r && r.tipoPedido==="bolsin"){
+    const cantidadRetirada = +($("confcerrado-cantidad")?.value ?? r.cantidad);
+    if(!isNaN(cantidadRetirada) && cantidadRetirada!==+r.cantidad){
+      const nota = `⚠️ Tesorería retiró ${cantidadRetirada} — se habían declarado ${r.cantidad}`;
+      comentarioFinal = comentarioFinal ? comentarioFinal+" · "+nota : nota;
+      changes.cantidad = cantidadRetirada;
+    }
+  }
+  if(comentarioFinal) changes.motivoNoRecibido = comentarioFinal; // reusamos el campo también para observaciones de recepción
   S.requests = S.requests.map(x=>x.id===d.id ? {...x,...changes} : x);
   S.modal = null;
   toast(`✅ ${check.nombre} confirmó la recepción de ${d.id}`);
