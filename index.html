@@ -384,7 +384,7 @@ function renderNotificacionesModal(){
 // Busca el mail de quien pidió una solicitud (por sucursal/área de origen)
 // en los usuarios ya cargados en memoria — no hace falta ir a buscarlo.
 function buscarEmailOrigen(origen){
-  const norm = s=>(s||"").trim().toLowerCase();
+  const norm = s=>normNotif(s);
   const u = (S.usuarios||[]).find(x => norm(x.usuario)===norm(origen) || norm(x.area)===norm(origen));
   return u?.email || (S.sucursalesInfo?.[norm(origen)]?.email) || "";
 }
@@ -1140,7 +1140,7 @@ function renderQuejas(){
   let lista = S.quejas;
   if(!esGestor){
     // cada sucursal/área ve solo las que ella misma cargó
-    const norm = s=>(s||"").trim().toLowerCase();
+    const norm = s=>normNotif(s);
     lista = lista.filter(q => norm(q.sucursal||q.area)===norm(u.area));
   } else {
     // cada área gestora ve SOLO lo que le fue dirigido a ella
@@ -1635,7 +1635,7 @@ function renderDevoluciones(){
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
   } else if(!esGestor){
-    const norm = s=>(s||"").trim().toLowerCase();
+    const norm = s=>normNotif(s);
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
     lista = S.tabDevGestor==="historial"
@@ -2908,7 +2908,12 @@ function renderSucursalArea(){
   const u=S.user;
   // Incluir solicitudes donde la sucursal es ORIGEN o DESTINO
   // La sucursal que recibe también puede ver el estado de lo que le viene
-  const norm  = s => (s||"").trim().toLowerCase();
+  // normNotif ignora mayúsculas Y tildes — así "DEPOSITO" (como quedó
+  // el usuario/login) matchea con "Depósito" (como está guardado en las
+  // solicitudes). Antes se comparaba solo en minúsculas, sin sacar
+  // tildes, y por eso a los usuarios sin tilde en su login se les
+  // escapaban las solicitudes de destinos con tilde.
+  const norm  = s => normNotif(s);
   const areaU = norm(u.area);
 
   // Construir lista de todos los nombres posibles de esta área/sucursal
