@@ -3474,7 +3474,7 @@ function renderRepartidor(){
               </button>`:""}
               ${puedeEntregar?`
               <button class="btn btn-teal btn-sm" style="flex:1" onclick="openConfirmarEntrega('${escH(r.id)}')">
-                📦 Entregar
+                ${r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino) ? "📫 Dejar en el buzón" : "📦 Entregar"}
               </button>
               <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoEntrega('${escH(r.id)}')">
                 ✕ No entregué
@@ -3485,13 +3485,13 @@ function renderRepartidor(){
         </div>`;
       };
       if(S.tabRep!=="bolsines") return list.map(_cardRepHtml).join("");
-      const paraTomar = list.filter(r=>r.estado!=="En tránsito");
-      const misTomadas = list.filter(r=>r.estado==="En tránsito");
+      const alBuzon    = list.filter(r=>esDestinoBuzon(r.destino));
+      const desdeBuzon = list.filter(r=>!esDestinoBuzon(r.destino));
       return `
-        ${paraTomar.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:4px 0 0">📥 Para tomar (${paraTomar.length})</h3>`:""}
-        ${paraTomar.map(_cardRepHtml).join("")}
-        ${misTomadas.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:14px 0 0">🚚 Las que tomé yo (${misTomadas.length})</h3>`:""}
-        ${misTomadas.map(_cardRepHtml).join("")}
+        ${alBuzon.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:4px 0 0">📥 Para llevar al buzón — desde sucursal (${alBuzon.length})</h3>`:""}
+        ${alBuzon.map(_cardRepHtml).join("")}
+        ${desdeBuzon.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:14px 0 0">📤 Para entregar en sucursal — desde Fábrica/Tesorería (${desdeBuzon.length})</h3>`:""}
+        ${desdeBuzon.map(_cardRepHtml).join("")}
       `;
       })()}
     </div>
@@ -4382,10 +4382,26 @@ function renderEditarModal(){
     <label>Descripción</label>
     <textarea id="ed-desc" rows="2">${escH(d.descripcion||r?.descripcion||"")}</textarea>
   </div>
+  ${esAdmin && Array.isArray(d.cajas)?`
+  <div class="field">
+    <label>Detalle por caja</label>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${d.cajas.map((c,i)=>`
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" class="inp" style="flex:1" placeholder="N° de caja" value="${escH(c.caja)}"
+            oninput="S.editarModal.cajas[${i}].caja=this.value"/>
+          <input type="number" min="0" class="inp" style="width:100px" placeholder="Cantidad" value="${escH(String(c.cantidad))}"
+            oninput="S.editarModal.cajas[${i}].cantidad=this.value"/>
+          <button class="btn btn-ghost btn-sm" onclick="S.editarModal.cajas.splice(${i},1);render()" ${d.cajas.length<=1?"disabled":""}>✕</button>
+        </div>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="S.editarModal.cajas.push({caja:'',cantidad:''});render()">+ Agregar caja</button>
+    <span style="font-size:12px;color:var(--muted);display:block;margin-top:6px">La cantidad total se recalcula sola en base a estas cajas.</span>
+  </div>`:""}
   <div class="g2">
     <div class="field">
-      <label>Cantidad</label>
-      <input id="ed-cant" type="number" class="inp" value="${escH(String(d.cantidad||r?.cantidad||""))}"/>
+      <label>Cantidad${esAdmin && Array.isArray(d.cajas)?' <span style="color:var(--faint);font-size:12px">(automática)</span>':""}</label>
+      <input id="ed-cant" type="number" class="inp" ${esAdmin && Array.isArray(d.cajas)?"disabled":""} value="${escH(String(d.cantidad||r?.cantidad||""))}"/>
     </div>
     <div class="field">
       <label>Fecha requerida</label>
@@ -4413,7 +4429,11 @@ function renderEditarModal(){
 function openEditar(id){
   const r = S.requests.find(x=>x.id===id);
   if(!r) return;
-  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", sucursal:r.sucursal||"", destino:r.destino||"", area:r.area||"", unidad:r.unidad||"", err:"", loading:false};
+  let cajas = null;
+  if(r.detalleCajas){
+    try{ const arr = JSON.parse(r.detalleCajas); if(Array.isArray(arr)&&arr.length) cajas = arr; }catch(e){}
+  }
+  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", sucursal:r.sucursal||"", destino:r.destino||"", area:r.area||"", unidad:r.unidad||"", cajas, err:"", loading:false};
   S.modal = "editar";
   render();
 }
@@ -4422,12 +4442,25 @@ async function submitEditar(){
   const d = S.editarModal;
   if(d.loading) return;
   const desc    = ($("ed-desc")?.value||"").trim();
-  const cant    = ($("ed-cant")?.value||"").trim();
+  let   cant    = ($("ed-cant")?.value||"").trim();
   const fecha   = ($("ed-fecha")?.value||"").trim();
   const obs     = ($("ed-obs")?.value||"").trim();
   if(!desc){ S.editarModal.err="La descripción es obligatoria."; render(); return; }
-  if(!cant||isNaN(+cant)||+cant<=0){ S.editarModal.err="Cantidad inválida."; render(); return; }
-  const changes = { descripcion:desc, cantidad:+cant, fechaRequerida:fecha||null, observaciones:obs, updatedAt:now() };
+
+  const changes = { descripcion:desc, fechaRequerida:fecha||null, observaciones:obs, updatedAt:now() };
+
+  if(S.user?.rol==="admin" && Array.isArray(d.cajas)){
+    const cajasValidas = d.cajas
+      .map(c=>({caja:(c.caja||"").trim(), cantidad:+c.cantidad}))
+      .filter(c=>c.cantidad>0);
+    if(!cajasValidas.length){ S.editarModal.err="Cargá al menos una caja con cantidad."; render(); return; }
+    changes.detalleCajas = JSON.stringify(cajasValidas);
+    changes.cantidad = cajasValidas.reduce((s,c)=>s+c.cantidad,0);
+  } else {
+    if(!cant||isNaN(+cant)||+cant<=0){ S.editarModal.err="Cantidad inválida."; render(); return; }
+    changes.cantidad = +cant;
+  }
+
   if(S.user?.rol==="admin"){
     const sucursal = ($("ed-sucursal")?.value||"").trim();
     const destino  = ($("ed-destino")?.value||"").trim();
@@ -4741,6 +4774,33 @@ function renderDejarBolsinesModal(){
   </div>`;
 }
 
+async function ejecutarDejarBolsines(ids, dni, nombre){
+  const nowTs = now();
+  const changes = {estado:"Entregada (sin confirmar)", nombreQuienEntrego:nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
+  const resultados = await Promise.all(
+    ids.map(id => sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id))
+  );
+  const fallidas = resultados.filter(r=>r.error);
+  if(fallidas.length===0){
+    const idsSet = new Set(ids);
+    S.requests = S.requests.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
+    S.repSeleccion = new Set();
+    S.modoSeleccionRep = false;
+    S.modal = null;
+    toast(`📫 ${nombre} dejó ${ids.length} bolsin${ids.length!==1?"es":""} en el buzón — falta que Tesorería los retire`);
+  }
+  return fallidas.length===0;
+}
+async function ejecutarDejarBolsinUnico(id, dni, nombre){
+  try{
+    const ok = await ejecutarDejarBolsines([id], dni, nombre);
+    if(!ok) toast("⚠️ No se pudo registrar — probá de nuevo","warn");
+    render();
+  }catch(e){
+    toast("⚠️ No se pudo conectar — probá de nuevo","warn");
+    render();
+  }
+}
 async function submitDejarBolsinesVarios(){
   const d = S.dejarBolsinesModal;
   if(d.loading) return;
@@ -4755,24 +4815,11 @@ async function submitDejarBolsinesVarios(){
   }
 
   d.loading = true; renderNow();
-
-  const nowTs = now();
-  const changes = {estado:"Entregada (sin confirmar)", nombreQuienEntrego:nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
   try{
-    const resultados = await Promise.all(
-      d.ids.map(id => sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id))
-    );
-    const fallidas = resultados.filter(r=>r.error);
-    if(fallidas.length===0){
-      const idsSet = new Set(d.ids);
-      S.requests = S.requests.map(x=>idsSet.has(x.id) ? {...x,...changes} : x);
-      S.repSeleccion = new Set();
-      S.modoSeleccionRep = false;
-      S.modal = null;
-      toast(`📫 ${nombre} dejó ${d.ids.length} bolsines en el buzón — falta que Tesorería los retire`);
-    } else {
+    const ok = await ejecutarDejarBolsines(d.ids, dni, nombre);
+    if(!ok){
       S.dejarBolsinesModal.loading=false;
-      S.dejarBolsinesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
+      S.dejarBolsinesModal.err = `No se pudieron dejar todas. Probá de nuevo.`;
     }
   } catch(e){
     S.dejarBolsinesModal.loading=false;
@@ -6527,11 +6574,29 @@ async function submitNoEntrega(){
   sheetsUpdate(d.id, changes);
 }
 
+// Fábrica y Tesorería son, a estos fines, "el mismo buzón" — un bolsín
+// con cualquiera de esos dos como destino final SIEMPRE pasa por el
+// buzón antes de poder confirmarse como entregado.
+function esDestinoBuzon(destino){
+  const n = normNotif(destino);
+  return n==="tesoreria" || n==="fabrica";
+}
 function openConfirmarEntrega(id){
-  // Si el destino es "Otra dirección", no es una sucursal conocida, o es un
-  // bolsín (nunca lleva palabra clave) → entrega directa sin código
   const r = S.requests.find(x=>x.id===id);
   if(!r) return;
+  if(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)){
+    // Bolsín QUE VA hacia Fábrica/Tesorería → siempre buzón, nunca entrega directa
+    if(S.miIdentidadRep){
+      ejecutarDejarBolsinUnico(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
+      return;
+    }
+    S.dejarBolsinesModal = {ids:[id], dni:"", err:"", loading:false};
+    S.modal = "dejarBolsines";
+    render();
+    return;
+  }
+  // Si el destino es "Otra dirección", no es una sucursal conocida, o es un
+  // bolsín que VIENE de Fábrica/Tesorería hacia una sucursal → entrega directa
   if(esOtraDireccion(r.destino) || r.tipoPedido==="bolsin"){
     if(S.miIdentidadRep){
       ejecutarEntregaDirecta(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
@@ -6790,6 +6855,52 @@ async function submitNueva(){
   const origenElegido = ($("f-origen")?.value||"").trim();
   const archivoElegido = $("f-adjunto")?.files?.[0] || null;
   const esPlanSubmit  = S.user.rol==="planificacion";
+  const esLogSubmit   = S.user.rol==="logistica";
+
+  const crearConDatos = async (dniVal, nombreSolicitante) => {
+    if(S.saving) return;
+    S.saving=true; renderNow();
+    const adjuntoUrl = await subirArchivo(archivoElegido, "solicitudes");
+    const nowTs = now();
+    const nueva={
+      id:"tmp-"+Date.now(),
+      sucursal: S.user.rol==="sucursal"       ? S.user.area
+              : esLogSubmit                   ? origenElegido
+              : esPlanSubmit                   ? origenElegido : "",
+      area:     S.user.rol==="area"            ? S.user.area
+              : esLogSubmit                   ? "Logística"
+              : esPlanSubmit                   ? S.user.area : "",
+      solicitante:  nombreSolicitante,
+      dniSolicitante: dniVal,
+      destino, descripcion, cantidad:+cantidad,
+      unidad, prioridad,
+      fechaRequerida: fechaReq||null,
+      observaciones:  observ,
+      adjuntoUrl,
+      // Logística ya es quien aprueba — su propia solicitud nace aprobada,
+      // sin tener que pasar por su propio panel de gestión después.
+      estado: esLogSubmit ? "Aprobada" : "Pendiente",
+      comentario:"", recorrido:"",
+      dniLogistica: esLogSubmit ? dniVal : "",
+      nombreLogistica: esLogSubmit ? nombreSolicitante : "",
+      dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
+      createdAt:nowTs, approvedAt: esLogSubmit ? nowTs : null, scheduledAt:null, deliveredAt:null, updatedAt:nowTs,
+    };
+    const creada = await sheetsAdd(nueva);
+    S.requests = [creada||nueva, ...S.requests];
+    S.form     = emptyForm();
+    S.saving   = false;
+    S.modal    = null;
+    toast(`Solicitud ${(creada||nueva).id} creada${esLogSubmit?" y aprobada":""} — ${nombreSolicitante}`);
+    render();
+    notificarNuevaSolicitud(creada||nueva); // aviso a logística, en background
+  };
+
+  if(esLogSubmit){
+    // Logística: login único, sin DNI de por medio — usa su propio nombre.
+    await crearConDatos(S.user.dni||"", S.user.nombre||"Logística");
+    return;
+  }
 
   // Abrir modal DNI — el nombre del solicitante viene de Sheets
   S.dniModal={
@@ -6797,36 +6908,8 @@ async function submitNueva(){
     field:"solicitante",
     val:"", err:"", loading:false, nombreOk:"",
     cb: async (dniVal, usuarioEncontrado)=>{
-      if(S.saving) return; // guard doble ejecución del callback
       const nombreSolicitante = usuarioEncontrado?.nombre || S.user.nombre || "Sin nombre";
-      S.saving=true; S.modal=null; renderNow();
-      const adjuntoUrl = await subirArchivo(archivoElegido, "solicitudes");
-      const nueva={
-        id:"tmp-"+Date.now(),
-        sucursal: S.user.rol==="sucursal"       ? S.user.area
-                : S.user.rol==="logistica"       ? origenElegido
-                : esPlanSubmit                   ? origenElegido : "",
-        area:     S.user.rol==="area"            ? S.user.area
-                : S.user.rol==="logistica"       ? "Logística"
-                : esPlanSubmit                   ? S.user.area : "",
-        solicitante:  nombreSolicitante,
-        dniSolicitante: dniVal,
-        destino, descripcion, cantidad:+cantidad,
-        unidad, prioridad,
-        fechaRequerida: fechaReq||null,
-        observaciones:  observ,
-        adjuntoUrl,
-        estado:"Pendiente", comentario:"", recorrido:"",
-        dniLogistica:"", dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
-        createdAt:now(), approvedAt:null, scheduledAt:null, deliveredAt:null, updatedAt:now(),
-      };
-      const creada = await sheetsAdd(nueva);
-      S.requests = [creada||nueva, ...S.requests];
-      S.form     = emptyForm();
-      S.saving   = false;
-      toast(`Solicitud ${(creada||nueva).id} creada — ${nombreSolicitante}`);
-      render();
-      notificarNuevaSolicitud(creada||nueva); // aviso a logística, en background
+      await crearConDatos(dniVal, nombreSolicitante);
     }
   };
   S.modal="dniConfirm"; render();
