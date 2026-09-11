@@ -1776,23 +1776,30 @@ function buscarUsuario(usuario, password){
   const u = normNotif(usuario);
   const p = (password||"").trim();
 
-  // ¿Es una sucursal conocida? (login sin contraseña)
-  const esSucursal = getSucursales().find(s => normNotif(s) === u);
-  if(esSucursal){
-    // Buscar si existe en lista con tipo SUCURSAL, o aceptar directamente
-    const found = lista.find(x => normNotif(x.usuario) === u && x.tipo === "SUCURSAL" && x.activo !== "no");
-    if(USE_SHEETS && !found) return {ok:false, msg:"Esta sucursal no está habilitada. Consultá con logística."};
-    return {ok:true, tipo:"SUCURSAL", nombre:esSucursal, area:esSucursal, recorrido:"", dni:found?.dni||""};
-  }
-
-  // Buscar usuario por nombre
+  // Buscar primero el usuario EXACTO cargado con ese login — así, si el
+  // nombre coincide con una sucursal (ej: "Depósito", que también existe
+  // como sucursal para elegir origen/destino) pero la persona en realidad
+  // tiene un usuario de tipo Área con contraseña propia, se respeta ESE
+  // tipo real en vez de asumir que es un login de sucursal sin contraseña.
   const foundUser = lista.find(x => normNotif(x.usuario) === u && x.activo !== "no");
 
+  if(foundUser && foundUser.tipo === "SUCURSAL"){
+    const nombreOficial = getSucursales().find(s => normNotif(s) === u) || foundUser.usuario;
+    return {ok:true, tipo:"SUCURSAL", nombre:nombreOficial, area:nombreOficial, recorrido:"", dni:foundUser.dni||""};
+  }
+
   if(!foundUser){
+    // Sin usuario cargado — si igual el nombre es una sucursal conocida,
+    // dar un aviso claro en vez de "usuario no encontrado" a secas.
+    const esSucursal = getSucursales().find(s => normNotif(s) === u);
+    if(esSucursal){
+      if(USE_SHEETS) return {ok:false, msg:"Esta sucursal no está habilitada. Consultá con logística."};
+      return {ok:true, tipo:"SUCURSAL", nombre:esSucursal, area:esSucursal, recorrido:"", dni:""};
+    }
     return {ok:false, msg:"Usuario no encontrado."};
   }
 
-  // Si el usuario no tiene contraseña configurada → entra directo
+  // Login normal (no-sucursal) con contraseña
   const tienePass = foundUser.password && String(foundUser.password).trim() !== "";
   if(tienePass && foundUser.password !== p){
     return {ok:false, msg:"Contraseña incorrecta."};
