@@ -605,6 +605,7 @@ let S = {
   fRepSucursal:"",
   fRepNombre:"",
   fRepSoloBolsin:false,
+  subTabBolsines:"buzon",
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   identidadRepModal: {dni:"", err:"", loading:false},
   selDevolucionId: null,
@@ -3365,6 +3366,15 @@ function renderRepartidor(){
     </div>
     `:`
     <div class="del-grid">
+      ${S.tabRep==="bolsines"?(()=>{
+        const alBuzonN    = list.filter(r=>esDestinoBuzon(r.destino)).length;
+        const desdeBuzonN = list.filter(r=>!esDestinoBuzon(r.destino)).length;
+        return `
+      <div class="tabs" style="grid-column:1/-1;margin-bottom:4px">
+        <button class="tab ${S.subTabBolsines!=="entregar"?"active":""}" onclick="S.subTabBolsines='buzon';render()">📥 Al buzón (${alBuzonN})</button>
+        <button class="tab ${S.subTabBolsines==="entregar"?"active":""}" onclick="S.subTabBolsines='entregar';render()">📤 Para entregar (${desdeBuzonN})</button>
+      </div>`;
+      })():""}
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
       ${(()=>{ const _cardRepHtml = r=>{
         const ac = ACCION_COLOR[r.estado]||"var(--muted)";
@@ -3487,12 +3497,9 @@ function renderRepartidor(){
       if(S.tabRep!=="bolsines") return list.map(_cardRepHtml).join("");
       const alBuzon    = list.filter(r=>esDestinoBuzon(r.destino));
       const desdeBuzon = list.filter(r=>!esDestinoBuzon(r.destino));
-      return `
-        ${alBuzon.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:4px 0 0">📥 Para llevar al buzón — desde sucursal (${alBuzon.length})</h3>`:""}
-        ${alBuzon.map(_cardRepHtml).join("")}
-        ${desdeBuzon.length?`<h3 style="grid-column:1/-1;font-size:13px;font-weight:700;color:var(--muted);margin:14px 0 0">📤 Para entregar en sucursal — desde Fábrica/Tesorería (${desdeBuzon.length})</h3>`:""}
-        ${desdeBuzon.map(_cardRepHtml).join("")}
-      `;
+      const activa = S.subTabBolsines==="entregar" ? desdeBuzon : alBuzon;
+      if(!activa.length) return `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">${S.subTabBolsines==="entregar"?"No hay bolsines para entregar en sucursal":"No hay bolsines para llevar al buzón"}</div>`;
+      return activa.map(_cardRepHtml).join("");
       })()}
     </div>
     `}
