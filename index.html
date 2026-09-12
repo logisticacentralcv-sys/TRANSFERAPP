@@ -360,6 +360,28 @@ function abrirNotificaciones(){
   S.modal="notificaciones"; render();
   pushEstaActivo().then(v=>{ S.pushActivo=v; render(); });
 }
+async function probarPush(){
+  const grupo = grupoNotifActual();
+  toast("🧪 Enviando prueba a: "+grupo+"...");
+  try{
+    const res = await fetch("/api/send-push", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({destinatario:grupo, mensaje:"🧪 Prueba de notificación — si la ves en el celular, funciona ✅"}),
+    });
+    const texto = await res.text();
+    let datos; try{ datos = JSON.parse(texto); }catch(e){ datos = null; }
+    if(!res.ok){
+      alert("❌ La función /api/send-push devolvió un error (status "+res.status+"):\n\n"+texto);
+    } else if(datos && datos.enviados===0){
+      alert("⚠️ La función respondió OK pero dice que envió a 0 dispositivos.\n\nGrupo buscado: \""+grupo+"\"\n\nRevisá en Supabase la tabla push_subscriptions: el campo 'grupo' de tu suscripción tiene que decir exactamente eso (sin importar mayúsculas/tildes).");
+    } else {
+      alert("✅ La función respondió OK: "+texto+"\n\nSi aun así no te llegó nada al celular con la pantalla bloqueada, el problema está en las claves VAPID (revisá que sean EXACTAMENTE las que te pasé, sin espacios de más) o en que Vercel no instaló bien la librería 'web-push'.");
+    }
+  }catch(e){
+    alert("❌ No se pudo ni siquiera llamar a la función (falló el fetch):\n\n"+(e.message||e));
+  }
+}
 function renderNotificacionesModal(){
   const mias = misNotificaciones();
   return `
@@ -369,6 +391,10 @@ function renderNotificacionesModal(){
       ? `<button class="btn btn-ghost btn-sm" onclick="desactivarAlertasPush()">Desactivar</button>`
       : `<button class="btn btn-teal btn-sm" onclick="activarAlertasPush()">🔔 Activar en este dispositivo</button>`}
   </div>
+  ${S.pushActivo?`
+  <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+    <button class="btn btn-ghost btn-sm" onclick="probarPush()">🧪 Probar notificación push</button>
+  </div>`:""}
   ${mias.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px 0">No tenés notificaciones pendientes 🎉</p>`:`
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
     <button class="btn btn-ghost btn-sm" onclick="marcarTodasNotifLeidas()">✓ Marcar todas como leídas</button>
