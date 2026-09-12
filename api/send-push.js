@@ -32,18 +32,40 @@ module.exports = async (req, res) => {
       return;
     }
 
-    webpush.setVapidDetails(
-      "mailto:soporte@transferlog.app",
-      process.env.VAPID_PUBLIC_KEY,
-      process.env.VAPID_PRIVATE_KEY
-    );
+    // Chequeo explícito: si falta alguna de las 2 variables de entorno,
+    // avisarlo clarito en vez de que reviente adentro de setVapidDetails
+    // con un error críptico.
+    if (!process.env.VAPID_PUBLIC_KEY || !process.env.VAPID_PRIVATE_KEY) {
+      res.status(500).json({
+        error: "Faltan las variables de entorno VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY en Vercel (o no están disponibles en este Environment: Production/Preview/Development).",
+        vapidPublicPresente: !!process.env.VAPID_PUBLIC_KEY,
+        vapidPrivatePresente: !!process.env.VAPID_PRIVATE_KEY,
+      });
+      return;
+    }
+
+    try {
+      webpush.setVapidDetails(
+        "mailto:soporte@transferlog.app",
+        process.env.VAPID_PUBLIC_KEY.trim(),
+        process.env.VAPID_PRIVATE_KEY.trim()
+      );
+    } catch (eVapid) {
+      res.status(500).json({ error: "Las claves VAPID son inválidas (revisá que no tengan espacios/saltos de línea de más al pegarlas en Vercel): " + eVapid.message });
+      return;
+    }
 
     // Traer todas las suscripciones (la tabla es chica, filtramos acá
     // mismo para poder normalizar tildes/mayúsculas al comparar)
     const r = await fetch(`${SUPABASE_URL}/rest/v1/push_subscriptions?select=*`, {
       headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` },
     });
-    const subs = await r.json();
+    const subsRaw = await r.json();
+    if (!Array.isArray(subsRaw)) {
+      res.status(500).json({ error: "Supabase no devolvió una lista de suscripciones (¿existe la tabla push_subscriptions?): " + JSON.stringify(subsRaw) });
+      return;
+    }
+    const subs = subsRaw;
     const destinoNorm = normGrupo(destinatario);
     const objetivo = subs.filter((s) => normGrupo(s.grupo) === destinoNorm);
 
@@ -62,10 +84,12 @@ module.exports = async (req, res) => {
     // Si una suscripción ya no es válida (410/404), la borramos para
     // no seguir intentando mandarle en vano.
     const vencidas = [];
+    const otrosErrores = [];
     resultados.forEach((r2, i) => {
       if (r2.status === "rejected") {
         const code = r2.reason && r2.reason.statusCode;
         if (code === 410 || code === 404) vencidas.push(objetivo[i].endpoint);
+        else otrosErrores.push({ endpoint: objetivo[i].endpoint, code, msg: r2.reason && r2.reason.message });
       }
     });
     if (vencidas.length) {
@@ -75,9 +99,16 @@ module.exports = async (req, res) => {
       });
     }
 
-    res.status(200).json({ ok: true, enviados: objetivo.length - vencidas.length });
+    res.status(200).json({
+      ok: true,
+      totalSuscripciones: subs.length,
+      matchearon: objetivo.length,
+      enviados: objetivo.length - vencidas.length - otrosErrores.length,
+      vencidas: vencidas.length,
+      otrosErrores,
+    });
   } catch (e) {
     console.error("send-push error:", e);
-    res.status(500).json({ error: "internal error" });
+    res.status(500).json({ error: (e && e.message) || String(e), stack: e && e.stack });
   }
 };
