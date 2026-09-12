@@ -5151,6 +5151,9 @@ async function submitCambioEstadoMasivo(){
         changes.comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
         if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
         if(esAprobar && x) crearNotificacion(x.sucursal||x.area||"", `✅ Tu solicitud ${id} fue aprobada — prepará y marcá "Lista para retirar"`, id);
+        if(esAprobar && x && x.area && normNotif(x.area)!==normNotif(x.sucursal||x.area)){
+          crearNotificacion(x.area, `✅ La solicitud ${id} que armaste (${x.sucursal||"—"} → ${x.destino||"—"}) fue aprobada`, id);
+        }
         if(esAprobar && x && esPedidoPlanificacionFresco(x)) crearNotificacion("RECEPCION FRESCO", `🥬 Nuevo pedido para preparar: ${id} — ${x.descripcion||""}`, id);
       }
       if(d.recorrido) changes.recorrido = d.recorrido;
@@ -7027,6 +7030,11 @@ async function aplicarGestionar(dniVal, usuario){
       // Avisar por mail a quien la pidió, si logística la acaba de aprobar
       if(a.estado==="Aprobada" && r){
         const origenNombre = r.sucursal||r.area||"";
+        // Si un área (ej: Planificación) coordinó la transferencia entre
+        // dos puntos distintos, avisarle también a ella, no solo al origen físico.
+        if(r.area && normNotif(r.area)!==normNotif(origenNombre)){
+          crearNotificacion(r.area, `✅ La solicitud ${savedId} que armaste (${r.sucursal||"—"} → ${r.destino||"—"}) fue aprobada`, savedId);
+        }
         crearNotificacion(origenNombre, `✅ Tu solicitud ${savedId} fue aprobada — prepará y marcá "Lista para retirar"`, savedId);
         if(esPedidoPlanificacionFresco(r)){
           crearNotificacion("RECEPCION FRESCO", `🥬 Nuevo pedido para preparar: ${savedId} — ${r.descripcion||""}`, savedId);
