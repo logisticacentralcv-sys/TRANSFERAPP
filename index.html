@@ -3331,12 +3331,6 @@ function renderRepartidor(){
       <span style="font-size:13px">👤 Todavía no sabemos quién sos en este celular — por eso ves lo de todos.</span>
       <button class="btn btn-warn btn-sm" onclick="abrirIdentificarRepartidor()">Identificarme</button>
     </div>`}
-    <div class="stats-grid">
-      ${statCard("✅","PARA LEVANTAR",noBolsin.filter(r=>r.estado==="Aprobada"||r.estado==="Programada").length,"var(--green)")}
-      ${statCard("🚚","EN CAMINO",tomadasGeneral.length,"var(--amber)")}
-      ${statCard("🏭","EN FÁBRICA",noBolsin.filter(r=>r.estado==="En fábrica").length,"var(--teal)")}
-      ${statCard("📦","ENTREGADAS HOY",entregadas.filter(r=>r.deliveredAt&&r.deliveredAt.startsWith(new Date().toISOString().slice(0,10))).length,"#1fa86a")}
-    </div>
     <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${paraTomarGeneral.length})</button>
@@ -3414,7 +3408,6 @@ function renderRepartidor(){
       })():""}
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
       ${(()=>{ const _cardRepHtml = r=>{
-        const ac = ACCION_COLOR[r.estado]||"var(--muted)";
         const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
         const estaEnTransito = r.estado === "En tránsito";
         // yaEsSegundaEtapa: pasó por fábrica (fabricaAt) y ahora está en tránsito de nuevo
@@ -3435,10 +3428,22 @@ function renderRepartidor(){
         const puedeTomarFab  = r.estado === "En fábrica";
         const tomadaPor      = r.nombreQuienLevanto && estaEnTransito && !yaEsSegundaEtapa ? r.nombreQuienLevanto : "";
         const llevadoPor     = r.nombreQuienEntrego && yaEsSegundaEtapa ? r.nombreQuienEntrego : "";
+        // Categoría visual: bolsín/transferencia × tomar/entregar — para que
+        // de un vistazo (color + emoji) se sepa qué acción corresponde.
+        const esParaEntregar = puedeEntregar || puedDejarFab;
+        const esBolsin = r.tipoPedido==="bolsin";
+        const categoria = esBolsin
+          ? (esParaEntregar ? {emoji:"🎒📤", color:"#2de0c4", texto:"Bolsín para dejar"} : {emoji:"🎒📥", color:"#f5a623", texto:"Bolsín para tomar"})
+          : (esParaEntregar ? {emoji:"📦📤", color:"#4f9eff", texto:"Para entregar"}     : {emoji:"📦📥", color:"#2ecc7a", texto:"Para tomar"});
         return `
         <div class="del-card">
-          <div class="del-stripe" style="background:${ac}"></div>
+          <div class="del-stripe" style="background:${categoria.color}"></div>
           <div class="del-body" onclick="${S.modoSeleccionRep && puedeSeleccionar ? `toggleRepSeleccion('${escH(r.id)}', !S.repSeleccion.has('${escH(r.id)}'))` : `openDetalle('${escH(r.id)}')`}" style="cursor:pointer">
+
+            <!-- Categoría -->
+            <div style="display:inline-flex;align-items:center;gap:5px;background:${categoria.color}22;color:${categoria.color};border:1px solid ${categoria.color}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;margin-bottom:8px">
+              ${categoria.emoji} ${categoria.texto}
+            </div>
 
             <!-- Header -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
