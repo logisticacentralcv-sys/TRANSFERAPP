@@ -3380,18 +3380,24 @@ function renderRepartidor(){
     <div class="del-grid">
       ${devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">No hay devoluciones pendientes.</div>`:""}
       ${devolucionesRep.map(d=>`
-        <div class="card" style="padding:14px 16px;cursor:pointer" onclick="verDetalleDevolucionRep('${escH(d.id)}')">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-            <div>
-              <strong>${escH(d.sucursal||"—")}</strong>
-              <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)}</span>
+        <div class="del-card">
+          <div class="del-body" onclick="verDetalleDevolucionRep('${escH(d.id)}')" style="cursor:pointer">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+                <span style="width:7px;height:7px;border-radius:50%;background:var(--purple);display:inline-block;flex-shrink:0"></span>
+                Devolución
+              </div>
+              <div style="font-size:11px;color:var(--faint)">${fd(d.createdAt)}</div>
             </div>
-            ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
-          </div>
-          <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
-          <div style="margin-top:10px" onclick="event.stopPropagation()">
-            ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
-            ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px">
+              <div style="font-size:19px;font-weight:700">${escH(d.sucursal||"—")}</div>
+              ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
+            </div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${escH(d.motivo)}</div>
+            <div onclick="event.stopPropagation()">
+              ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" style="width:100%" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
+              ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" style="width:100%" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+            </div>
           </div>
         </div>`).join("")}
     </div>
@@ -3437,31 +3443,29 @@ function renderRepartidor(){
           : (esParaEntregar ? {emoji:"📦📤", color:"#4f9eff", texto:"Para entregar"}     : {emoji:"📦📥", color:"#2ecc7a", texto:"Para tomar"});
         return `
         <div class="del-card">
-          <div class="del-stripe" style="background:${categoria.color}"></div>
           <div class="del-body" onclick="${S.modoSeleccionRep && puedeSeleccionar ? `toggleRepSeleccion('${escH(r.id)}', !S.repSeleccion.has('${escH(r.id)}'))` : `openDetalle('${escH(r.id)}')`}" style="cursor:pointer">
 
-            <!-- Categoría -->
-            <div style="display:inline-flex;align-items:center;gap:5px;background:${categoria.color}22;color:${categoria.color};border:1px solid ${categoria.color}55;border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700;margin-bottom:8px">
-              ${categoria.emoji} ${categoria.texto}
+            <!-- Etiqueta de categoría + meta -->
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
+                <span style="width:7px;height:7px;border-radius:50%;background:${categoria.color};display:inline-block;flex-shrink:0"></span>
+                ${categoria.texto}
+              </div>
+              <div style="font-size:11px;color:var(--faint);white-space:nowrap">${fd(r.createdAt)} · ${escH(r.id)}</div>
             </div>
 
             <!-- Header -->
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px">
               <div style="display:flex;align-items:flex-start;gap:8px">
-                ${S.modoSeleccionRep && puedeSeleccionar?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.repSeleccion.has(r.id)?"checked":""} onclick="event.stopPropagation()" onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
-                <div>
-                  <div class="id-cell" style="margin-bottom:3px">${escH(r.id)}</div>
-                  <div style="font-weight:600">${escH(origenLabel(r))}</div>
-                </div>
+                ${S.modoSeleccionRep && puedeSeleccionar?`<input type="checkbox" class="chk-round" style="margin-top:3px" ${S.repSeleccion.has(r.id)?"checked":""} onclick="event.stopPropagation()" onchange="toggleRepSeleccion('${escH(r.id)}',this.checked)"/>`:""}
+                <div style="font-size:19px;font-weight:700">${escH(r.destino)}</div>
               </div>
               ${estadoBadges(r)}
             </div>
 
             <!-- Ruta -->
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px">
-              <span style="color:var(--muted)">${escH(origenLabel(r))}</span>
-              <span style="color:var(--faint)">→</span>
-              <span style="font-weight:500">${escH(r.destino)}</span>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:10px">
+              ${escH(origenLabel(r))} → ${escH(r.destino)} · recorrido ${escH(r.recorrido||"—")}
             </div>
 
             <!-- Descripción -->
@@ -3469,10 +3473,6 @@ function renderRepartidor(){
 
             <!-- Info chips -->
             <div style="display:grid;grid-template-columns:1fr;gap:6px;font-size:12px;margin-bottom:10px">
-              <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
-                <div style="color:var(--faint);margin-bottom:2px">Recorrido</div>
-                <div style="font-weight:600;color:var(--teal)">${escH(r.recorrido||"—")}</div>
-              </div>
               ${r.scheduledAt?`
               <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
                 <div style="color:var(--faint);margin-bottom:2px">📅 Fecha programada</div>
