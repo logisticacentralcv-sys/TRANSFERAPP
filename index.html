@@ -156,7 +156,7 @@ tr:hover td{background:var(--s2)}
 .del-card{background:var(--s1);border:1px solid var(--border);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:border-color .2s}
 .del-card:hover{border-color:var(--border2)}
 .del-stripe{height:4px}
-.del-body{padding:16px 18px}
+.del-body{padding:20px 18px}
 
 /* DNI MODAL */
 .dni-modal{max-width:400px}
@@ -3453,7 +3453,7 @@ function renderRepartidor(){
                 <span style="width:7px;height:7px;border-radius:50%;background:${categoria.color};display:inline-block;flex-shrink:0"></span>
                 ${categoria.texto}
               </div>
-              <div style="font-size:11px;color:var(--faint);white-space:nowrap">${fd(r.createdAt)} · ${escH(r.id)}</div>
+              <div style="font-size:11px;color:var(--faint);white-space:nowrap">${fd(r.createdAt)} · <span style="color:var(--blue);font-family:var(--mono)">${escH(r.id)}</span></div>
             </div>
 
             <!-- Header -->
@@ -3467,7 +3467,7 @@ function renderRepartidor(){
 
             <!-- Ruta -->
             <div style="font-size:13px;color:var(--muted);margin-bottom:10px">
-              ${escH(origenLabel(r))} → ${escH(r.destino)} · recorrido ${escH(r.recorrido||"—")}
+              ${escH(origenLabel(r))} → ${escH(r.destino)} · recorrido <span style="color:var(--teal);font-weight:600">${escH(r.recorrido||"—")}</span>
             </div>
 
             <!-- Descripción -->
@@ -3502,32 +3502,32 @@ function renderRepartidor(){
             </div>`:""}
 
             <!-- Acciones -->
-            <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
+            <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;align-items:stretch" onclick="event.stopPropagation()">
               ${puedeTomar && r.estado==="Lista para retirar"?`
-              <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
+              <button class="btn btn-warn btn-md" style="flex:3" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
               </button>
               <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoLevanta('${escH(r.id)}')">
                 ✕ No levanté
               </button>`:""}
               ${puedeTomar && r.estado==="En fábrica"?`
-              <button class="btn btn-success btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
+              <button class="btn btn-success btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Llevar a destino
               </button>`:""}
               ${(()=>{
                 const origenSinApp = esOtraDireccion(r.sucursal||r.area);
                 if(["Aprobada","Programada"].includes(r.estado) && origenSinApp) return `
-              <button class="btn btn-warn btn-sm" style="flex:2" onclick="openTomarTransferencia('${escH(r.id)}')">
+              <button class="btn btn-warn btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
               </button>`;
                 return "";
               })()}
               ${puedDejarFab?`
-              <button class="btn btn-primary btn-sm" style="flex:2" onclick="openDejarEnFabrica('${escH(r.id)}')">
+              <button class="btn btn-primary btn-md" style="flex:1;width:100%" onclick="openDejarEnFabrica('${escH(r.id)}')">
                 🏭 Dejar en fábrica
               </button>`:""}
               ${puedeEntregar?`
-              <button class="btn btn-teal btn-sm" style="flex:1" onclick="openConfirmarEntrega('${escH(r.id)}')">
+              <button class="btn btn-teal btn-md" style="flex:3" onclick="openConfirmarEntrega('${escH(r.id)}')">
                 ${r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino) ? "📫 Dejar en el buzón" : "📦 Entregar"}
               </button>
               <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoEntrega('${escH(r.id)}')">
