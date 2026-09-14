@@ -3455,6 +3455,8 @@ function renderRepartidor(){
               </div>
               <div style="font-size:11px;color:var(--faint);white-space:nowrap">${fd(r.createdAt)} · <span style="color:var(--blue);font-family:var(--mono)">${escH(r.id)}</span></div>
             </div>
+            ${r.approvedAt?`
+            <div style="font-size:11px;color:var(--muted);margin-bottom:8px">✅ Aprobada: <span style="color:var(--text);font-weight:600">${fdt(r.approvedAt)}</span></div>`:``}
 
             <!-- Header -->
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px">
