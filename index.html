@@ -3381,6 +3381,7 @@ function renderRepartidor(){
       ${devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">No hay devoluciones pendientes.</div>`:""}
       ${devolucionesRep.map(d=>`
         <div class="del-card">
+          <div class="del-stripe" style="background:var(--purple)"></div>
           <div class="del-body" onclick="verDetalleDevolucionRep('${escH(d.id)}')" style="cursor:pointer">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
               <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
@@ -3443,6 +3444,7 @@ function renderRepartidor(){
           : (esParaEntregar ? {emoji:"📦📤", color:"#4f9eff", texto:"Para entregar"}     : {emoji:"📦📥", color:"#2ecc7a", texto:"Para tomar"});
         return `
         <div class="del-card">
+          <div class="del-stripe" style="background:${categoria.color}"></div>
           <div class="del-body" onclick="${S.modoSeleccionRep && puedeSeleccionar ? `toggleRepSeleccion('${escH(r.id)}', !S.repSeleccion.has('${escH(r.id)}'))` : `openDetalle('${escH(r.id)}')`}" style="cursor:pointer">
 
             <!-- Etiqueta de categoría + meta -->
