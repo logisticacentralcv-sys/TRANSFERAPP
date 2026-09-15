@@ -3435,13 +3435,22 @@ function renderRepartidor(){
         const puedeTomarFab  = r.estado === "En fábrica";
         const tomadaPor      = r.nombreQuienLevanto && estaEnTransito && !yaEsSegundaEtapa ? r.nombreQuienLevanto : "";
         const llevadoPor     = r.nombreQuienEntrego && yaEsSegundaEtapa ? r.nombreQuienEntrego : "";
-        // Categoría visual: bolsín/transferencia × tomar/entregar — para que
-        // de un vistazo (color + emoji) se sepa qué acción corresponde.
+        // Categoría visual: bolsín/transferencia × tomar/entregar × dirección
+        // — para que de un vistazo (color + emoji) se sepa qué acción
+        // corresponde y hacia/desde dónde va (no es lo mismo un bolsín que
+        // sale de una sucursal hacia el buzón que uno que sale del buzón
+        // hacia una sucursal, aunque los dos digan "para tomar").
         const esParaEntregar = puedeEntregar || puedDejarFab;
         const esBolsin = r.tipoPedido==="bolsin";
-        const categoria = esBolsin
-          ? (esParaEntregar ? {emoji:"🎒📤", color:"#2de0c4", texto:"Bolsín para dejar"} : {emoji:"🎒📥", color:"#f5a623", texto:"Bolsín para tomar"})
-          : (esParaEntregar ? {emoji:"📦📤", color:"#4f9eff", texto:"Para entregar"}     : {emoji:"📦📥", color:"#2ecc7a", texto:"Para tomar"});
+        const vaAlBuzon = esBolsin && esDestinoBuzon(r.destino);
+        let categoria;
+        if(esBolsin && vaAlBuzon){
+          categoria = esParaEntregar ? {emoji:"🎒📤", color:"#2de0c4", texto:"Bolsín para dejar"} : {emoji:"🎒📥", color:"#f5a623", texto:"Bolsín para tomar"};
+        } else if(esBolsin && !vaAlBuzon){
+          categoria = esParaEntregar ? {emoji:"🎒📤", color:"#e879c9", texto:"Bolsín para entregar"} : {emoji:"🎒📥", color:"#a371f7", texto:"Bolsín para tomar"};
+        } else {
+          categoria = esParaEntregar ? {emoji:"📦📤", color:"#4f9eff", texto:"Para entregar"} : {emoji:"📦📥", color:"#2ecc7a", texto:"Para tomar"};
+        }
         return `
         <div class="del-card">
           <div class="del-stripe" style="background:${categoria.color}"></div>
