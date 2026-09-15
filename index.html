@@ -3711,9 +3711,7 @@ function renderDetalle(){
   const steps=[];
 
   // Paso 1: Creación
-  const metaCreacion = esLogistica
-    ? `${fdt(r.createdAt)} · ${solicitanteLabel(r)}`
-    : `${fd(r.createdAt)} · ${solicitanteLabel(r)}`;
+  const metaCreacion = `${fdt(r.createdAt)} · ${solicitanteLabel(r)}`;
   steps.push({dot:S_COLOR["Pendiente"], title:"Solicitud creada", meta:metaCreacion});
 
   // Paso 2: Acción de Logística (aprobación, rechazo, o marcado pasa por fábrica)
