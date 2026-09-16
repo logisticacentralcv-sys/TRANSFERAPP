@@ -2197,10 +2197,22 @@ function renderPlanificacion(){
   // no identifica un área en particular. Si se usa como fallback, todas
   // las áreas del grupo terminan viendo las mismas solicitudes.
   // Solo el área real (usuario/área de Sheets) identifica a cada una.
+  //
+  // Además: si el nombre de esta "área" coincide con una sucursal real
+  // (caso Depósito, que es un lugar físico además de un área que pide
+  // cosas), también hay que sumar las solicitudes donde Depósito es
+  // origen o destino físico — si no, se le escapan las transferencias
+  // que pasan por ahí pero fueron pedidas por otra área (ej: Administración
+  // pidiendo algo "Depósito → Independencia").
+  const esTambienLugarFisico = getSucursales().some(s=>norm2(s)===areaN);
   const mine = S.requests.filter(r=>{
     const rArea = norm2(r.area);
-    if(!rArea || !areaN) return false;
-    return rArea===areaN;
+    if(rArea && areaN && rArea===areaN) return true;
+    if(esTambienLugarFisico){
+      if(norm2(r.sucursal)===areaN) return true;
+      if(norm2(r.destino)===areaN) return true;
+    }
+    return false;
   });
   const open  = mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
   const hist  = mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
