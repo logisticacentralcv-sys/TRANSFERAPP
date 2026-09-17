@@ -6629,10 +6629,21 @@ async function submitPalabra(){
     codigoEntrega:      ingresada,
     updatedAt:          now(),
   };
+  // Guardar PRIMERO en la base y confirmar que salió bien — si falla (por
+  // ejemplo, un problema de permisos), avisar en el momento en vez de
+  // mostrar "entregado" y que después reaparezca como si nada.
+  try{
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(changes)).eq("id", d.id);
+    if(error) throw error;
+  }catch(e){
+    S.palabraModal.loading = false;
+    S.palabraModal.err = "No se pudo guardar la entrega (" + (e.message||"error de conexión") + "). Probá de nuevo — si sigue fallando, avisá a Admin.";
+    render();
+    return;
+  }
   S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
   S.modal = null;
   toast(`✅ Entrega confirmada — ${r?.destino||""}`);
-  sheetsUpdate(d.id, changes);
 }
 
 // Repartidor reporta que no pudo levantar
