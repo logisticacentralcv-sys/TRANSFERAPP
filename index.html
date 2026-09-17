@@ -554,11 +554,11 @@ function esOtraDireccion(destino){
 
 const UNIDADES    = ["Unidades","Cajas","Bultos","Pallets","Kg","Litros","Paquetes","Atados"];
 const PRIORIDADES = ["Baja","Media","Alta","Urgente"];
-const ESTADOS     = ["Pendiente Tesorería","Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En tránsito","En fábrica","Entregada (sin confirmar)","Entregada","No entregada","No levantada","Rechazada","Reprogramada"];
+const ESTADOS     = ["Pendiente Tesorería","Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En tránsito","En fábrica","En el buzón","Entregada (sin confirmar)","Entregada","No entregada","No levantada","Rechazada","Reprogramada"];
 
 const S_COLOR = {
   "Pendiente Tesorería":"#c98a1f","Pendiente":"#8b9dc0","En revisión":"#4f9eff","Aprobada":"#2ecc7a",
-  "Programada":"#9b8ff7","En tránsito":"#f5a623","En fábrica":"#2de0c4",
+  "Programada":"#9b8ff7","En tránsito":"#f5a623","En fábrica":"#2de0c4","En el buzón":"#d4a017",
   "Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f","Lista para retirar":"#34d399","Rechazada":"#f05252","No entregada":"#ff6b35","No levantada":"#ff8c6b","Reprogramada":"#ff8c6b",
 };
 const P_COLOR = {"Baja":"#8b9dc0","Media":"#4f9eff","Alta":"#f5a623","Urgente":"#f05252"};
@@ -2214,8 +2214,8 @@ function renderPlanificacion(){
     }
     return false;
   });
-  const open  = mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const hist  = mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const open  = mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const hist  = mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
   const list  = S.tabSuc==="historial" ? hist : open;
   const listF = S.fPlanFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fPlanFecha)) : list;
 
@@ -2403,7 +2403,7 @@ function renderTesoreria(){
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📥 Bolsines recibidos de sucursales</h3>
       ${(()=>{
-        const enBuzon = S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería" && r.estado==="Entregada (sin confirmar)");
+        const enBuzon = S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería" && r.estado==="En el buzón");
         const totalEnBuzon = enBuzon.reduce((s,r)=>s+(+r.cantidad||0),0);
         if(!enBuzon.length) return "";
         return `<div style="display:flex;align-items:center;gap:10px;background:#f5a62318;border-left:3px solid var(--amber);border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
@@ -2432,7 +2432,7 @@ function renderTesoreria(){
               <td>${estadoBadges(r)}</td>
               <td onclick="event.stopPropagation()">
                 <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-                ${r.estado==="Entregada (sin confirmar)"?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openConfirmarCerrado('${escH(r.id)}')">✅ Confirmar retiro</button>`:""}
+                ${["Entregada (sin confirmar)","En el buzón"].includes(r.estado)?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openConfirmarCerrado('${escH(r.id)}')">✅ Confirmar retiro</button>`:""}
               </td>
             </tr>`).join("")}
           </tbody>
@@ -2887,7 +2887,7 @@ function renderRecepcionFresco(){
   const paraPreparar   = pedidos.filter(r=>!r.preparadoAt);
   const faltaListo     = pedidos.filter(r=>r.preparadoAt && !r.listoAt);
   const yaListas       = S.requests.filter(r=>esPedidoPlanificacionFresco(r) && r.listoAt &&
-                            ["Lista para retirar","En tránsito","En fábrica","Entregada","Entregada (sin confirmar)"].includes(r.estado))
+                            ["Lista para retirar","En tránsito","En fábrica","Entregada","Entregada (sin confirmar)","En el buzón"].includes(r.estado))
                           .sort((a,b)=>(b.listoAt||"").localeCompare(a.listoAt||""))
                           .slice(0,15);
 
@@ -2971,11 +2971,11 @@ function renderSucursalArea(){
 
   const miosPedidos    = mine.filter(r => matchArea(r.sucursal)||matchArea(r.area));
   const miDestinoQ     = mine.filter(r => matchArea(r.destino) && !matchArea(r.sucursal) && !matchArea(r.area));
-  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const open=mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const hist=mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado))
+  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const open=mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const hist=mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado))
              : S.tabSuc==="destino"  ? lleganActivas
              : [...hist, ...lleganHistorial];
   const listF = S.fSucFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fSucFecha)) : list;
@@ -3850,6 +3850,16 @@ function renderDetalle(){
       ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
       : `${quienDejo?"Por "+quienDejo:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
     steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:r.tipoPedido==="bolsin"?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+  }
+
+  // ── PASO 5c-bis: Bolsín dejado en el buzón (estado propio, distinto
+  // de "Entregada (sin confirmar)" para no mezclarlo en filtros) ──
+  if(r.estado==="En el buzón"){
+    const quienDejo = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
+    const metaDejo = verHoraTomaEntrega
+      ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"}`
+      : `${quienDejo?"Por "+quienDejo:""}`;
+    steps.push({dot:S_COLOR["En el buzón"], title:"📫 Dejado en el buzón", meta:metaDejo});
   }
 
   // ── PASO 5d: Entregada ──────────────────────────────────
@@ -4846,7 +4856,7 @@ function renderDejarBolsinesModal(){
 
 async function ejecutarDejarBolsines(ids, dni, nombre){
   const nowTs = now();
-  const changes = {estado:"Entregada (sin confirmar)", nombreQuienEntrego:nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
+  const changes = {estado:"En el buzón", nombreQuienEntrego:nombre, dniEntrega:dni, deliveredAt:nowTs, updatedAt:nowTs};
   const resultados = await Promise.all(
     ids.map(id => sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id))
   );
