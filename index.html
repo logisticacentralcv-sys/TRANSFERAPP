@@ -415,20 +415,8 @@ function buscarEmailOrigen(origen){
   return u?.email || (S.sucursalesInfo?.[norm(origen)]?.email) || "";
 }
 
-// ══════════════════════════════════════════════════════════
-//  EMAIL — notificación a logística cuando entra una solicitud
-//  Configurá el email en el Apps Script (línea EMAIL_LOGISTICA)
-//  El HTML no necesita cambios para esto — el script lo maneja
-// ══════════════════════════════════════════════════════════
-
-// ══════════════════════════════════════════════════════════
-//  (Antes había acá un listado de usuarios demo hardcodeados,
-//  solo pensado como fallback para cuando no había Supabase
-//  conectado. Como la app SIEMPRE usa Supabase en producción,
-//  se eliminó: no aportaba nada y dejaba credenciales de
-//  ejemplo a la vista de cualquiera que mirase el código
-//  fuente del repositorio.)
-// ══════════════════════════════════════════════════════════
+// DEMO_USUARIOS: fallback vacío, solo se usa si USE_SHEETS estuviera en
+// false (no pasa en producción, siempre corre contra Supabase).
 const DEMO_USUARIOS = [];
 
 // ══════════════════════════════════════════════════════════
@@ -6880,6 +6868,7 @@ async function doLogin(){
   S.lastRefresh = Date.now();
   try{ localStorage.setItem("tl_sesion", JSON.stringify(S.user)); }catch(e){}
   if(S.user.rol==="repartidor") cargarIdentidadRepartidor();
+  reiniciarTimerInactividad();
   render(); // mostrar app ya
 
   // Cargar solicitudes, recorridos y destinos en background sin bloquear
@@ -6965,7 +6954,30 @@ async function doRefresh(){
   toast("Datos actualizados ✓");
 }
 
+// ══════════════════════════════════════════════════════════
+//  CIERRE AUTOMÁTICO POR INACTIVIDAD — solo Logística y Admin,
+//  30 minutos sin tocar nada. El resto de los roles no tiene este
+//  límite (lo pidieron puntualmente para estos dos, por manejar
+//  datos más sensibles y por si se olvidan la sesión abierta).
+// ══════════════════════════════════════════════════════════
+const INACTIVIDAD_MS = 30*60*1000; // 30 minutos
+let _inactividadTimer = null;
+function reiniciarTimerInactividad(){
+  if(_inactividadTimer){ clearTimeout(_inactividadTimer); _inactividadTimer=null; }
+  if(!S.user || !["logistica","admin"].includes(S.user.rol)) return;
+  _inactividadTimer = setTimeout(()=>{
+    if(S.user && ["logistica","admin"].includes(S.user.rol)){
+      doLogout();
+      alert("Se cerró la sesión automáticamente por inactividad (30 minutos), por seguridad.");
+    }
+  }, INACTIVIDAD_MS);
+}
+["mousedown","keydown","touchstart","scroll"].forEach(ev=>{
+  document.addEventListener(ev, reiniciarTimerInactividad, {passive:true});
+});
+
 function doLogout(){
+  if(_inactividadTimer){ clearTimeout(_inactividadTimer); _inactividadTimer=null; }
   try{ localStorage.removeItem("tl_sesion"); }catch(e){}
   try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
   stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
@@ -7348,6 +7360,7 @@ if(_sesionRestaurada){
   S.view = "app";
   S.lastRefresh = Date.now();
   cargarIdentidadRepartidor();
+  reiniciarTimerInactividad();
   render();
   if(USE_SHEETS) sheetsLoadUsuarios();
   sheetsLoadDatos().then(()=>{ render(); });
@@ -7363,43 +7376,5 @@ if("serviceWorker" in navigator){
 }
 </script>
 
-<!-- ══════════════════════════════════════════════════════
-  ESTRUCTURA GOOGLE SHEETS — 4 HOJAS
-  ══════════════════════════════════════════════════════
-
-  HOJA 1: "Solicitudes"
-  Encabezados fila 1 (exactos, en orden):
-  id | createdAt | sucursal | area | solicitante | dniSolicitante |
-  destino | descripcion | cantidad | unidad | prioridad | fechaRequerida |
-  estado | comentario | recorrido | dniLogistica | dniRepartidor | nombreRepartidor |
-  scheduledAt | deliveredAt | approvedAt | updatedAt | observaciones
-
-  HOJA 2: "Usuarios"
-  Encabezados:
-  nombre | dni | usuario | password | rol | area | recorrido | activo
-  
-  Roles posibles:
-    logistica   → acceso panel logística (se valida por DNI además)
-    repartidor  → acceso panel repartidor (se asigna recorrido acá)
-    area        → Administración, Compras, RRHH (campo area)
-    sucursal    → solo necesitan nombre y dni (no usuario/password)
-  
-  Campo "activo": escribí "si" o "no" para habilitar/deshabilitar sin borrar
-
-  HOJA 3: "Recorridos"
-  Encabezados:
-  nombre | descripcion
-  
-  Ejemplo de filas:
-  SUR   | Zona sur de la ciudad
-  NORTE | Zona norte
-  CENTRO| Centro y microcentro
-  
-  Para agregar un recorrido nuevo: agregás una fila y se actualiza
-  automáticamente en la app sin tocar código.
-
-  HOJA 4: "Config" (opcional, para futuras configuraciones)
-  clave | valor
-  ══════════════════════════════════════════════════════ -->
 </body>
 </html>
