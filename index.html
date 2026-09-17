@@ -554,12 +554,12 @@ function esOtraDireccion(destino){
 
 const UNIDADES    = ["Unidades","Cajas","Bultos","Pallets","Kg","Litros","Paquetes","Atados"];
 const PRIORIDADES = ["Baja","Media","Alta","Urgente"];
-const ESTADOS     = ["Pendiente Tesorería","Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En tránsito","En fábrica","En el buzón","Entregada (sin confirmar)","Entregada","No entregada","No levantada","Rechazada","Reprogramada"];
+const ESTADOS     = ["Pendiente Tesorería","Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En tránsito","En fábrica","En el buzón","Entregada (sin confirmar)","Entregada","No entregada","No levantada","Rechazada","Cancelada","Reprogramada"];
 
 const S_COLOR = {
   "Pendiente Tesorería":"#c98a1f","Pendiente":"#8b9dc0","En revisión":"#4f9eff","Aprobada":"#2ecc7a",
-  "Programada":"#9b8ff7","En tránsito":"#f5a623","En fábrica":"#2de0c4","En el buzón":"#d4a017",
-  "Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f","Lista para retirar":"#34d399","Rechazada":"#f05252","No entregada":"#ff6b35","No levantada":"#ff8c6b","Reprogramada":"#ff8c6b",
+  "Programada":"#9b8ff7","En tránsito":"#f5a623","En fábrica":"#2de0c4","En el buzón":"#4f9eff",
+  "Entregada":"#1fa86a","Entregada (sin confirmar)":"#c98a1f","Lista para retirar":"#34d399","Rechazada":"#f05252","Cancelada":"#8b9dc0","No entregada":"#ff6b35","No levantada":"#ff8c6b","Reprogramada":"#ff8c6b",
 };
 const P_COLOR = {"Baja":"#8b9dc0","Media":"#4f9eff","Alta":"#f5a623","Urgente":"#f05252"};
 
@@ -2215,8 +2215,8 @@ function renderPlanificacion(){
     }
     return false;
   });
-  const open  = mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const hist  = mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const open  = mine.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const hist  = mine.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
   const list  = S.tabSuc==="historial" ? hist : open;
   const listF = S.fPlanFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fPlanFecha)) : list;
 
@@ -2802,13 +2802,13 @@ function renderRecepcionista(){
 
   // ENTRANTES: destino = fábrica (no depósito)
   const entrantes  = S.requests.filter(r=>esDestinoSoloFabrica(r));
-  const entActivas = entrantes.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const entHist    = entrantes.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const entActivas = entrantes.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada"].includes(r.estado));
+  const entHist    = entrantes.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada"].includes(r.estado));
 
   // SALIENTES: origen = fábrica (no depósito)
   const salientes  = S.requests.filter(r=>esOrigenSoloFabrica(r));
-  const salActivas = salientes.filter(r=>!["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
-  const salHist    = salientes.filter(r=>["Entregada","Rechazada","No entregada","No levantada"].includes(r.estado));
+  const salActivas = salientes.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada"].includes(r.estado));
+  const salHist    = salientes.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada"].includes(r.estado));
 
   const tab  = S.tabSuc||"entrantes";
   const list = tab==="entrantes" ? entActivas
@@ -2972,11 +2972,11 @@ function renderSucursalArea(){
 
   const miosPedidos    = mine.filter(r => matchArea(r.sucursal)||matchArea(r.area));
   const miDestinoQ     = mine.filter(r => matchArea(r.destino) && !matchArea(r.sucursal) && !matchArea(r.area));
-  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const open=mine.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const hist=mine.filter(r=>["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","No entregada","No levantada","En el buzón"].includes(r.estado))
+  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const open=mine.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const hist=mine.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado))
              : S.tabSuc==="destino"  ? lleganActivas
              : [...hist, ...lleganHistorial];
   const listF = S.fSucFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fSucFecha)) : list;
@@ -3220,7 +3220,7 @@ function renderLogTabla(){
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
             <td style="white-space:nowrap" onclick="event.stopPropagation()">
               <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-              ${r.estado!=="Entregada"&&r.estado!=="Rechazada"?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
+              ${r.estado!=="Entregada"&&r.estado!=="Rechazada"&&r.estado!=="Cancelada"?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
             </td>
           </tr>`).join("")}
         </tbody>
@@ -3299,6 +3299,7 @@ function renderMetricas(){
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--blue)">${reqs.length}</div><div class="kpi-mini-lbl">Total</div></div>
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--red)">${reqs.filter(r=>r.prioridad==="Urgente").length}</div><div class="kpi-mini-lbl">Urgentes</div></div>
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--amber)">${reqs.filter(r=>r.estado==="Rechazada").length}</div><div class="kpi-mini-lbl">Rechazadas</div></div>
+        <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--muted)">${reqs.filter(r=>r.estado==="Cancelada").length}</div><div class="kpi-mini-lbl">Canceladas</div></div>
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--teal)">${reqs.filter(r=>r.estado==="Entregada").length}</div><div class="kpi-mini-lbl">Entregadas</div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--border)">
@@ -3809,19 +3810,16 @@ function renderDetalle(){
 
   // Paso 2: Acción de Logística (aprobación, rechazo, o marcado pasa por fábrica)
   // ── PASO 2: Acción de Logística ─────────────────────────
-  if(r.dniLogistica || r.approvedAt || r.estado==="Rechazada"){
+  if(r.dniLogistica || r.approvedAt || r.estado==="Rechazada" || r.estado==="Cancelada"){
     const esRechazada = r.estado==="Rechazada";
-    // Si está "Rechazada" pero nunca pasó por la acción de Logística
-    // (no tiene nombreLogistica/dniLogistica), fue el propio solicitante
-    // quien la canceló — no hay que atribuírsela a Logística.
-    const fueCanceladoPorSolicitante = esRechazada && !r.nombreLogistica && !r.dniLogistica;
+    const esCancelada  = r.estado==="Cancelada"; // la retiró quien la pidió, no Logística
     const esFabricaFlow2 = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
-    const tituloLog = fueCanceladoPorSolicitante ? "Cancelada por el solicitante"
+    const tituloLog = esCancelada ? "Cancelada por el solicitante"
                      : esRechazada ? "Rechazada por Logística"
                      : esFabricaFlow2 ? "Aprobada — pasa por fábrica"
                      : "Aprobada por Logística";
     const nombreLog = r.nombreLogistica || "Logística";
-    const metaLog = fueCanceladoPorSolicitante
+    const metaLog = esCancelada
       ? `${fdt(r.updatedAt)} · ${solicitanteLabel(r)}`
       : esLogistica
       // Logística: hora + quién aprobó + comentario (nunca DNI)
@@ -3831,18 +3829,19 @@ function renderDetalle(){
         ? r.comentarioRepartidor || ""
         // Sucursal/Planificación: solo el comentario de logística para ellos
         : r.comentario || "";
-    steps.push({dot:esRechazada?S_COLOR["Rechazada"]:S_COLOR["Aprobada"], title:tituloLog, meta:metaLog});
+    steps.push({dot:esRechazada?S_COLOR["Rechazada"]:esCancelada?S_COLOR["Cancelada"]:S_COLOR["Aprobada"], title:tituloLog, meta:metaLog});
   }
+
 
   // ── PASO 3: Recorridos (ingreso / egreso separados) ─────
   const esFabFlow = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
-  if(r.recorrido && r.estado!=="Rechazada"){
+  if(r.recorrido && r.estado!=="Rechazada" && r.estado!=="Cancelada"){
     const titleRec = esFabFlow ? `Recorrido de ingreso: ${r.recorrido}` : `Asignada a recorrido ${r.recorrido}`;
     steps.push({dot:S_COLOR["Programada"], title:titleRec,
       meta:r.scheduledAt?`Programado para ${fd(r.scheduledAt)}`:""});
   }
   // Recorrido de EGRESO — se guarda cuando logística asigna el recorrido de salida desde fábrica
-  if(esFabFlow && r.recorridoEgreso && r.estado!=="Rechazada"){
+  if(esFabFlow && r.recorridoEgreso && r.estado!=="Rechazada" && r.estado!=="Cancelada"){
     steps.push({dot:S_COLOR["Programada"], title:`Recorrido de egreso: ${r.recorridoEgreso}`,
       meta:"Recorrido asignado para llevar al destino final"});
   }
@@ -3985,7 +3984,7 @@ function renderDetalle(){
     ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
     ${r.recorrido?badge(r.recorrido,"var(--teal)"):""}
   </div>
-  ${esLogistica && !["Entregada","Rechazada"].includes(r.estado)?`
+  ${esLogistica && !["Entregada","Rechazada","Cancelada"].includes(r.estado)?`
   <button class="btn btn-primary btn-md btn-full" style="margin-bottom:16px" onclick="openGestionar('${escH(r.id)}')">
     ✏️ Gestionar esta solicitud
   </button>`:""}
@@ -4633,7 +4632,7 @@ async function submitEditar(){
 
 async function cancelarSolicitud(id){
   if(!confirm("¿Cancelar esta solicitud? No se puede deshacer.")) return;
-  const changes = { estado:"Rechazada", comentario:"Cancelada por el solicitante", updatedAt:now() };
+  const changes = { estado:"Cancelada", comentario:"Cancelada por el solicitante", updatedAt:now() };
   S.requests = S.requests.map(x=>x.id===id?{...x,...changes}:x);
   S.modal = null;
   toast("Solicitud cancelada");
