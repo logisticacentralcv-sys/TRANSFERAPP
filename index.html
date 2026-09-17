@@ -6686,6 +6686,41 @@ function openConfirmarEntrega(id){
 }
 
 // ── LOGIN ──────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+//  LOGIN CON SUPABASE AUTH — en paralelo al de siempre.
+//  Mientras AUTH_AVANZADO esté en false (o no tenga el parámetro
+//  ?authtest=1 en la URL), esto NUNCA se ejecuta y la app funciona
+//  exactamente igual que hasta ahora. Es la fase de prueba: activarlo
+//  del todo es un cambio de UNA línea, el día que esté todo probado.
+// ══════════════════════════════════════════════════════════
+const AUTH_AVANZADO = new URLSearchParams(location.search).get("authtest")==="1";
+
+function loginToEmailAuth(usuario){
+  const limpio = normNotif(usuario).replace(/[^a-z0-9]+/g,"-");
+  return `${limpio}@transferlog.internal`;
+}
+
+async function intentarLoginAuth(usuario, password){
+  const email = loginToEmailAuth(usuario);
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){
+    // Supabase no distingue "no existe" de "contraseña incorrecta" (por
+    // seguridad) — para el usuario, el mensaje es el mismo en ambos casos.
+    return {ok:false, msg:"Usuario o contraseña incorrectos."};
+  }
+  const { data: filas, error: errFila } = await sb.from("usuarios").select("*").eq("auth_user_id", data.user.id).limit(1);
+  if(errFila || !filas || !filas.length){
+    await sb.auth.signOut();
+    return {ok:false, msg:"Tu cuenta no está vinculada correctamente todavía. Avisá al administrador."};
+  }
+  const fila = filas[0];
+  if(fila.activo==="no"){
+    await sb.auth.signOut();
+    return {ok:false, msg:"Usuario inhabilitado."};
+  }
+  return {ok:true, tipo:fila.tipo, usuario:fila.usuario||"", nombre:fila.nombre||fila.usuario, area:fila.area||"", recorrido:fila.recorrido||"", dni:fila.dni||""};
+}
+
 async function doLogin(){
   S.loginErr = "";
   // Leemos siempre del DOM, nunca del estado — así no depende de oninput
@@ -6700,7 +6735,22 @@ async function doLogin(){
   if(USE_SHEETS) await sheetsLoadUsuarios();
   S.loginLoading = false;
 
-  const resultado = buscarUsuario(usuario, pass);
+  let resultado;
+  if(AUTH_AVANZADO){
+    // Modo de prueba: si esta cuenta ya está migrada a Auth (tiene
+    // auth_user_id cargado), probar el login nuevo. Si todavía no fue
+    // migrada (sucursales sin contraseña, o las 2 con contraseña corta),
+    // seguir con el sistema de siempre — así no se rompe nada para nadie
+    // mientras se prueba de a poco.
+    const filaCandidata = S.usuarios.find(u=>normNotif(u.usuario)===normNotif(usuario));
+    if(filaCandidata && filaCandidata.authUserId){
+      resultado = await intentarLoginAuth(usuario, pass);
+    } else {
+      resultado = buscarUsuario(usuario, pass);
+    }
+  } else {
+    resultado = buscarUsuario(usuario, pass);
+  }
   if(!resultado.ok){ S.loginErr = resultado.msg; render(); return; }
 
   const tipo = resultado.tipo;
@@ -6827,6 +6877,7 @@ async function doRefresh(){
 
 function doLogout(){
   try{ localStorage.removeItem("tl_sesion"); }catch(e){}
+  try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
   stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
 }
 
