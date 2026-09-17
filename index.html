@@ -6538,6 +6538,7 @@ async function submitEntregarVarias(){
     const coinciden = d.ids.filter(id=>codigos[id] && codigos[id]===ingresada);
     const noCoinciden = d.ids.filter(id=>!coinciden.includes(id));
 
+    let fallaronGuardado = [];
     if(coinciden.length){
       const nowTs = now();
       const cambios = coinciden.map(id=>{
@@ -6550,24 +6551,29 @@ async function submitEntregarVarias(){
         };
         return {id, changes};
       });
-      await Promise.all(cambios.map(c=>sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id)));
+      const resultados = await Promise.all(cambios.map(c=>sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id)));
+      const cambiosOk = cambios.filter((c,i)=>!resultados[i].error);
+      fallaronGuardado = cambios.filter((c,i)=>resultados[i].error).map(c=>c.id);
       S.requests = S.requests.map(x=>{
-        const c = cambios.find(c=>c.id===x.id);
+        const c = cambiosOk.find(c=>c.id===x.id);
         return c ? {...x,...c.changes} : x;
       });
-      S.repSeleccion = new Set(noCoinciden);
+      S.repSeleccion = new Set([...noCoinciden, ...fallaronGuardado]);
     }
 
-    if(noCoinciden.length===0){
+    const entregadasOk = coinciden.length - fallaronGuardado.length;
+    if(noCoinciden.length===0 && fallaronGuardado.length===0){
       S.modoSeleccionRep = false;
       S.modal = null;
-      toast(`✅ ${coinciden.length} transferencias entregadas`);
+      toast(`✅ ${entregadasOk} transferencias entregadas`);
     } else {
       S.entregarVariasModal.loading = false;
-      S.entregarVariasModal.ids = noCoinciden;
-      S.entregarVariasModal.err = coinciden.length
-        ? `Se entregaron ${coinciden.length}. La palabra no coincidió en ${noCoinciden.length} — quedaron seleccionadas, fijate si son de otra sucursal.`
-        : "La palabra no coincidió con ninguna. Verificá con la sucursal.";
+      S.entregarVariasModal.ids = [...noCoinciden, ...fallaronGuardado];
+      const partes = [];
+      if(entregadasOk>0) partes.push(`Se entregaron ${entregadasOk}`);
+      if(noCoinciden.length) partes.push(`la palabra no coincidió en ${noCoinciden.length}`);
+      if(fallaronGuardado.length) partes.push(`${fallaronGuardado.length} no se pudieron guardar (probá de nuevo)`);
+      S.entregarVariasModal.err = partes.length ? partes.join(" — ")+"." : "No se pudo entregar ninguna. Verificá con la sucursal.";
     }
   }catch(e){
     S.entregarVariasModal.loading = false;
