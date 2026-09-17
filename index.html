@@ -6774,7 +6774,13 @@ function openConfirmarEntrega(id){
 //  exactamente igual que hasta ahora. Es la fase de prueba: activarlo
 //  del todo es un cambio de UNA línea, el día que esté todo probado.
 // ══════════════════════════════════════════════════════════
-const AUTH_AVANZADO = new URLSearchParams(location.search).get("authtest")==="1";
+// AUTH_AVANZADO activo para todos por defecto. Las cuentas ya migradas
+// (con auth_user_id) usan Supabase Auth de verdad; el resto (sucursales
+// sin contraseña, o las que aún tienen contraseña corta) sigue
+// funcionando con el sistema de siempre, automáticamente.
+// Interruptor de emergencia: si algo llegara a fallar, entrar con
+// ?authtest=0 vuelve TODO al sistema viejo al instante, sin redeploy.
+const AUTH_AVANZADO = new URLSearchParams(location.search).get("authtest")!=="0";
 
 function loginToEmailAuth(usuario){
   const limpio = normNotif(usuario).replace(/[^a-z0-9]+/g,"-");
