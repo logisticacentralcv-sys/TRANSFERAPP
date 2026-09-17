@@ -6836,9 +6836,10 @@ async function doLogin(){
     // mientras se prueba de a poco.
     const filaCandidata = S.usuarios.find(u=>normNotif(u.usuario)===normNotif(usuario));
     if(filaCandidata && filaCandidata.authUserId){
-      // Las sucursales no escriben contraseña — usamos la que quedó
-      // guardada (generada al azar, invisible para ellas) al migrarlas.
-      const passwordAUsar = filaCandidata.tipo==="SUCURSAL" ? (filaCandidata.password||"") : pass;
+      // Sucursales y repartidores no escriben contraseña — usamos la que
+      // quedó guardada (generada al azar, invisible para ellos) al migrarlos.
+      const sinPasswordVisible = filaCandidata.tipo==="SUCURSAL" || filaCandidata.tipo==="REPARTIDOR";
+      const passwordAUsar = sinPasswordVisible ? (filaCandidata.password||"") : pass;
       resultado = await intentarLoginAuth(usuario, passwordAUsar);
     } else {
       resultado = buscarUsuario(usuario, pass);
