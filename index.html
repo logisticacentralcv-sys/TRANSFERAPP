@@ -632,6 +632,7 @@ let S = {
   fRepNombre:"",
   fRepSoloBolsin:false,
   subTabBolsines:"buzon",
+  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"",
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   identidadRepModal: {dni:"", err:"", loading:false},
   selDevolucionId: null,
@@ -3228,8 +3229,28 @@ function renderLogTabla(){
   </div>`;
 }
 
+// Convierte un timestamp completo a su fecha LOCAL (Argentina) en formato
+// YYYY-MM-DD — para comparar contra fechaRequerida (que es solo fecha,
+// sin hora) sin caer en el mismo bug de zona horaria que ya corregimos
+// en otros lados (nunca usar toISOString() sola para esto).
+function fechaLocalDeTimestamp(iso){
+  if(!iso) return null;
+  const d = new Date(iso);
+  if(isNaN(d.getTime())) return null;
+  const local = new Date(d.getTime() - d.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,10);
+}
+
 function renderMetricas(){
-  const reqs=S.requests; const total=reqs.length||1;
+  let reqs = S.requests;
+
+  // ── Filtros ──────────────────────────────────────────────
+  if(S.metDesde) reqs = reqs.filter(r=>r.createdAt && r.createdAt.slice(0,10) >= S.metDesde);
+  if(S.metHasta) reqs = reqs.filter(r=>r.createdAt && r.createdAt.slice(0,10) <= S.metHasta);
+  if(S.metSucursal) reqs = reqs.filter(r=>(r.sucursal||r.area)===S.metSucursal || r.destino===S.metSucursal);
+  if(S.metRecorrido) reqs = reqs.filter(r=>r.recorrido===S.metRecorrido);
+
+  const total=reqs.length||1;
   const byS={},byE={};
   getDestinos().forEach(s=>{byS[s]=reqs.filter(r=>(r.sucursal||r.area)===s).length;});
   ESTADOS.forEach(e=>{byE[e]=reqs.filter(r=>r.estado===e).length;});
@@ -3239,7 +3260,38 @@ function renderMetricas(){
   const avgD=wd.length?Math.round(wd.reduce((a,r)=>a+(dh(r.scheduledAt,r.deliveredAt)||0),0)/wd.length):null;
   const noEntregadas = reqs.filter(r=>r.estado==="No entregada");
   const noEntregadasReprog = noEntregadas.filter(r=>reqs.some(x=>x.reprogramadaDeId===r.id)).length;
+
+  // Entregadas fuera de la fecha requerida: se entregó un día calendario
+  // posterior al que se pidió. Compara fechas LOCALES, no el timestamp
+  // crudo (para no marcar como "tarde" algo que llegó bien pero tarde
+  // en el día, y para no arrastrar el bug de UTC que ya corregimos).
+  const entregadasConFecha = reqs.filter(r=>r.estado==="Entregada" && r.fechaRequerida && r.deliveredAt);
+  const fueraDeFecha = entregadasConFecha.filter(r=>fechaLocalDeTimestamp(r.deliveredAt) > r.fechaRequerida);
+  const pctFuera = entregadasConFecha.length ? Math.round(fueraDeFecha.length/entregadasConFecha.length*100) : 0;
+
+  const sucursalesOpts = [...new Set(S.requests.flatMap(r=>[r.sucursal,r.area,r.destino].filter(Boolean)))].sort();
+  const recorridosOpts = [...new Set(S.requests.map(r=>r.recorrido).filter(Boolean))].sort();
+
   return `
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+    <div class="field" style="margin-bottom:0"><label>Desde</label><input type="date" class="inp" value="${escH(S.metDesde)}" onchange="S.metDesde=this.value;render()"/></div>
+    <div class="field" style="margin-bottom:0"><label>Hasta</label><input type="date" class="inp" value="${escH(S.metHasta)}" onchange="S.metHasta=this.value;render()"/></div>
+    <div class="field" style="margin-bottom:0;min-width:180px">
+      <label>Sucursal / área</label>
+      <select onchange="S.metSucursal=this.value;render()">
+        <option value="">Todas</option>
+        ${sucursalesOpts.map(s=>`<option ${S.metSucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:0;min-width:150px">
+      <label>Recorrido</label>
+      <select onchange="S.metRecorrido=this.value;render()">
+        <option value="">Todos</option>
+        ${recorridosOpts.map(r=>`<option ${S.metRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
+      </select>
+    </div>
+    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';render()">✕ Limpiar filtros</button>`:""}
+  </div>
   <div class="metrics-grid">
     <div class="card">
       <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">KPIs</p>
@@ -3253,6 +3305,7 @@ function renderMetricas(){
         <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">⚡ T. prom. respuesta</span><span class="mono" style="color:var(--blue)">${avgR!=null?avgR+"h":"—"}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">🚚 T. prom. entrega</span><span class="mono" style="color:var(--green)">${avgD!=null?avgD+"h":"—"}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">⚠️ No entregadas</span><span class="mono" style="color:var(--red)">${noEntregadas.length} <span style="color:var(--faint);font-weight:400">(${noEntregadasReprog} reprogramadas)</span></span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">📅 Entregadas fuera de fecha</span><span class="mono" style="color:${fueraDeFecha.length?"var(--red)":"var(--green)"}">${fueraDeFecha.length} <span style="color:var(--faint);font-weight:400">(${pctFuera}% de las entregadas con fecha)</span></span></div>
       </div>
     </div>
     <div class="card">
@@ -3265,6 +3318,25 @@ function renderMetricas(){
         ${Object.entries(byS).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).map(([s,v])=>bar(s,v,total,"var(--blue)")).join("")}
       </div>
     </div>
+    ${fueraDeFecha.length?`
+    <div class="card" style="grid-column:1/-1">
+      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">ENTREGADAS FUERA DE FECHA (${fueraDeFecha.length})</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>N°</th><th>Sucursal/Área</th><th>Destino</th><th>Fecha requerida</th><th>Entregada</th></tr></thead>
+          <tbody>
+            ${fueraDeFecha.sort((a,b)=>(b.deliveredAt||"").localeCompare(a.deliveredAt||"")).map(r=>`
+            <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+              <td class="id-cell">${escH(r.id)}</td>
+              <td>${escH(r.sucursal||r.area)}</td>
+              <td>${escH(r.destino)}</td>
+              <td class="muted-cell">${fd(r.fechaRequerida)}</td>
+              <td style="color:var(--red);font-weight:600">${fdt(r.deliveredAt)}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`:""}
   </div>`;
 }
 
