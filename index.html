@@ -3034,7 +3034,7 @@ function renderSucursalArea(){
                 <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">
                   🔑 Recibir
                 </button>`:""}
-                ${!esOrigen && r.estado==="Entregada (sin confirmar)"?`
+                ${!esOrigen && r.estado==="Entregada (sin confirmar)" && r.tipoPedido!=="bolsin"?`
                 <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openConfirmarCerrado('${escH(r.id)}')">
                   ✅ Confirmar transferencia
                 </button>`:""}
