@@ -2763,7 +2763,20 @@ async function guardarUsuario(){
       const { error } = await sb.from("usuarios").insert(datos);
       if(error) throw error;
       S.usuarios = [datos, ...S.usuarios];
-      toast(`✅ Usuario ${usuario} creado`);
+      toast(`✅ Usuario ${usuario} creado — activando su acceso...`);
+      // Crear la cuenta de Auth automáticamente, sin que Admin tenga
+      // que correr ningún script a mano.
+      try{
+        const resp = await fetch("/api/crear-usuario-auth", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({usuario, tipo, dni: datos.dni, password: datos.password}),
+        });
+        const j = await resp.json();
+        if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
+        toast(`✅ ${usuario} ya puede entrar a la app`);
+      }catch(eAuth){
+        toast(`⚠️ El usuario se creó pero su acceso no se activó solo (${eAuth.message}). Avisá al administrador técnico.`, "warn");
+      }
     }
     S.modal = null;
   }catch(e){
