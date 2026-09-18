@@ -2034,9 +2034,7 @@ function renderLogin(){
           ${S.loginLoading?`<span class="spinner"></span> Verificando...`:"Ingresar →"}
         </button>
       </div>
-      <p style="text-align:center;font-size:12px;margin-top:12px;color:${USE_SHEETS?"var(--teal)":"var(--amber)"}">
-        ${USE_SHEETS?"✅ Conectado a Supabase":"⚠️ Modo demo — los datos no persisten"}
-      </p>
+      ${USE_SHEETS?"":`<p style="text-align:center;font-size:12px;margin-top:12px;color:var(--amber)">⚠️ Modo demo — los datos no persisten</p>`}
     </div>
   </div>`;
 }
