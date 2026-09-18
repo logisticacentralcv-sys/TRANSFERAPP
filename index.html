@@ -3904,11 +3904,12 @@ function renderDetalle(){
 
   // ── PASO 5c: Dejada con sucursal cerrada (pendiente de confirmar) ──
   if(r.estado==="Entregada (sin confirmar)"){
+    const esBuzonBound = r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino);
     const quienDejo = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
     const metaDejo = verHoraTomaEntrega
       ? `${fdt(r.deliveredAt)} · ${quienDejo||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
       : `${quienDejo?"Por "+quienDejo:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
-    steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:r.tipoPedido==="bolsin"?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+    steps.push({dot:S_COLOR["Entregada (sin confirmar)"], title:esBuzonBound?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
   }
 
   // ── PASO 5c-bis: Bolsín dejado en el buzón (estado propio, distinto
@@ -3927,14 +3928,15 @@ function renderDetalle(){
     // Si vino del flujo "sucursal cerrada", separamos en dos pasos: cuándo
     // la dejó el repartidor y cuándo la sucursal confirmó que la recibió.
     if(r.confirmadaSucursalAt){
+      const esBuzonBound = r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino);
       const metaDejo = verHoraTomaEntrega
         ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`
         : `${quienEntrego?"Por "+quienEntrego:""}${r.aclaracionCerrado?" · "+r.aclaracionCerrado:""}`;
-      steps.push({dot:"#c98a1f", title:r.tipoPedido==="bolsin"?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
+      steps.push({dot:"#c98a1f", title:esBuzonBound?"📫 Dejado en el buzón":"🔒 Dejada — sucursal cerrada", meta:metaDejo});
       const metaConf = verHoraTomaEntrega
         ? `${fdt(r.confirmadaSucursalAt)} · ${r.nombreQuienRecibio||"—"}`
         : `Confirmada${r.nombreQuienRecibio?" por "+r.nombreQuienRecibio:""}`;
-      steps.push({dot:"#34d399", title:r.tipoPedido==="bolsin"?"✅ Retirado del buzón por Tesorería":"✅ Confirmada por la sucursal", meta:metaConf});
+      steps.push({dot:"#34d399", title:esBuzonBound?"✅ Retirado del buzón por Tesorería":"✅ Confirmada por la sucursal", meta:metaConf});
     } else {
       const metaEntr = verHoraTomaEntrega
         ? `${fdt(r.deliveredAt)} · ${quienEntrego||"—"}`
