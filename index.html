@@ -1814,13 +1814,24 @@ function buscarUsuario(usuario, password){
     return {ok:false, msg:"Usuario no encontrado."};
   }
 
-  // Login normal (no-sucursal) con contraseña
-  const tienePass = foundUser.password && String(foundUser.password).trim() !== "";
-  if(tienePass && foundUser.password !== p){
-    return {ok:false, msg:"Contraseña incorrecta."};
-  }
-  if(tienePass && !p){
-    return {ok:false, msg:"Ingresá tu contraseña."};
+  // Login normal (no-sucursal/repartidor) con contraseña.
+  // OJO: si el campo password está vacío PERO el tipo sí requiere
+  // contraseña (Logística, Admin, etc.), significa que esta cuenta ya
+  // está migrada a Auth y el password se vació a propósito por
+  // seguridad — este camino de respaldo NO la puede validar sin la
+  // contraseña real, así que hay que RECHAZAR el acceso, nunca
+  // abrirlo sin pedir nada.
+  const necesitaPass = !["SUCURSAL","REPARTIDOR"].includes(foundUser.tipo);
+  if(necesitaPass){
+    if(!foundUser.password || String(foundUser.password).trim()===""){
+      return {ok:false, msg:"No se pudo validar este usuario. Recargá la página e intentá de nuevo."};
+    }
+    if(foundUser.password !== p){
+      return {ok:false, msg:"Contraseña incorrecta."};
+    }
+    if(!p){
+      return {ok:false, msg:"Ingresá tu contraseña."};
+    }
   }
 
   return {ok:true, tipo:foundUser.tipo, usuario:foundUser.usuario||"", nombre:foundUser.nombre||foundUser.usuario, area:foundUser.area||"", recorrido:foundUser.recorrido||"", dni:foundUser.dni||""};
@@ -2048,10 +2059,14 @@ function checkIfSucursal(){
   const sucHint   = $("suc-hint");
   if(!passField||!sucHint) return;
 
-  // Verificar si el usuario existe sin contraseña en la lista cargada
+  // Verificar si el usuario es de un tipo que entra SIN contraseña
+  // (Sucursal y Repartidor). OJO: no mirar si el campo "password" está
+  // vacío — ahora lo vaciamos a propósito para las cuentas migradas a
+  // Auth (Logística, Admin, etc.), así que ese campo vacío ya NO
+  // significa "no tiene contraseña", hay que decidirlo por el tipo real.
   const lista     = USE_SHEETS ? S.usuarios : DEMO_USUARIOS;
   const userMatch = lista.find(x=>x.usuario?.toLowerCase()===val&&x.activo!=="no");
-  const sinPass   = userMatch && (!userMatch.password || String(userMatch.password).trim()==="");
+  const sinPass   = userMatch && ["SUCURSAL","REPARTIDOR"].includes(userMatch.tipo);
 
   if(esSuc){
     passField.style.display = "none";
