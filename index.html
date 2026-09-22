@@ -512,7 +512,11 @@ function areasRecepcionFresco(){
 }
 function esPedidoPlanificacionFresco(r){
   const a = normNotif(r.area);
-  return areasRecepcionFresco().some(area=>normNotif(area)===a);
+  const esDeAreaCorrespondiente = areasRecepcionFresco().some(area=>normNotif(area)===a);
+  // Además del área que lo pidió, tiene que salir físicamente de
+  // fábrica — si Planificación arma una transferencia entre dos
+  // sucursales (no desde fábrica), eso no lo prepara Recepción Fresco.
+  return esDeAreaCorrespondiente && esOrigenFabrica(r);
 }
 
 // Detectar si el DESTINO es fábrica/depósito
@@ -622,6 +626,7 @@ let S = {
   subTabBolsines:"buzon",
   metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"",
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
+  miIdentidadFresco:null, // {dni,nombre} — idem para Recepción Fresco (login compartido)
   identidadRepModal: {dni:"", err:"", loading:false},
   selDevolucionId: null,
   fTesFecha:"", fTesSucursal:"", fTesTexto:"",
@@ -2892,22 +2897,20 @@ function renderRecepcionista(){
 }
 
 // ── RECEPCIÓN FRESCO — prepara lo que aprueba Planificación/Fresco ──
-// Circuito de DOS pasos (a diferencia del recepcionista genérico que
-// tiene uno solo): primero "Preparado" y recién después "Lista para
-// retirar" — así el repartidor no la ve como lista hasta que de verdad
-// está armada.
+// Circuito de UN solo paso: "Marcar preparado" ya deja la solicitud
+// lista para retirar directamente — antes eran dos pasos separados,
+// se unificaron a pedido.
 function renderRecepcionFresco(){
   const u = S.user;
   const pedidos = S.requests.filter(r => ["Aprobada","Programada"].includes(r.estado) && esPedidoPlanificacionFresco(r));
   const paraPreparar   = pedidos.filter(r=>!r.preparadoAt);
-  const faltaListo     = pedidos.filter(r=>r.preparadoAt && !r.listoAt);
   const yaListas       = S.requests.filter(r=>esPedidoPlanificacionFresco(r) && r.listoAt &&
                             ["Lista para retirar","En tránsito","En fábrica","Entregada","Entregada (sin confirmar)","En el buzón"].includes(r.estado))
                           .sort((a,b)=>(b.listoAt||"").localeCompare(a.listoAt||""))
                           .slice(0,15);
 
   const fila = (r, accionHtml) => `
-    <div class="card" style="padding:14px 16px">
+    <div class="card" style="padding:14px 16px;cursor:pointer" onclick="openDetalle('${escH(r.id)}')">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
         <div>
           <strong>${escH(r.id)}</strong>
@@ -2917,7 +2920,7 @@ function renderRecepcionFresco(){
       </div>
       <p style="margin-top:8px;font-size:14px">${escH(r.descripcion)} <span style="color:var(--muted)">— ${escH(String(r.cantidad))} ${escH(r.unidad)}</span></p>
       ${r.observaciones?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">${escH(r.observaciones)}</p>`:""}
-      ${accionHtml}
+      <div onclick="event.stopPropagation()">${accionHtml}</div>
     </div>`;
 
   return `
@@ -2926,9 +2929,16 @@ function renderRecepcionFresco(){
       <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">🥬 Recepción Fresco</h2>
       <p style="color:var(--muted);font-size:13px">${escH(u.nombre)} · Preparación de pedidos de Planificación / Planificador Fresco</p>
     </div>
+    ${S.miIdentidadFresco?`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--muted)">
+      👤 En este dispositivo: <strong style="color:var(--text)">${escH(S.miIdentidadFresco.nombre)}</strong>
+      <button class="btn btn-ghost btn-sm" onclick="cambiarIdentidadFresco()">Cambiar</button>
+    </div>`:`
+    <div class="card" style="margin-bottom:16px;padding:12px 16px;border-left:3px solid var(--amber);font-size:13px">
+      👤 Todavía no te identificaste en este dispositivo — la primera vez que marques un pedido como preparado te va a pedir el DNI, y no te lo vuelve a pedir después.
+    </div>`}
     <div class="stats-grid">
       ${statCard("📝","PARA PREPARAR",paraPreparar.length,"var(--amber)")}
-      ${statCard("✅","FALTA CONFIRMAR LISTO",faltaListo.length,"var(--teal)")}
       ${statCard("🚚","ENVIADAS RECIENTES",yaListas.length,"#1fa86a")}
     </div>
 
@@ -2936,16 +2946,7 @@ function renderRecepcionFresco(){
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
       ${paraPreparar.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos pendientes de preparar.</p>`:""}
       ${paraPreparar.map(r=>fila(r,
-        `<div style="margin-top:10px"><button class="btn btn-warn btn-sm" onclick="openPrepararFresco('${escH(r.id)}')">📝 Marcar preparado</button></div>`
-      )).join("")}
-    </div>
-
-    <h3 style="font-size:14px;font-weight:700;margin:18px 0 10px">✅ Preparadas — falta confirmar "Listo"</h3>
-    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:24px">
-      ${faltaListo.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos esperando confirmación.</p>`:""}
-      ${faltaListo.map(r=>fila(r,
-        `<p style="margin-top:8px;font-size:12px;color:var(--muted)">📝 Preparado por ${escH(r.nombrePreparoPor||"—")}</p>
-         <div style="margin-top:6px"><button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar listo para retirar</button></div>`
+        `<div style="margin-top:10px"><button class="btn btn-warn btn-sm" onclick="openPrepararFresco('${escH(r.id)}')">✅ Preparado y listo para retirar</button></div>`
       )).join("")}
     </div>
 
@@ -6197,6 +6198,10 @@ function openTomarTransferencia(id){
 }
 // Sucursal origen confirma que la transferencia está lista para retirar
 function openPrepararFresco(id){
+  if(S.miIdentidadFresco){
+    ejecutarPrepararFresco(id, S.miIdentidadFresco.dni, S.miIdentidadFresco.nombre);
+    return;
+  }
   S.prepararFrescoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "prepararFresco";
   render();
@@ -6204,7 +6209,7 @@ function openPrepararFresco(id){
 function renderPrepararFrescoModal(){
   const d = S.prepararFrescoModal;
   return `
-  <div class="alert-info" style="margin-bottom:14px;font-size:13px">📝 Confirmá tu DNI para dejar registrado quién preparó este pedido.</div>
+  <div class="alert-info" style="margin-bottom:14px;font-size:13px">📝 Confirmá tu DNI para dejar registrado quién preparó este pedido — se va a guardar en este dispositivo, no te lo va a volver a pedir.</div>
   <div class="field">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="pf-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
@@ -6216,9 +6221,22 @@ function renderPrepararFrescoModal(){
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-warn btn-md" onclick="submitPrepararFresco()" ${d.loading?"disabled":""}>
-      ${d.loading?`<span class="spinner"></span> Guardando...`:"📝 Confirmar preparado"}
+      ${d.loading?`<span class="spinner"></span> Guardando...`:"✅ Preparado y listo para retirar"}
     </button>
   </div>`;
+}
+async function ejecutarPrepararFresco(id, dni, nombre){
+  const nowTs = now();
+  const changes = {
+    preparadoAt: nowTs, dniPreparoPor: dni, nombrePreparoPor: nombre,
+    estado: "Lista para retirar", dniListoPor: dni, nombreListoPor: nombre, listoAt: nowTs,
+    updatedAt: nowTs,
+  };
+  S.requests = S.requests.map(x=>x.id===id?{...x,...changes}:x);
+  S.modal = null;
+  toast(`✅ ${nombre} preparó el pedido — ya está lista para retirar`);
+  render();
+  sheetsUpdate(id, changes);
 }
 async function submitPrepararFresco(){
   const d = S.prepararFrescoModal;
@@ -6229,13 +6247,14 @@ async function submitPrepararFresco(){
   if(!check.ok){ S.prepararFrescoModal.err=check.msg; render(); return; }
 
   d.loading = true; renderNow();
-  const changes = {
-    preparadoAt: now(), dniPreparoPor: dni, nombrePreparoPor: check.nombre, updatedAt: now(),
-  };
-  S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
-  S.modal = null;
-  toast(`📝 ${check.nombre} marcó el pedido como preparado`);
-  sheetsUpdate(d.id, changes);
+  S.miIdentidadFresco = {dni, nombre:check.nombre};
+  try{ localStorage.setItem("tl_fresco_identidad", JSON.stringify(S.miIdentidadFresco)); }catch(e){}
+  await ejecutarPrepararFresco(d.id, dni, check.nombre);
+}
+function cambiarIdentidadFresco(){
+  try{ localStorage.removeItem("tl_fresco_identidad"); }catch(e){}
+  S.miIdentidadFresco = null;
+  render();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -6913,7 +6932,7 @@ async function doLogin(){
   S.view = "app";
   S.lastRefresh = Date.now();
   try{ localStorage.setItem("tl_sesion", JSON.stringify(S.user)); }catch(e){}
-  if(S.user.rol==="repartidor") cargarIdentidadRepartidor();
+  if(S.user.rol==="repartidor" || S.user.rol==="recepcionista") cargarIdentidadRepartidor();
   reiniciarTimerInactividad();
   render(); // mostrar app ya
 
@@ -7040,6 +7059,10 @@ function cargarIdentidadRepartidor(){
   try{
     const guardada = localStorage.getItem("tl_rep_identidad");
     if(guardada) S.miIdentidadRep = JSON.parse(guardada);
+  }catch(e){}
+  try{
+    const guardadaFresco = localStorage.getItem("tl_fresco_identidad");
+    if(guardadaFresco) S.miIdentidadFresco = JSON.parse(guardadaFresco);
   }catch(e){}
 }
 function abrirIdentificarRepartidor(){
