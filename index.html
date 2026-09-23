@@ -594,10 +594,11 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {motivo:"", detalle:"", loading:false, err:""},
+  devolucionForm: {motivo:"", detalle:"", loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoSeleccionado:null},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
+  devolucionFiltroProducto: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
@@ -1311,7 +1312,7 @@ function puedeVerDevoluciones(){
 // Apagado a propósito mientras se reconstruye el formulario con
 // catálogo de productos (búsqueda por nombre/código) — las devoluciones
 // que ya estaban cargadas siguen su curso normal (tomar, confirmar, etc).
-const DEVOLUCIONES_NUEVAS_HABILITADAS = false;
+const DEVOLUCIONES_NUEVAS_HABILITADAS = true;
 const MOTIVOS_DEVOLUCION = ["Vencido","Rotura/pérdida de vacío","Sin etiqueta","Mal olor o color","Otro"];
 
 async function abrirDevoluciones(){
@@ -1330,7 +1331,40 @@ async function cargarDevoluciones(){
   }catch(e){ console.warn("Cargar devoluciones:",e); }
 }
 
+let _timerBusquedaProducto = null;
+function buscarProductosDevolucion(query){
+  S.devolucionForm.productoQuery = query;
+  if(_timerBusquedaProducto) clearTimeout(_timerBusquedaProducto);
+  const q = query.trim();
+  if(q.length < 2){ S.devolucionForm.productoResultados = []; S.devolucionForm.productoBuscando=false; render(); return; }
+  S.devolucionForm.productoBuscando = true;
+  render();
+  _timerBusquedaProducto = setTimeout(async ()=>{
+    try{
+      const { data, error } = await sb.from("productos")
+        .select("id,descripcion,codigo_interno,codigo_barras")
+        .or(`descripcion.ilike.%${q}%,codigo_interno.ilike.%${q}%,codigo_barras.ilike.%${q}%`)
+        .limit(15);
+      if(error) throw error;
+      S.devolucionForm.productoResultados = toCamelRows(data||[]);
+    }catch(e){
+      console.warn("Buscar productos:", e);
+      S.devolucionForm.productoResultados = [];
+    }
+    S.devolucionForm.productoBuscando = false;
+    render();
+  }, 300);
+}
+function elegirProductoDevolucion(p){
+  S.devolucionForm.productoSeleccionado = p;
+  S.devolucionForm.productoQuery = "";
+  S.devolucionForm.productoResultados = [];
+  render();
+}
+
 async function submitDevolucion(){
+  const producto = S.devolucionForm.productoSeleccionado;
+  if(!producto){ S.devolucionForm.err="Buscá y elegí el producto."; render(); return; }
   const motivoBase = ($("devol-motivo-select")?.value||S.devolucionForm.motivo||"").trim();
   if(!motivoBase){ S.devolucionForm.err="Elegí el motivo de la devolución."; render(); return; }
   const detalle = ($("devol-detalle")?.value||S.devolucionForm.detalle||"").trim();
@@ -1348,12 +1382,15 @@ async function submitDevolucion(){
     motivo, fotoUrl,
     estado: "Pendiente",
     creadoPor: u.nombre||u.area||"",
+    productoId: producto.id,
+    productoDescripcion: producto.descripcion,
+    productoCodigoInterno: producto.codigoInterno||"",
   });
   try{
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {motivo:"", detalle:"", loading:false, err:""};
+    S.devolucionForm = {motivo:"", detalle:"", loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoSeleccionado:null};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -1686,6 +1723,10 @@ function renderDevoluciones(){
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
     if(S.devolucionFiltroEstado)   lista = lista.filter(d=>d.estado===S.devolucionFiltroEstado);
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
+    if(S.devolucionFiltroProducto){
+      const qp = normNotif(S.devolucionFiltroProducto);
+      lista = lista.filter(d=>normNotif(d.productoDescripcion).includes(qp) || normNotif(d.productoCodigoInterno).includes(qp));
+    }
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
   const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
@@ -1709,7 +1750,33 @@ function renderDevoluciones(){
     ${!esGestor && !esRepartidor && DEVOLUCIONES_NUEVAS_HABILITADAS?`
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
-      <div class="field">
+      <div class="field" style="position:relative">
+        <label>Producto <span class="req">*</span></label>
+        ${S.devolucionForm.productoSeleccionado?`
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:11px 14px">
+          <div>
+            <div style="font-weight:600">${escH(S.devolucionForm.productoSeleccionado.descripcion)}</div>
+            ${S.devolucionForm.productoSeleccionado.codigoInterno?`<div style="font-size:12px;color:var(--faint)">Cód. interno: ${escH(S.devolucionForm.productoSeleccionado.codigoInterno)}</div>`:""}
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="S.devolucionForm.productoSeleccionado=null;S.devolucionForm.productoQuery='';render()">Cambiar</button>
+        </div>`:`
+        <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
+          value="${escH(S.devolucionForm.productoQuery||"")}"
+          oninput="buscarProductosDevolucion(this.value)" autocomplete="off"/>
+        ${S.devolucionForm.productoBuscando?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Buscando...</div>`:""}
+        ${(S.devolucionForm.productoResultados||[]).length>0?`
+        <div class="card" style="position:absolute;left:0;right:0;top:66px;z-index:20;max-height:260px;overflow-y:auto;padding:6px">
+          ${S.devolucionForm.productoResultados.map(p=>`
+            <div style="padding:9px 10px;border-radius:6px;cursor:pointer" onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background=''" onclick='elegirProductoDevolucion(${JSON.stringify(p).replace(/'/g,"&apos;")})'>
+              <div style="font-size:13px;font-weight:500">${escH(p.descripcion)}</div>
+              ${p.codigoInterno?`<div style="font-size:11px;color:var(--faint)">Cód. interno: ${escH(p.codigoInterno)}</div>`:""}
+            </div>`).join("")}
+        </div>`:""}
+        ${S.devolucionForm.productoQuery && !S.devolucionForm.productoBuscando && (S.devolucionForm.productoResultados||[]).length===0?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sin resultados — probá con otra palabra o el código.</div>`:""}
+        `}
+      </div>
+      ${S.devolucionForm.productoSeleccionado?`
+      <div class="field" style="margin-top:12px">
         <label>Motivo <span class="req">*</span></label>
         <select id="devol-motivo-select" class="inp" onchange="S.devolucionForm.motivo=this.value;render()">
           <option value="">— Elegí un motivo —</option>
@@ -1730,7 +1797,7 @@ function renderDevoluciones(){
         <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
           ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
         </button>
-      </div>
+      </div>`:""}
     </div>`:(!esGestor && !esRepartidor?`
     <div class="card" style="margin-bottom:20px;border-left:3px solid var(--amber)">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">🛠️ Carga de devoluciones en mantenimiento</h3>
@@ -1764,11 +1831,12 @@ function renderDevoluciones(){
         <option ${S.devolucionFiltroEstado==="En fábrica"?"selected":""}>En fábrica</option>
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
-      </select>`:""}
+      </select>
+      <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>`:""}
     </div>`:""}
 
     <div style="display:flex;flex-direction:column;gap:10px">
-      ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay devoluciones${S.devolucionFiltroSucursal||S.devolucionFiltroEstado?" con ese filtro":""}.</p>`:""}
+      ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay devoluciones${S.devolucionFiltroSucursal||S.devolucionFiltroEstado||S.devolucionFiltroProducto?" con ese filtro":""}.</p>`:""}
       ${lista.map(d=>`
         <div class="card" style="padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
@@ -1786,6 +1854,7 @@ function renderDevoluciones(){
             </div>
           </div>
           <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
+          ${d.productoDescripcion?`<p style="margin-top:4px;font-size:13px"><span style="color:var(--faint)">Producto:</span> <strong>${escH(d.productoDescripcion)}</strong>${d.productoCodigoInterno?` <span style="color:var(--faint)">(${escH(d.productoCodigoInterno)})</span>`:""}</p>`:""}
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
           ${d.nombreRepartidor?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">📦 Dejada en fábrica por ${escH(d.nombreRepartidor)}</p>`:""}
