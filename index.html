@@ -2377,7 +2377,7 @@ function renderPlanificacion(){
   // origen o destino físico — si no, se le escapan las transferencias
   // que pasan por ahí pero fueron pedidas por otra área (ej: Administración
   // pidiendo algo "Depósito → Independencia").
-  const esTambienLugarFisico = getSucursales().some(s=>norm2(s)===areaN);
+  const esTambienLugarFisico = getSucursales().some(s=>norm2(s)===areaN) || getDestinos().some(s=>norm2(s)===areaN);
   const mine = S.requests.filter(r=>{
     const rArea = norm2(r.area);
     if(rArea && areaN && rArea===areaN) return true;
