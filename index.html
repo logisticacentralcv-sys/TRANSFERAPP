@@ -1308,6 +1308,10 @@ function puedeVerDevoluciones(){
   if(!u) return false;
   return u.rol==="sucursal" || u.rol==="repartidor" || esGestorDevolucion();
 }
+// Apagado a propósito mientras se reconstruye el formulario con
+// catálogo de productos (búsqueda por nombre/código) — las devoluciones
+// que ya estaban cargadas siguen su curso normal (tomar, confirmar, etc).
+const DEVOLUCIONES_NUEVAS_HABILITADAS = false;
 const MOTIVOS_DEVOLUCION = ["Vencido","Rotura/pérdida de vacío","Sin etiqueta","Mal olor o color","Otro"];
 
 async function abrirDevoluciones(){
@@ -1702,7 +1706,7 @@ function renderDevoluciones(){
       <button class="tab ${S.tabDevGestor==="historial"?"active":""}" onclick="S.tabDevGestor='historial';render()">🗂️ Historial</button>
     </div>`:""}
 
-    ${!esGestor && !esRepartidor?`
+    ${!esGestor && !esRepartidor && DEVOLUCIONES_NUEVAS_HABILITADAS?`
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
       <div class="field">
@@ -1727,7 +1731,11 @@ function renderDevoluciones(){
           ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
         </button>
       </div>
-    </div>`:""}
+    </div>`:(!esGestor && !esRepartidor?`
+    <div class="card" style="margin-bottom:20px;border-left:3px solid var(--amber)">
+      <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">🛠️ Carga de devoluciones en mantenimiento</h3>
+      <p style="font-size:13px;color:var(--muted)">Estamos mejorando este formulario (vas a poder buscar el producto por nombre o código). Volvé a intentar más tarde — las devoluciones que ya estaban cargadas siguen su curso normal.</p>
+    </div>`:"")}
 
     ${esRepartidor && (S.devolSeleccionTomar.size>0 || S.devolSeleccion.size>0)?`
     <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
