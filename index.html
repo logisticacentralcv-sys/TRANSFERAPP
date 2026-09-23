@@ -848,19 +848,38 @@ async function sheetsLoadUsuarios(){
   }catch(e){console.warn("Supabase load usuarios:",e);}
 }
 
+// Trae TODAS las filas de una tabla, en tandas de 1000 — PostgREST
+// corta en 1000 filas por defecto si no se pagina explícitamente, y
+// con más de 1000 solicitudes los contadores/métricas quedaban
+// atascados justo en ese número.
+async function fetchTodasLasFilas(tabla, query){
+  const TANDA = 1000;
+  let desde = 0;
+  let todas = [];
+  while(true){
+    let q = sb.from(tabla).select("*").range(desde, desde+TANDA-1);
+    if(query) q = query(q);
+    const { data, error } = await q;
+    if(error) throw error;
+    todas = todas.concat(data||[]);
+    if(!data || data.length < TANDA) break; // última tanda
+    desde += TANDA;
+  }
+  return todas;
+}
+
 // FASE 2: cargar el resto en background una vez que ya entraste
 async function sheetsLoadDatos(){
   if(!USE_SHEETS) return;
   try{
-    const [rs,recs,dests]=await Promise.all([
-      sb.from("solicitudes").select("*").order("created_at",{ascending:false}),
+    const [rsData,recs,dests]=await Promise.all([
+      fetchTodasLasFilas("solicitudes", q=>q.order("created_at",{ascending:false})),
       sb.from("recorridos").select("*"),
       sb.from("destinos").select("*"),
     ]);
-    if(rs.error) throw rs.error;
     if(recs.error) throw recs.error;
     if(dests.error) throw dests.error;
-    S.requests   = toCamelRows(rs.data).filter(r=>r.id);
+    S.requests   = toCamelRows(rsData).filter(r=>r.id);
     S.recorridos = toCamelRows(recs.data).filter(r=>r.nombre).map(r=>r.nombre);
     S.destinos   = toCamelRows(dests.data).filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
   }catch(e){console.warn("Supabase load datos:",e);}
@@ -1041,8 +1060,7 @@ async function abrirQuejas(){
 async function cargarQuejas(){
   if(!USE_SHEETS) return;
   try{
-    const { data, error } = await sb.from("quejas").select("*").order("created_at",{ascending:false});
-    if(error) throw error;
+    const data = await fetchTodasLasFilas("quejas", q=>q.order("created_at",{ascending:false}));
     S.quejas = toCamelRows(data);
     S.quejasLoaded = true;
   }catch(e){ console.warn("Cargar quejas:",e); }
@@ -1302,8 +1320,7 @@ async function abrirDevoluciones(){
 async function cargarDevoluciones(){
   if(!USE_SHEETS) return;
   try{
-    const { data, error } = await sb.from("devoluciones").select("*").order("created_at",{ascending:false});
-    if(error) throw error;
+    const data = await fetchTodasLasFilas("devoluciones", q=>q.order("created_at",{ascending:false}));
     S.devoluciones = toCamelRows(data);
     S.devolucionesLoaded = true;
   }catch(e){ console.warn("Cargar devoluciones:",e); }
