@@ -594,7 +594,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false},
+  devolucionForm: {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoStaged:null},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -1355,16 +1355,30 @@ function buscarProductosDevolucion(query){
     render();
   }, 300);
 }
-// Agrega el producto a la lista de items de esta devolución (no
-// reemplaza — se puede seguir buscando y agregando más).
+// Selecciona el producto de los resultados de búsqueda, pero todavía
+// no lo agrega a la lista — queda "en espera" hasta tocar el botón
+// "+ Agregar producto" (así no se agrega por accidente al tipear).
 function elegirProductoDevolucion(p){
+  S.devolucionForm.productoStaged = p;
+  S.devolucionForm.productoQuery = "";
+  S.devolucionForm.productoResultados = [];
+  render();
+}
+function cancelarProductoStaged(){
+  S.devolucionForm.productoStaged = null;
+  render();
+}
+// Agrega el producto en espera al PRINCIPIO de la lista (el último
+// que cargás siempre arriba de todo, no se pega abajo).
+function confirmarAgregarProducto(){
+  const p = S.devolucionForm.productoStaged;
+  if(!p) return;
   if(S.devolucionForm.items.some(it=>it.producto.id===p.id)){
     toast("Ese producto ya está agregado","warn");
   } else {
-    S.devolucionForm.items.push({producto:p, motivo:"", detalle:""});
+    S.devolucionForm.items.unshift({producto:p, motivo:"", detalle:""});
   }
-  S.devolucionForm.productoQuery = "";
-  S.devolucionForm.productoResultados = [];
+  S.devolucionForm.productoStaged = null;
   render();
 }
 function quitarItemDevolucion(idx){
@@ -1413,7 +1427,7 @@ async function submitDevolucion(){
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
+    S.devolucionForm = {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoStaged:null};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -1782,6 +1796,17 @@ function renderDevoluciones(){
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
       <div class="field" style="position:relative">
         <label>Agregar producto</label>
+        ${S.devolucionForm.productoStaged?`
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:11px 14px">
+          <div>
+            <div style="font-weight:600">${escH(S.devolucionForm.productoStaged.descripcion)}</div>
+            ${S.devolucionForm.productoStaged.codigoInterno?`<div style="font-size:12px;color:var(--faint)">Cód. interno: ${escH(S.devolucionForm.productoStaged.codigoInterno)}</div>`:""}
+          </div>
+          <div style="display:flex;gap:8px;flex-shrink:0">
+            <button class="btn btn-ghost btn-sm" onclick="cancelarProductoStaged()">Cambiar</button>
+            <button class="btn btn-teal btn-sm" onclick="confirmarAgregarProducto()">+ Agregar producto</button>
+          </div>
+        </div>`:`
         <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
           value="${escH(S.devolucionForm.productoQuery||"")}"
           oninput="buscarProductosDevolucion(this.value)" autocomplete="off"/>
@@ -1795,6 +1820,7 @@ function renderDevoluciones(){
             </div>`).join("")}
         </div>`:""}
         ${S.devolucionForm.productoQuery && !S.devolucionForm.productoBuscando && (S.devolucionForm.productoResultados||[]).length===0?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sin resultados — probá con otra palabra o el código.</div>`:""}
+        `}
       </div>
 
       ${S.devolucionForm.items.length>0?`
@@ -1815,9 +1841,9 @@ function renderDevoluciones(){
               ${MOTIVOS_DEVOLUCION.map(m=>`<option ${it.motivo===m?"selected":""}>${m}</option>`).join("")}
             </select>
           </div>
-          ${it.motivo?`
+          ${it.motivo==="Otro"?`
           <div class="field" style="margin-top:8px;margin-bottom:0">
-            <label>Detalle ${it.motivo==="Otro"?'<span class="req">*</span>':'<span style="color:var(--faint);font-size:12px">(opcional)</span>'}</label>
+            <label>Detalle <span class="req">*</span></label>
             <textarea id="devol-detalle-${i}" rows="1" placeholder="Contanos más si hace falta..."
               oninput="S.devolucionForm.items[${i}].detalle=this.value">${escH(it.detalle||"")}</textarea>
           </div>`:""}
