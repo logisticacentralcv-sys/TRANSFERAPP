@@ -594,7 +594,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoStaged:null},
+  devolucionForm: {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -1355,35 +1355,28 @@ function buscarProductosDevolucion(query){
     render();
   }, 300);
 }
-// Selecciona el producto de los resultados de búsqueda, pero todavía
-// no lo agrega a la lista — queda "en espera" hasta tocar el botón
-// "+ Agregar producto" (así no se agrega por accidente al tipear).
+// Elegir del desplegable agrega DIRECTO a la lista (arriba de todo,
+// el último cargado siempre primero), ya editable ahí mismo — sin
+// paso de confirmación de por medio.
 function elegirProductoDevolucion(p){
-  S.devolucionForm.productoStaged = p;
-  S.devolucionForm.productoQuery = "";
-  S.devolucionForm.productoResultados = [];
-  render();
-}
-function cancelarProductoStaged(){
-  S.devolucionForm.productoStaged = null;
-  render();
-}
-// Agrega el producto en espera al PRINCIPIO de la lista (el último
-// que cargás siempre arriba de todo, no se pega abajo).
-function confirmarAgregarProducto(){
-  const p = S.devolucionForm.productoStaged;
-  if(!p) return;
   if(S.devolucionForm.items.some(it=>it.producto.id===p.id)){
     toast("Ese producto ya está agregado","warn");
   } else {
-    S.devolucionForm.items.unshift({producto:p, motivo:"", detalle:""});
+    S.devolucionForm.items.unshift({producto:p, cantidad:"", unidad:"Kg", motivo:"", detalle:""});
   }
-  S.devolucionForm.productoStaged = null;
+  S.devolucionForm.productoQuery = "";
+  S.devolucionForm.productoResultados = [];
   render();
 }
 function quitarItemDevolucion(idx){
   S.devolucionForm.items.splice(idx,1);
   render();
+}
+// Enfoca el buscador para sumar otro producto (por si quedó fuera de
+// vista en el celular, con varios productos ya cargados arriba)
+function enfocarBuscadorProducto(){
+  const el = $("devol-producto-query");
+  if(el){ el.scrollIntoView({behavior:"smooth", block:"center"}); el.focus(); }
 }
 
 async function submitDevolucion(){
@@ -1391,10 +1384,15 @@ async function submitDevolucion(){
   if(!items.length){ S.devolucionForm.err="Agregá al menos un producto."; render(); return; }
   for(let i=0;i<items.length;i++){
     const it = items[i];
+    const cantEl = $(`devol-cantidad-${i}`);
+    it.cantidad = cantEl ? cantEl.value : it.cantidad;
+    const unidadEl = $(`devol-unidad-${i}`);
+    it.unidad = unidadEl ? unidadEl.value : it.unidad;
     const motivoEl = $(`devol-motivo-${i}`);
     it.motivo = motivoEl ? motivoEl.value : it.motivo;
     const detalleEl = $(`devol-detalle-${i}`);
     it.detalle = detalleEl ? detalleEl.value.trim() : it.detalle;
+    if(!it.cantidad || isNaN(+it.cantidad) || +it.cantidad<=0){ S.devolucionForm.err=`Ingresá la cantidad de "${it.producto.descripcion}".`; render(); return; }
     if(!it.motivo){ S.devolucionForm.err=`Elegí el motivo para "${it.producto.descripcion}".`; render(); return; }
     if(it.motivo==="Otro" && !it.detalle){ S.devolucionForm.err=`Contá el detalle de "${it.producto.descripcion}" — elegiste 'Otro'.`; render(); return; }
   }
@@ -1409,6 +1407,8 @@ async function submitDevolucion(){
     productoId: it.producto.id,
     descripcion: it.producto.descripcion,
     codigoInterno: it.producto.codigoInterno||"",
+    cantidad: +it.cantidad,
+    unidad: it.unidad,
     motivo: it.detalle ? `${it.motivo} — ${it.detalle}` : it.motivo,
   }));
   // Motivo/resumen general de la devolución (para vistas viejas que
@@ -1427,7 +1427,7 @@ async function submitDevolucion(){
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoStaged:null};
+    S.devolucionForm = {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -1795,18 +1795,7 @@ function renderDevoluciones(){
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
       <div class="field" style="position:relative">
-        <label>Agregar producto</label>
-        ${S.devolucionForm.productoStaged?`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:11px 14px">
-          <div>
-            <div style="font-weight:600">${escH(S.devolucionForm.productoStaged.descripcion)}</div>
-            ${S.devolucionForm.productoStaged.codigoInterno?`<div style="font-size:12px;color:var(--faint)">Cód. interno: ${escH(S.devolucionForm.productoStaged.codigoInterno)}</div>`:""}
-          </div>
-          <div style="display:flex;gap:8px;flex-shrink:0">
-            <button class="btn btn-ghost btn-sm" onclick="cancelarProductoStaged()">Cambiar</button>
-            <button class="btn btn-teal btn-sm" onclick="confirmarAgregarProducto()">+ Agregar producto</button>
-          </div>
-        </div>`:`
+        <label>Buscar producto</label>
         <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
           value="${escH(S.devolucionForm.productoQuery||"")}"
           oninput="buscarProductosDevolucion(this.value)" autocomplete="off"/>
@@ -1820,7 +1809,6 @@ function renderDevoluciones(){
             </div>`).join("")}
         </div>`:""}
         ${S.devolucionForm.productoQuery && !S.devolucionForm.productoBuscando && (S.devolucionForm.productoResultados||[]).length===0?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sin resultados — probá con otra palabra o el código.</div>`:""}
-        `}
       </div>
 
       ${S.devolucionForm.items.length>0?`
@@ -1834,7 +1822,20 @@ function renderDevoluciones(){
             </div>
             <button class="btn btn-ghost btn-sm" onclick="quitarItemDevolucion(${i})">✕</button>
           </div>
-          <div class="field" style="margin-top:10px;margin-bottom:0">
+          <div class="g2" style="margin-top:10px">
+            <div class="field" style="margin-bottom:0">
+              <label>Cantidad <span class="req">*</span></label>
+              <input id="devol-cantidad-${i}" type="number" min="0" step="0.01" class="inp" placeholder="Ej: 5"
+                value="${escH(String(it.cantidad||""))}" oninput="S.devolucionForm.items[${i}].cantidad=this.value"/>
+            </div>
+            <div class="field" style="margin-bottom:0">
+              <label>Unidad</label>
+              <select id="devol-unidad-${i}" class="inp" onchange="S.devolucionForm.items[${i}].unidad=this.value">
+                ${UNIDADES.map(un=>`<option ${it.unidad===un?"selected":""}>${un}</option>`).join("")}
+              </select>
+            </div>
+          </div>
+          <div class="field" style="margin-top:8px;margin-bottom:0">
             <label>Motivo <span class="req">*</span></label>
             <select id="devol-motivo-${i}" class="inp" onchange="S.devolucionForm.items[${i}].motivo=this.value;render()">
               <option value="">— Elegí un motivo —</option>
@@ -1848,7 +1849,9 @@ function renderDevoluciones(){
               oninput="S.devolucionForm.items[${i}].detalle=this.value">${escH(it.detalle||"")}</textarea>
           </div>`:""}
         </div>`).join("")}
-      </div>`:`<p style="font-size:12px;color:var(--muted);margin-top:8px">Todavía no agregaste ningún producto.</p>`}
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="enfocarBuscadorProducto()">+ Agregar otro producto</button>
+      `:`<p style="font-size:12px;color:var(--muted);margin-top:8px">Todavía no agregaste ningún producto.</p>`}
 
       ${S.devolucionForm.err?`<span class="err-msg" style="display:block;margin-top:10px">${escH(S.devolucionForm.err)}</span>`:""}
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -1921,7 +1924,7 @@ function renderDevoluciones(){
           ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?"":`<p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>`; })()}
           ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
