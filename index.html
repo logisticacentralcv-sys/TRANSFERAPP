@@ -594,7 +594,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {motivo:"", detalle:"", loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoSeleccionado:null},
+  devolucionForm: {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -1355,42 +1355,65 @@ function buscarProductosDevolucion(query){
     render();
   }, 300);
 }
+// Agrega el producto a la lista de items de esta devolución (no
+// reemplaza — se puede seguir buscando y agregando más).
 function elegirProductoDevolucion(p){
-  S.devolucionForm.productoSeleccionado = p;
+  if(S.devolucionForm.items.some(it=>it.producto.id===p.id)){
+    toast("Ese producto ya está agregado","warn");
+  } else {
+    S.devolucionForm.items.push({producto:p, motivo:"", detalle:""});
+  }
   S.devolucionForm.productoQuery = "";
   S.devolucionForm.productoResultados = [];
   render();
 }
+function quitarItemDevolucion(idx){
+  S.devolucionForm.items.splice(idx,1);
+  render();
+}
 
 async function submitDevolucion(){
-  const producto = S.devolucionForm.productoSeleccionado;
-  if(!producto){ S.devolucionForm.err="Buscá y elegí el producto."; render(); return; }
-  const motivoBase = ($("devol-motivo-select")?.value||S.devolucionForm.motivo||"").trim();
-  if(!motivoBase){ S.devolucionForm.err="Elegí el motivo de la devolución."; render(); return; }
-  const detalle = ($("devol-detalle")?.value||S.devolucionForm.detalle||"").trim();
-  if(motivoBase==="Otro" && !detalle){ S.devolucionForm.err="Contá el detalle — elegiste 'Otro'."; render(); return; }
+  const items = S.devolucionForm.items;
+  if(!items.length){ S.devolucionForm.err="Agregá al menos un producto."; render(); return; }
+  for(let i=0;i<items.length;i++){
+    const it = items[i];
+    const motivoEl = $(`devol-motivo-${i}`);
+    it.motivo = motivoEl ? motivoEl.value : it.motivo;
+    const detalleEl = $(`devol-detalle-${i}`);
+    it.detalle = detalleEl ? detalleEl.value.trim() : it.detalle;
+    if(!it.motivo){ S.devolucionForm.err=`Elegí el motivo para "${it.producto.descripcion}".`; render(); return; }
+    if(it.motivo==="Otro" && !it.detalle){ S.devolucionForm.err=`Contá el detalle de "${it.producto.descripcion}" — elegiste 'Otro'.`; render(); return; }
+  }
   const fotoFile = $("devol-foto")?.files?.[0] || null;
-  if(!fotoFile){ S.devolucionForm.err="La foto es obligatoria para una devolución."; render(); return; }
+  if(!fotoFile){ S.devolucionForm.err="La foto del ticket es obligatoria."; render(); return; }
 
   S.devolucionForm.loading = true; S.devolucionForm.err=""; renderNow();
 
-  const motivo = detalle ? `${motivoBase} — ${detalle}` : motivoBase;
   const fotoUrl = await subirArchivo(fotoFile, "devoluciones");
   const u = S.user;
+  const productosJson = items.map(it=>({
+    productoId: it.producto.id,
+    descripcion: it.producto.descripcion,
+    codigoInterno: it.producto.codigoInterno||"",
+    motivo: it.detalle ? `${it.motivo} — ${it.detalle}` : it.motivo,
+  }));
+  // Motivo/resumen general de la devolución (para vistas viejas que
+  // todavía muestran un solo texto de motivo)
+  const motivoResumen = productosJson.length===1
+    ? productosJson[0].motivo
+    : `${productosJson.length} productos: `+productosJson.map(p=>p.descripcion).join(", ");
   const payload = toSnakeRow({
     sucursal: u.area||"",
-    motivo, fotoUrl,
+    motivo: motivoResumen, fotoUrl,
     estado: "Pendiente",
     creadoPor: u.nombre||u.area||"",
-    productoId: producto.id,
-    productoDescripcion: producto.descripcion,
-    productoCodigoInterno: producto.codigoInterno||"",
+    productosJson: JSON.stringify(productosJson),
   });
   try{
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {motivo:"", detalle:"", loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false, productoSeleccionado:null};
+    S.devolucionForm = {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -1701,6 +1724,13 @@ async function submitDejarDevolucionesFabrica(){
   render();
 }
 
+function productosDeDevolucion(d){
+  if(d.productosJson){
+    try{ const arr = JSON.parse(d.productosJson); if(Array.isArray(arr)) return arr; }catch(e){}
+  }
+  if(d.productoDescripcion) return [{descripcion:d.productoDescripcion, codigoInterno:d.productoCodigoInterno||"", motivo:d.motivo||""}];
+  return [];
+}
 function renderDevoluciones(){
   const u = S.user;
   const esGestor = esGestorDevolucion();
@@ -1725,7 +1755,7 @@ function renderDevoluciones(){
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
     if(S.devolucionFiltroProducto){
       const qp = normNotif(S.devolucionFiltroProducto);
-      lista = lista.filter(d=>normNotif(d.productoDescripcion).includes(qp) || normNotif(d.productoCodigoInterno).includes(qp));
+      lista = lista.filter(d=>productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp)));
     }
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
@@ -1751,15 +1781,7 @@ function renderDevoluciones(){
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
       <div class="field" style="position:relative">
-        <label>Producto <span class="req">*</span></label>
-        ${S.devolucionForm.productoSeleccionado?`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border:1px solid var(--border);border-radius:8px;padding:11px 14px">
-          <div>
-            <div style="font-weight:600">${escH(S.devolucionForm.productoSeleccionado.descripcion)}</div>
-            ${S.devolucionForm.productoSeleccionado.codigoInterno?`<div style="font-size:12px;color:var(--faint)">Cód. interno: ${escH(S.devolucionForm.productoSeleccionado.codigoInterno)}</div>`:""}
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="S.devolucionForm.productoSeleccionado=null;S.devolucionForm.productoQuery='';render()">Cambiar</button>
-        </div>`:`
+        <label>Agregar producto</label>
         <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
           value="${escH(S.devolucionForm.productoQuery||"")}"
           oninput="buscarProductosDevolucion(this.value)" autocomplete="off"/>
@@ -1773,31 +1795,48 @@ function renderDevoluciones(){
             </div>`).join("")}
         </div>`:""}
         ${S.devolucionForm.productoQuery && !S.devolucionForm.productoBuscando && (S.devolucionForm.productoResultados||[]).length===0?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sin resultados — probá con otra palabra o el código.</div>`:""}
-        `}
       </div>
-      ${S.devolucionForm.productoSeleccionado?`
-      <div class="field" style="margin-top:12px">
-        <label>Motivo <span class="req">*</span></label>
-        <select id="devol-motivo-select" class="inp" onchange="S.devolucionForm.motivo=this.value;render()">
-          <option value="">— Elegí un motivo —</option>
-          ${MOTIVOS_DEVOLUCION.map(m=>`<option ${S.devolucionForm.motivo===m?"selected":""}>${m}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field" style="margin-top:12px">
-        <label>Detalle ${S.devolucionForm.motivo==="Otro"?'<span class="req">*</span>':'<span style="color:var(--faint);font-size:12px">(opcional)</span>'}</label>
-        <textarea id="devol-detalle" rows="2" placeholder="Contanos más si hace falta..."
-          oninput="S.devolucionForm.detalle=this.value">${escH(S.devolucionForm.detalle||"")}</textarea>
-      </div>
-      ${S.devolucionForm.err?`<span class="err-msg">${escH(S.devolucionForm.err)}</span>`:""}
-      <div style="display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap">
-        <div>
-          <input id="devol-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px" onchange="previsualizarFoto(this,'devol-foto-preview')"/>
-          <img id="devol-foto-preview" style="display:none;max-width:140px;max-height:140px;border-radius:8px;margin-top:8px;object-fit:cover"/>
+
+      ${S.devolucionForm.items.length>0?`
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+        ${S.devolucionForm.items.map((it,i)=>`
+        <div class="card" style="padding:12px 14px;background:var(--s2)">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div>
+              <div style="font-weight:600;font-size:13px">${escH(it.producto.descripcion)}</div>
+              ${it.producto.codigoInterno?`<div style="font-size:11px;color:var(--faint)">Cód. interno: ${escH(it.producto.codigoInterno)}</div>`:""}
+            </div>
+            <button class="btn btn-ghost btn-sm" onclick="quitarItemDevolucion(${i})">✕</button>
+          </div>
+          <div class="field" style="margin-top:10px;margin-bottom:0">
+            <label>Motivo <span class="req">*</span></label>
+            <select id="devol-motivo-${i}" class="inp" onchange="S.devolucionForm.items[${i}].motivo=this.value;render()">
+              <option value="">— Elegí un motivo —</option>
+              ${MOTIVOS_DEVOLUCION.map(m=>`<option ${it.motivo===m?"selected":""}>${m}</option>`).join("")}
+            </select>
+          </div>
+          ${it.motivo?`
+          <div class="field" style="margin-top:8px;margin-bottom:0">
+            <label>Detalle ${it.motivo==="Otro"?'<span class="req">*</span>':'<span style="color:var(--faint);font-size:12px">(opcional)</span>'}</label>
+            <textarea id="devol-detalle-${i}" rows="1" placeholder="Contanos más si hace falta..."
+              oninput="S.devolucionForm.items[${i}].detalle=this.value">${escH(it.detalle||"")}</textarea>
+          </div>`:""}
+        </div>`).join("")}
+      </div>`:`<p style="font-size:12px;color:var(--muted);margin-top:8px">Todavía no agregaste ningún producto.</p>`}
+
+      ${S.devolucionForm.err?`<span class="err-msg" style="display:block;margin-top:10px">${escH(S.devolucionForm.err)}</span>`:""}
+      <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+        <label style="display:block;font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;margin-bottom:8px">Foto del ticket (una sola, para toda la devolución)</label>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div>
+            <input id="devol-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px" onchange="previsualizarFoto(this,'devol-foto-preview')"/>
+            <img id="devol-foto-preview" style="display:none;max-width:140px;max-height:140px;border-radius:8px;margin-top:8px;object-fit:cover"/>
+          </div>
+          <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
+            ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
+          </button>
         </div>
-        <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
-          ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
-        </button>
-      </div>`:""}
+      </div>
     </div>`:(!esGestor && !esRepartidor?`
     <div class="card" style="margin-bottom:20px;border-left:3px solid var(--amber)">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">🛠️ Carga de devoluciones en mantenimiento</h3>
@@ -1853,8 +1892,11 @@ function renderDevoluciones(){
               ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
             </div>
           </div>
-          <p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>
-          ${d.productoDescripcion?`<p style="margin-top:4px;font-size:13px"><span style="color:var(--faint)">Producto:</span> <strong>${escH(d.productoDescripcion)}</strong>${d.productoCodigoInterno?` <span style="color:var(--faint)">(${escH(d.productoCodigoInterno)})</span>`:""}</p>`:""}
+          ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?"":`<p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>`; })()}
+          ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?`
+          <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
+          </div>`:""; })()}
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
           ${d.nombreRepartidor?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">📦 Dejada en fábrica por ${escH(d.nombreRepartidor)}</p>`:""}
