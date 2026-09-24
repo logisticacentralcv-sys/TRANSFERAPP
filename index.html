@@ -970,7 +970,7 @@ async function sheetsLoadAll(){
 function bolsinesActivo(){
   return S.config.bolsinesActivo !== "false";
 }
-const AREAS_OFICINA = ["Planificación","Planificador Fresco","Logística","RRHH","Administración","Compras","Producción","Precios","Depósito"];
+const AREAS_OFICINA = ["Planificación","Planificador Fresco","Logística","RRHH","Administración","Compras","Producción","Precios","Depósito","Procesos"];
 async function toggleAreaRecepcionFresco(area, marcado){
   let actuales = areasRecepcionFresco();
   actuales = marcado ? [...new Set([...actuales, area])] : actuales.filter(a=>normNotif(a)!==normNotif(area));
