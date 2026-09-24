@@ -2983,6 +2983,22 @@ async function guardarUsuario(){
       if(error) throw error;
       S.usuarios = S.usuarios.map(u=>u.dni===f.dniOriginal?datos:u);
       toast(`✅ Usuario ${usuario} actualizado`);
+      // Si se escribió una contraseña nueva, sincronizarla también en
+      // Auth — si no, la tabla queda con la nueva pero Auth sigue
+      // aceptando la vieja, y la persona se queda afuera.
+      if(datos.password && datos.password.trim()){
+        try{
+          const resp = await fetch("/api/crear-usuario-auth", {
+            method:"POST", headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({usuario, tipo, dni: datos.dni, password: datos.password}),
+          });
+          const j = await resp.json();
+          if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
+          toast(`✅ Contraseña de ${usuario} actualizada — ya puede entrar con la nueva`);
+        }catch(eAuth){
+          toast(`⚠️ Se guardó pero la contraseña no se sincronizó sola (${eAuth.message}). Avisá al administrador técnico.`, "warn");
+        }
+      }
     } else {
       const { error } = await sb.from("usuarios").insert(datos);
       if(error) throw error;

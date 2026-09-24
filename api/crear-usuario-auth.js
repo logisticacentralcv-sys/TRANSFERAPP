@@ -103,6 +103,17 @@ module.exports = async (req, res) => {
         .not("auth_user_id", "is", null)
         .limit(1);
       passwordAGuardar = otraFila && otraFila[0] ? otraFila[0].password : passwordFinal;
+    } else {
+      // Ya existía y llegó una contraseña nueva escrita a mano (edición
+      // desde Admin) -> actualizar la contraseña real de Auth para que
+      // coincida con lo que se guardó en la tabla. Si no se actualizara
+      // acá, la tabla quedaría con la contraseña nueva pero Auth seguiría
+      // aceptando solo la vieja, y la persona se quedaría sin poder entrar.
+      const { error: errPass } = await supabase.auth.admin.updateUserById(authUserId, { password: passwordFinal });
+      if (errPass) {
+        res.status(500).json({ error: "No se pudo actualizar la contraseña en Auth: " + errPass.message });
+        return;
+      }
     }
 
     const updatePayload = { auth_user_id: authUserId };
