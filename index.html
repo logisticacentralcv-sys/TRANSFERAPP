@@ -992,6 +992,11 @@ function buscarEstadoSucursal(sucursalQuery){
 
 // Widget compacto para pantallas principales (sucursal, planificación, logística)
 function renderWidgetFlotaHoy(){
+  // Por ahora, mientras se termina de cargar y calibrar la matriz de
+  // tiempos de viaje, este widget (con el buscador de ETA) solo se
+  // muestra a Logística. Cuando esté probado, sacamos esta restricción
+  // para que lo vean también sucursales/planificación.
+  if(S.user?.rol!=="logistica") return "";
   const horaCorta = iso => iso ? new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}) : "—";
   const listaRecorridos = (!S.flotaHoy || !S.flotaHoy.length) ? "" : `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
