@@ -3235,7 +3235,6 @@ function renderSucursalArea(){
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
         ${u.rol==="sucursal"?`<button class="btn btn-danger btn-md" onclick="openQuiebreStock()">🚨 Quiebre de stock</button>`:""}
         ${bolsinesActivo()?`
-        <button class="btn btn-warn btn-md" onclick="openPedirBolsin()">🎒 Pedir bolsín</button>
         <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>`:""}
       </div>
     </div>
