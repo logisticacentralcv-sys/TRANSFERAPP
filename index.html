@@ -3387,19 +3387,26 @@ function renderLogTabla(){
       ${S.modoSeleccion?"✕ Cancelar selección":"◯ Seleccionar"}
     </button>
   </div>
-  ${S.modoSeleccion && S.logSeleccion.size>0?`
+  ${S.modoSeleccion && S.logSeleccion.size>0?(()=>{
+    const seleccionadas = [...S.logSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
+    const estadosUnicos = [...new Set(seleccionadas.map(r=>r.estado))];
+    const recorridosUnicos = [...new Set(seleccionadas.map(r=>r.recorrido).filter(Boolean))];
+    const estadoActual = estadosUnicos.length===1 ? estadosUnicos[0] : "";
+    const recorridoActual = recorridosUnicos.length===1 ? recorridosUnicos[0] : "";
+    return `
   <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <strong>${S.logSeleccion.size} seleccionada${S.logSeleccion.size!==1?"s":""}</strong>
-    <select id="log-estado-masivo" class="inp" style="width:180px">
-      ${ESTADOS.map(s=>`<option ${s==="Entregada"?"selected":""}>${escH(s)}</option>`).join("")}
+    <select id="log-estado-masivo" class="inp" style="width:190px">
+      <option value="">— No cambiar estado —</option>
+      ${ESTADOS.map(s=>`<option ${s===estadoActual?"selected":""}>${escH(s)}</option>`).join("")}
     </select>
-    <select id="log-recorrido-masivo" class="inp" style="width:170px">
-      <option value="">Sin recorrido</option>
-      ${(S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"]).map(r=>`<option>${escH(r)}</option>`).join("")}
+    <select id="log-recorrido-masivo" class="inp" style="width:180px">
+      <option value="">— No cambiar recorrido —</option>
+      ${(S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"]).map(r=>`<option ${r===recorridoActual?"selected":""}>${escH(r)}</option>`).join("")}
     </select>
     <button class="btn btn-success btn-sm" onclick="openCambioEstadoMasivo()">Aplicar a seleccionadas</button>
     <button class="btn btn-ghost btn-sm" onclick="S.logSeleccion=new Set();render()">✕ Deseleccionar todo</button>
-  </div>`:""}
+  </div>`; })():""}
   <div class="card-flush">
     <div class="table-wrap">
       <table>
@@ -5394,7 +5401,10 @@ function toggleLogSeleccionTodos(checked){
 function openCambioEstadoMasivo(){
   const estado = ($("log-estado-masivo")?.value||"").trim();
   const recorrido = ($("log-recorrido-masivo")?.value||"").trim();
-  if(!estado || S.logSeleccion.size===0) return;
+  if((!estado && !recorrido) || S.logSeleccion.size===0){
+    if(!estado && !recorrido) toast("Elegí un estado o un recorrido para aplicar","warn");
+    return;
+  }
   S.cambioEstadoMasivoModal = {ids:[...S.logSeleccion], estado, recorrido, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "cambioEstadoMasivo";
   render();
@@ -5404,19 +5414,22 @@ function renderCambioEstadoMasivoModal(){
   const d = S.cambioEstadoMasivoModal;
   const esLogistica = S.user?.rol==="logistica";
   const esAprobar = d.estado==="Aprobada";
+  const soloRecorrido = !d.estado;
   const recOpts = S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
-  const verbo = esAprobar ? "aprobar" : `cambiar a "${escH(d.estado)}"`;
   return `
   <div style="background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
-    ${esAprobar?`✅ Vas a aprobar <strong>${d.ids.length} solicitudes</strong> de una sola vez.`:`⚠️ Vas a cambiar <strong>${d.ids.length} solicitudes</strong> a <strong>${escH(d.estado)}</strong> de una sola vez.`}
+    ${soloRecorrido?`🚚 Vas a asignar el recorrido <strong>${escH(d.recorrido)}</strong> a <strong>${d.ids.length} solicitudes</strong>, sin tocar su estado.`
+      :esAprobar?`✅ Vas a aprobar <strong>${d.ids.length} solicitudes</strong> de una sola vez.`
+      :`⚠️ Vas a cambiar <strong>${d.ids.length} solicitudes</strong> a <strong>${escH(d.estado)}</strong> de una sola vez.`}
   </div>
+  ${!soloRecorrido?`
   <div class="field">
     <label>Recorrido a asignar ${esAprobar?"":"(opcional)"}</label>
     <select id="cem-recorrido" class="inp" onchange="S.cambioEstadoMasivoModal.recorrido=this.value">
       <option value="">— No asignar / dejar como está —</option>
       ${recOpts.map(r=>`<option ${d.recorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
     </select>
-  </div>
+  </div>`:""}
   ${esLogistica?"":`
   <div class="field" style="margin-top:12px">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
@@ -5459,7 +5472,7 @@ async function submitCambioEstadoMasivo(){
     const esAprobar = d.estado==="Aprobada";
     const cambios = d.ids.map(id=>{
       const x = S.requests.find(r=>r.id===id);
-      const estadoRealmenteCambia = !x || x.estado!==d.estado;
+      const estadoRealmenteCambia = !!d.estado && (!x || x.estado!==d.estado);
       const changes = {updatedAt:nowTs, dniLogistica:dni, nombreLogistica:nombre};
       if(estadoRealmenteCambia){
         changes.estado = d.estado;
