@@ -2951,6 +2951,28 @@ function renderUsuarioFormModal(){
   </div>`;
 }
 
+// Llama a /api/crear-usuario-auth y devuelve {ok, error}. Si la respuesta
+// no es JSON válido (por ejemplo, si Vercel devolvió su propia página de
+// error en vez de la respuesta de la función), no revienta con un
+// mensaje críptico — informa qué pasó realmente.
+async function llamarCrearUsuarioAuth(payload){
+  let resp;
+  try{
+    resp = await fetch("/api/crear-usuario-auth", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload),
+    });
+  }catch(e){
+    return {ok:false, error:"No se pudo conectar con el servidor ("+e.message+")"};
+  }
+  const texto = await resp.text();
+  let j;
+  try{ j = JSON.parse(texto); }
+  catch(e){ return {ok:false, error: resp.ok ? "Respuesta inesperada del servidor" : `Error del servidor (status ${resp.status})`}; }
+  if(!resp.ok || j.error) return {ok:false, error: j.error||"error desconocido"};
+  return {ok:true};
+}
+
 async function guardarUsuario(){
   const f = S.usuarioForm;
   const usuario = ($("uf-usuario")?.value||f.usuario||"").trim();
@@ -2987,17 +3009,9 @@ async function guardarUsuario(){
       // Auth — si no, la tabla queda con la nueva pero Auth sigue
       // aceptando la vieja, y la persona se queda afuera.
       if(datos.password && datos.password.trim()){
-        try{
-          const resp = await fetch("/api/crear-usuario-auth", {
-            method:"POST", headers:{"Content-Type":"application/json"},
-            body: JSON.stringify({usuario, tipo, dni: datos.dni, password: datos.password}),
-          });
-          const j = await resp.json();
-          if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
-          toast(`✅ Contraseña de ${usuario} actualizada — ya puede entrar con la nueva`);
-        }catch(eAuth){
-          toast(`⚠️ Se guardó pero la contraseña no se sincronizó sola (${eAuth.message}). Avisá al administrador técnico.`, "warn");
-        }
+        const r = await llamarCrearUsuarioAuth({usuario, tipo, dni: datos.dni, password: datos.password});
+        if(r.ok) toast(`✅ Contraseña de ${usuario} actualizada — ya puede entrar con la nueva`);
+        else toast(`⚠️ Se guardó pero la contraseña no se sincronizó sola (${r.error}). Avisá al administrador técnico.`, "warn");
       }
     } else {
       const { error } = await sb.from("usuarios").insert(datos);
@@ -3006,17 +3020,9 @@ async function guardarUsuario(){
       toast(`✅ Usuario ${usuario} creado — activando su acceso...`);
       // Crear la cuenta de Auth automáticamente, sin que Admin tenga
       // que correr ningún script a mano.
-      try{
-        const resp = await fetch("/api/crear-usuario-auth", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({usuario, tipo, dni: datos.dni, password: datos.password}),
-        });
-        const j = await resp.json();
-        if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
-        toast(`✅ ${usuario} ya puede entrar a la app`);
-      }catch(eAuth){
-        toast(`⚠️ El usuario se creó pero su acceso no se activó solo (${eAuth.message}). Avisá al administrador técnico.`, "warn");
-      }
+      const r = await llamarCrearUsuarioAuth({usuario, tipo, dni: datos.dni, password: datos.password});
+      if(r.ok) toast(`✅ ${usuario} ya puede entrar a la app`);
+      else toast(`⚠️ El usuario se creó pero su acceso no se activó solo (${r.error}). Avisá al administrador técnico.`, "warn");
     }
     S.modal = null;
   }catch(e){
