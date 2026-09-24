@@ -3390,8 +3390,12 @@ function renderLogTabla(){
   ${S.modoSeleccion && S.logSeleccion.size>0?`
   <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
     <strong>${S.logSeleccion.size} seleccionada${S.logSeleccion.size!==1?"s":""}</strong>
-    <select id="log-estado-masivo" class="inp" style="width:200px">
+    <select id="log-estado-masivo" class="inp" style="width:180px">
       ${ESTADOS.map(s=>`<option ${s==="Entregada"?"selected":""}>${escH(s)}</option>`).join("")}
+    </select>
+    <select id="log-recorrido-masivo" class="inp" style="width:170px">
+      <option value="">Sin recorrido</option>
+      ${(S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"]).map(r=>`<option>${escH(r)}</option>`).join("")}
     </select>
     <button class="btn btn-success btn-sm" onclick="openCambioEstadoMasivo()">Aplicar a seleccionadas</button>
     <button class="btn btn-ghost btn-sm" onclick="S.logSeleccion=new Set();render()">✕ Deseleccionar todo</button>
@@ -5389,8 +5393,9 @@ function toggleLogSeleccionTodos(checked){
 
 function openCambioEstadoMasivo(){
   const estado = ($("log-estado-masivo")?.value||"").trim();
+  const recorrido = ($("log-recorrido-masivo")?.value||"").trim();
   if(!estado || S.logSeleccion.size===0) return;
-  S.cambioEstadoMasivoModal = {ids:[...S.logSeleccion], estado, recorrido:"", dni:"", err:"", loading:false, nombreOk:""};
+  S.cambioEstadoMasivoModal = {ids:[...S.logSeleccion], estado, recorrido, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "cambioEstadoMasivo";
   render();
 }
