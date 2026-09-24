@@ -603,6 +603,7 @@ let S = {
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
   devolucionAccionTexto: "",
+  devolucionAccionCantidades: [],
   devolSeleccion: new Set(),
   devolSeleccionTomar: new Set(),
   dejarDevolucionesModal: {ids:[], dni:"", err:"", loading:false},
@@ -1440,11 +1441,18 @@ function abrirAccionDevolucion(id, tipo){
   S.devolucionAccionId = id;
   S.devolucionAccionTipo = tipo; // "confirmar" | "noConfirmar"
   S.devolucionAccionTexto = "";
+  if(tipo==="confirmar"){
+    const d = S.devoluciones.find(x=>x.id===id);
+    S.devolucionAccionCantidades = productosDeDevolucion(d||{}).map(p=>({...p, cantidadRecibida: p.cantidad}));
+  } else {
+    S.devolucionAccionCantidades = [];
+  }
   render();
 }
 function cancelarAccionDevolucion(){
   S.devolucionAccionId = "";
   S.devolucionAccionTipo = "";
+  S.devolucionAccionCantidades = [];
   render();
 }
 
@@ -1461,12 +1469,31 @@ async function confirmarAccionDevolucion(){
     respondidoPor: S.user.nombre||S.user.area||"",
     updatedAt: nowTs,
   };
+
+  let huboDiferencia = false;
+  if(esConfirmar && S.devolucionAccionCantidades && S.devolucionAccionCantidades.length){
+    const productosConfirmados = S.devolucionAccionCantidades.map((p,i)=>{
+      const el = $(`devol-cant-recibida-${i}`);
+      const cantidadRecibida = el ? +el.value : p.cantidadRecibida;
+      if(+cantidadRecibida !== +p.cantidad) huboDiferencia = true;
+      return {...p, cantidadRecibida:+cantidadRecibida};
+    });
+    changes.productosJson = JSON.stringify(productosConfirmados);
+    if(huboDiferencia){
+      const nota = "⚠️ Diferencia en cantidad recibida vs. declarada: "+productosConfirmados
+        .filter(p=>+p.cantidadRecibida!==+p.cantidad)
+        .map(p=>`${p.descripcion} (declarado ${p.cantidad}${p.unidad||""}, recibido ${p.cantidadRecibida}${p.unidad||""})`)
+        .join("; ");
+      changes.respuesta = changes.respuesta ? changes.respuesta+" · "+nota : nota;
+    }
+  }
+
   try{
     const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",id);
     if(error) throw error;
     S.devoluciones = S.devoluciones.map(d=>d.id===id?{...d,...changes}:d);
-    S.devolucionAccionId = ""; S.devolucionAccionTipo = "";
-    toast(esConfirmar?"✅ Devolución confirmada":"⚠️ Devolución cerrada como no confirmada");
+    S.devolucionAccionId = ""; S.devolucionAccionTipo = ""; S.devolucionAccionCantidades = [];
+    toast(esConfirmar?(huboDiferencia?"✅ Confirmada — quedó marcada la diferencia de cantidad":"✅ Devolución confirmada, todo coincide"):"⚠️ Devolución cerrada como no confirmada");
   }catch(e){ toast("⚠️ No se pudo actualizar","warn"); }
   render();
 }
@@ -1924,7 +1951,7 @@ function renderDevoluciones(){
           ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?"":`<p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>`; })()}
           ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
@@ -1934,6 +1961,19 @@ function renderDevoluciones(){
           ${!esGestor && !esRepartidor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
           ${esGestor && !["Confirmada","No confirmada"].includes(d.estado)?`
             ${S.devolucionAccionId===d.id?`
+            ${S.devolucionAccionTipo==="confirmar" && (S.devolucionAccionCantidades||[]).length?`
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
+              <p style="font-size:12px;color:var(--muted);font-weight:600">Confirmá la cantidad que realmente llegó, producto por producto:</p>
+              ${S.devolucionAccionCantidades.map((p,i)=>`
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px">
+                  <div style="min-width:0">
+                    <div style="font-size:13px;font-weight:600">${escH(p.descripcion)}</div>
+                    <div style="font-size:11px;color:var(--faint)">Declarado: ${escH(String(p.cantidad))} ${escH(p.unidad||"")}</div>
+                  </div>
+                  <input id="devol-cant-recibida-${i}" type="number" min="0" step="0.01" class="inp" style="width:100px;flex-shrink:0"
+                    value="${escH(String(p.cantidadRecibida))}"/>
+                </div>`).join("")}
+            </div>`:""}
             <div class="field" style="margin-top:10px">
               <textarea id="devol-accion-texto" rows="2" placeholder="${S.devolucionAccionTipo==='confirmar'?'Comentario (opcional)...':'¿Qué faltó? (obligatorio)'}"
                 oninput="S.devolucionAccionTexto=this.value">${escH(S.devolucionAccionTexto||"")}</textarea>
@@ -3677,14 +3717,20 @@ function renderRepartidor(){
     ${S.tabRep==="devoluciones"?`
     <div class="del-grid">
       ${devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">No hay devoluciones pendientes.</div>`:""}
-      ${devolucionesRep.map(d=>`
+      ${devolucionesRep.map(d=>{
+        const esParaTomar = d.estado==="Pendiente";
+        const categoria = esParaTomar
+          ? {color:"var(--amber)", texto:"🔄📥 Devolución para tomar"}
+          : {color:"var(--teal)", texto:"🔄📤 Devolución para dejar en fábrica"};
+        const prods = productosDeDevolucion(d);
+        return `
         <div class="del-card">
-          <div class="del-stripe" style="background:var(--purple)"></div>
+          <div class="del-stripe" style="background:${categoria.color}"></div>
           <div class="del-body" onclick="verDetalleDevolucionRep('${escH(d.id)}')" style="cursor:pointer">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
               <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)">
-                <span style="width:7px;height:7px;border-radius:50%;background:var(--purple);display:inline-block;flex-shrink:0"></span>
-                Devolución
+                <span style="width:7px;height:7px;border-radius:50%;background:${categoria.color};display:inline-block;flex-shrink:0"></span>
+                ${categoria.texto}
               </div>
               <div style="font-size:11px;color:var(--faint)">${fd(d.createdAt)}</div>
             </div>
@@ -3692,13 +3738,16 @@ function renderRepartidor(){
               <div style="font-size:19px;font-weight:700">${escH(d.sucursal||"—")}</div>
               ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
             </div>
-            <div style="font-size:13px;color:var(--muted);margin-bottom:12px">${escH(d.motivo)}</div>
+            <div style="margin-bottom:12px;display:flex;flex-direction:column;gap:3px">
+              ${prods.length?prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--faint)">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}</div>`).join(""):`<div style="font-size:13px;color:var(--muted)">${escH(d.motivo)}</div>`}
+            </div>
             <div onclick="event.stopPropagation()">
-              ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-sm" style="width:100%" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
-              ${d.estado==="En camino"?`<button class="btn btn-teal btn-sm" style="width:100%" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+              ${d.estado==="Pendiente"?`<button class="btn btn-warn btn-md" style="width:100%" onclick="openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
+              ${d.estado==="En camino"?`<button class="btn btn-teal btn-md" style="width:100%" onclick="openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
             </div>
           </div>
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>
     `:`
     <div class="del-grid">
