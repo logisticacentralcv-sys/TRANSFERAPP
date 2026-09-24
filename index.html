@@ -7330,6 +7330,13 @@ function reiniciarTimerInactividad(){
 function doLogout(){
   if(_inactividadTimer){ clearTimeout(_inactividadTimer); _inactividadTimer=null; }
   try{ localStorage.removeItem("tl_sesion"); }catch(e){}
+  // Si alguien cierra sesión, lo más probable es que el celular esté por
+  // cambiar de mano — no dejar la identidad de "quién soy en este
+  // dispositivo" pegada para la próxima persona que entre.
+  try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
+  try{ localStorage.removeItem("tl_fresco_identidad"); }catch(e){}
+  S.miIdentidadRep = null;
+  S.miIdentidadFresco = null;
   try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
   stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
 }
