@@ -612,7 +612,7 @@ let S = {
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
   flotaHoy: [], // visibilidad cruzada con Flota (tabla flota_viajes/flota_registros_qr)
-  flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [],
+  flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
@@ -907,18 +907,20 @@ function hoyLocalISO(){
 async function cargarEstadoFlotaHoy(){
   try{
     const hoy = hoyLocalISO();
-    const [viajesRes, regsRes, tviajeRes, testRes] = await Promise.all([
+    const [viajesRes, regsRes, tviajeRes, testRes, matrizRes] = await Promise.all([
       sb.from("flota_viajes").select("*").eq("fecha", hoy),
       sb.from("flota_registros_qr").select("*").gte("ts", hoy+"T00:00:00-03:00").order("ts",{ascending:true}),
       sb.from("flota_tiempos_viaje").select("*"),
       sb.from("flota_tiempos_estimados").select("*"),
+      sb.from("flota_matriz_tiempos").select("*"),
     ]);
     if(viajesRes.error || regsRes.error) throw (viajesRes.error||regsRes.error);
     const registros = regsRes.data||[];
     S.flotaViajesHoy = viajesRes.data||[]; // crudo, para el buscador de ETA
     S.flotaRegistrosHoy = registros;       // crudo, idem
-    S.flotaTiemposViaje = tviajeRes.error ? [] : (tviajeRes.data||[]);
-    S.flotaTiemposEstimados = testRes.error ? [] : (testRes.data||[]);
+    S.flotaTiemposViaje = tviajeRes.error ? [] : (tviajeRes.data||[]); // orden de paradas de cada recorrido
+    S.flotaTiemposEstimados = testRes.error ? [] : (testRes.data||[]); // tiempo de descarga por parada
+    S.flotaMatrizTiempos = matrizRes.error ? [] : (matrizRes.data||[]); // tiempo de viaje entre cualquier par de puntos
     S.flotaHoy = (viajesRes.data||[]).map(v=>{
       const paradas = registros.filter(r=>r.id_viaje===v.id && r.sucursal!=="FABRICA" && String(r.evento||"").toUpperCase()==="LLEGADA");
       const ultima = paradas[paradas.length-1] || null;
@@ -933,10 +935,19 @@ async function cargarEstadoFlotaHoy(){
       };
     });
   }catch(e){
-    S.flotaHoy = []; S.flotaViajesHoy = []; S.flotaRegistrosHoy = []; S.flotaTiemposViaje = []; S.flotaTiemposEstimados = [];
+    S.flotaHoy = []; S.flotaViajesHoy = []; S.flotaRegistrosHoy = []; S.flotaTiemposViaje = []; S.flotaTiemposEstimados = []; S.flotaMatrizTiempos = [];
     // Flota no disponible todavía — TransferApp sigue funcionando igual
   }
   render();
+}
+
+// Busca el tiempo de viaje entre dos puntos en la matriz general
+// (fábrica + sucursales) — no depende de ningún recorrido puntual.
+function minutosEntre(origen, destino){
+  const o = normNotif(origen), d = normNotif(destino);
+  if(o===d) return 0;
+  const fila = (S.flotaMatrizTiempos||[]).find(m=>normNotif(m.origen)===o && normNotif(m.destino)===d);
+  return fila ? Number(fila.minutos)||0 : null; // null = no hay dato cargado para ese tramo
 }
 
 // ══════════════════════════════════════════════════════════
@@ -944,8 +955,8 @@ async function cargarEstadoFlotaHoy(){
 //  nombre de una sucursal, busca si algún recorrido de hoy va hacia
 //  ahí y devuelve su estado: ya llegó (hora real) o todavía no (hora
 //  estimada, calculada con hora de salida real + tiempo de viaje
-//  entre paradas + tiempo de descarga en cada una, acumulado hasta
-//  la sucursal buscada).
+//  entre paradas [buscado en la matriz general] + tiempo de descarga
+//  en cada una, acumulado hasta la sucursal buscada).
 // ══════════════════════════════════════════════════════════
 function buscarEstadoSucursal(sucursalQuery){
   const q = normNotif(sucursalQuery);
@@ -954,7 +965,7 @@ function buscarEstadoSucursal(sucursalQuery){
   // ¿Qué recorridos de hoy tienen esta sucursal en su hoja de ruta?
   const paradasDeEsaSucursal = (S.flotaTiemposViaje||[]).filter(p=>normNotif(p.sucursal)===q);
   if(!paradasDeEsaSucursal.length){
-    return {ok:false, msg:"Todavía no hay una hoja de ruta cargada para esa sucursal (falta la matriz de tiempos de viaje)."};
+    return {ok:false, msg:"Todavía no hay una hoja de ruta cargada para esa sucursal (falta cargar el orden de paradas del recorrido)."};
   }
 
   const resultados = [];
@@ -970,17 +981,27 @@ function buscarEstadoSucursal(sucursalQuery){
     }
     if(!viaje.hora_salida){ continue; } // todavía no salió de fábrica
 
-    // Calcular ETA: sumar tiempo de viaje + descarga de cada parada
-    // anterior (en orden), hasta llegar a la buscada (inclusive).
+    // Calcular ETA: sumar, tramo por tramo (buscando cada uno en la
+    // matriz general), el tiempo de viaje + descarga de cada parada
+    // anterior, hasta llegar a la buscada (inclusive).
     const hojaDeRuta = (S.flotaTiemposViaje||[])
       .filter(p=>normNotif(p.recorrido)===normNotif(parada.recorrido))
       .sort((a,b)=>a.orden_parada-b.orden_parada);
     let minutosAcumulados = 0;
+    let anterior = "Fábrica";
+    let faltaDato = false;
     for(const p of hojaDeRuta){
-      minutosAcumulados += Number(p.minutos_desde_parada_anterior)||0;
+      const tramo = minutosEntre(anterior, p.sucursal);
+      if(tramo===null){ faltaDato = true; break; }
+      minutosAcumulados += tramo;
+      anterior = p.sucursal;
       if(normNotif(p.sucursal)===q) break; // llegamos a la parada buscada — no sumar su descarga, es la ETA de LLEGADA
       const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(parada.recorrido) && normNotif(t.sucursal)===normNotif(p.sucursal));
       minutosAcumulados += est ? (Number(est.tiempo_est_seg)||0)/60 : 0;
+    }
+    if(faltaDato){
+      resultados.push({recorrido:parada.recorrido, yaLlego:false, sinDato:true, repartidor:[viaje.nombre_rep1,viaje.nombre_rep2].filter(Boolean).join(" / ")});
+      continue;
     }
     const horaEta = new Date(new Date(viaje.hora_salida).getTime() + minutosAcumulados*60000);
     resultados.push({recorrido:parada.recorrido, yaLlego:false, eta:horaEta, repartidor:[viaje.nombre_rep1,viaje.nombre_rep2].filter(Boolean).join(" / ")});
@@ -1048,6 +1069,11 @@ function renderResultadoEtaSucursal(){
     if(r.yaLlego){
       return `<div style="background:#1fa86a18;border-left:3px solid #1fa86a;border-radius:8px;padding:10px 14px;font-size:13px">
         ✅ El recorrido <strong>${escH(r.recorrido)}</strong> ya llegó a <strong>${escH(sucursal)}</strong> a las ${new Date(r.hora).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})} (${escH(r.repartidor||"—")})
+      </div>`;
+    }
+    if(r.sinDato){
+      return `<div style="background:var(--s2);border-left:3px solid var(--faint);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--muted)">
+        ⏳ El recorrido <strong>${escH(r.recorrido)}</strong> va hacia <strong>${escH(sucursal)}</strong>, pero falta cargar el tiempo de viaje de algún tramo en la matriz — no se puede calcular la hora estimada todavía.
       </div>`;
     }
     return `<div style="background:var(--s2);border-left:3px solid var(--amber);border-radius:8px;padding:10px 14px;font-size:13px">
