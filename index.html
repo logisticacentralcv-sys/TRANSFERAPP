@@ -1024,13 +1024,29 @@ function renderWidgetFlotaHoy(){
       ${S.flotaHoy.map(v=>{
         const activo = v.estado==="ACTIVO";
         const color = activo ? "var(--amber)" : "#1fa86a";
+        // Hoja de ruta planificada (armada en Flota) para este recorrido —
+        // si todavía no la cargaron, cae al resumen simple de antes.
+        const hojaDeRuta = (S.flotaTiemposViaje||[])
+          .filter(p=>normNotif(p.recorrido)===normNotif(v.recorrido))
+          .sort((a,b)=>a.orden_parada-b.orden_parada);
+        const hechasSet = new Set((v.paradasHechas||[]).map(normNotif));
+        const listaParadas = !hojaDeRuta.length ? "" : `
+          <div style="display:flex;flex-direction:column;gap:2px;margin-top:6px">
+            ${hojaDeRuta.map(p=>{
+              const hecha = hechasSet.has(normNotif(p.sucursal));
+              return `<div style="font-size:11px;display:flex;align-items:center;gap:5px;color:${hecha?"#4ade80":"var(--faint)"}">
+                <span>${hecha?"✅":"⬜"}</span><span>${escH(p.sucursal)}</span>
+              </div>`;
+            }).join("")}
+          </div>`;
         const estadoTxt = activo
           ? (v.ultimaParada ? `Última parada: ${escH(v.ultimaParada.sucursal)} (${horaCorta(v.ultimaParada.ts)})` : `Salió ${horaCorta(v.horaSalida)} — en camino`)
           : `Finalizado ${horaCorta(v.horaLlegada)}`;
-        return `<div style="background:var(--s2);border-radius:8px;padding:8px 14px;border-left:3px solid ${color};min-width:180px">
-          <div style="font-weight:700;font-size:13px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
-          <div style="font-size:11px;color:var(--muted)">${escH(v.repartidor||"—")}</div>
+        return `<div style="background:var(--s2);border-radius:8px;padding:10px 14px;border-left:3px solid ${color};min-width:200px">
+          <div style="font-weight:700;font-size:14px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
+          <div style="font-size:12px;color:var(--muted);font-weight:600">👤 ${escH(v.repartidor||"—")}</div>
           <div style="font-size:12px;margin-top:3px">${estadoTxt}</div>
+          ${listaParadas}
         </div>`;
       }).join("")}
     </div>`;
