@@ -1081,28 +1081,34 @@ function renderWidgetFlotaHoy(){
         // saber dónde poner el camioncito (va hacia la próxima).
         const idxUltimaHecha = paradasConEta.reduce((acc,p,i)=>p.horaReal?i:acc, -1);
         const listaParadas = !paradasConEta.length ? "" : `
-          <div style="display:flex;flex-direction:column;margin-top:8px">
+          <div style="display:flex;flex-direction:column;margin-top:10px">
             ${paradasConEta.map((p,i)=>{
               const hecha = !!p.horaReal;
               const esProxima = activo && i===idxUltimaHecha+1;
               const esUltima = i===paradasConEta.length-1;
+              const diffMin = (p.eta && p.horaReal) ? Math.round((p.horaReal-p.eta)/60000) : null;
+              // Verde si llegó a horario o antes, naranja si llegó tarde,
+              // ámbar para la próxima parada (donde va el camión ahora),
+              // gris para las que todavía faltan.
+              const colorTexto = hecha ? (diffMin!==null && diffMin>=2 ? "#fb923c" : "#4ade80") : (esProxima ? "var(--amber)" : "var(--faint)");
+              const colorPunto = hecha ? (diffMin!==null && diffMin>=2 ? "#fb923c" : "#1fa86a") : "var(--border)";
               const horaTxt = hecha
                 ? `Llegó ${horaCorta(p.horaReal)}${formatoDiferencia(p.eta,p.horaReal)}`
-                : (p.eta ? `ETA ${horaCorta(p.eta)}` : `ETA —`);
+                : (p.eta ? `Llegada estimada ${horaCorta(p.eta)}` : `Llegada estimada —`);
               return `
-              <div style="display:flex;align-items:flex-start;gap:8px">
+              <div style="display:flex;align-items:flex-start;gap:10px">
                 <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
-                  <div style="width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;
-                    background:${hecha?"#1fa86a":"transparent"};border:2px solid ${hecha?"#1fa86a":"var(--border)"}">
-                    ${hecha?'<span style="color:#fff;font-size:11px;font-weight:700">✓</span>':""}
+                  <div style="width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+                    background:${hecha?colorPunto:"transparent"};border:2px solid ${colorPunto}">
+                    ${hecha?'<span style="color:#fff;font-size:13px;font-weight:700">✓</span>':""}
                   </div>
-                  ${!esUltima?`<div style="width:2px;flex:1;min-height:14px;background:${hecha?"#1fa86a":"var(--border)"}"></div>`:""}
+                  ${!esUltima?`<div style="width:2px;flex:1;min-height:18px;background:${hecha?colorPunto:"var(--border)"}"></div>`:""}
                 </div>
-                <div style="padding-bottom:10px">
-                  <div style="font-size:12px;color:${hecha?"#4ade80":esProxima?"var(--amber)":"var(--faint)"};font-weight:${esProxima?"700":"400"}">
+                <div style="padding-bottom:14px">
+                  <div style="font-size:15px;font-weight:${esProxima||hecha?"700":"500"};color:${colorTexto}">
                     ${esProxima?"🚚 ":""}${escH(p.sucursal)}
                   </div>
-                  <div style="font-size:11px;color:${hecha?"var(--muted)":"var(--faint)"}">${horaTxt}</div>
+                  <div style="font-size:13px;color:${hecha?"var(--text)":"var(--muted)"};margin-top:1px">${horaTxt}</div>
                 </div>
               </div>`;
             }).join("")}
@@ -1110,10 +1116,10 @@ function renderWidgetFlotaHoy(){
         const estadoTxt = activo
           ? (v.ultimaParada ? `Última parada: ${escH(v.ultimaParada.sucursal)} (${horaCorta(v.ultimaParada.ts)})` : `Salió ${horaCorta(v.horaSalida)} — en camino`)
           : `Finalizado ${horaCorta(v.horaLlegada)}`;
-        return `<div style="background:var(--s2);border-radius:8px;padding:10px 14px;border-left:3px solid ${color};min-width:230px">
-          <div style="font-weight:700;font-size:14px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
-          <div style="font-size:12px;color:var(--muted);font-weight:600">👤 ${escH(v.repartidor||"—")}</div>
-          <div style="font-size:12px;margin-top:3px">${estadoTxt}</div>
+        return `<div style="background:var(--s2);border-radius:10px;padding:14px 16px;border-left:4px solid ${color};min-width:250px">
+          <div style="font-weight:800;font-size:16px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
+          <div style="font-size:13px;color:var(--muted);font-weight:600;margin-top:2px">👤 ${escH(v.repartidor||"—")}</div>
+          <div style="font-size:13px;margin-top:4px;color:var(--text)">${estadoTxt}</div>
           ${listaParadas}
         </div>`;
       }).join("")}
