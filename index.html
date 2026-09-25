@@ -925,6 +925,7 @@ async function cargarEstadoFlotaHoy(){
       const paradas = registros.filter(r=>r.id_viaje===v.id && r.sucursal!=="FABRICA" && String(r.evento||"").toUpperCase()==="LLEGADA");
       const ultima = paradas[paradas.length-1] || null;
       return {
+        id: v.id,
         recorrido: v.recorrido,
         repartidor: [v.nombre_rep1, v.nombre_rep2].filter(Boolean).join(" / "),
         estado: v.estado, // ACTIVO | FINALIZADO
@@ -948,6 +949,52 @@ function minutosEntre(origen, destino){
   if(o===d) return 0;
   const fila = (S.flotaMatrizTiempos||[]).find(m=>normNotif(m.origen)===o && normNotif(m.destino)===d);
   return fila ? Number(fila.minutos)||0 : null; // null = no hay dato cargado para ese tramo
+}
+
+function tiempoDescarga(recorrido, sucursal){
+  const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(recorrido) && normNotif(t.sucursal)===normNotif(sucursal));
+  return est ? (Number(est.tiempo_est_seg)||0)/60 : 0;
+}
+
+// Arma, parada por parada, la hora estimada de llegada — y a medida que
+// hay llegadas REALES escaneadas, recalcula la estimación de las
+// siguientes a partir de esa hora real (no de la salida original). La
+// última "parada" siempre es la vuelta a Fábrica.
+function calcularParadasConEta(v, hojaDeRuta){
+  const secuencia = [...hojaDeRuta.map(p=>p.sucursal), "__FABRICA_VUELTA__"];
+  let horaConocida = v.horaSalida ? new Date(v.horaSalida) : null; // última hora REAL conocida (salida, o última llegada real)
+  let anteriorNombre = "FABRICA";
+  const resultado = [];
+
+  for(const nombreParada of secuencia){
+    const esVuelta = nombreParada === "__FABRICA_VUELTA__";
+    const nombreReal = esVuelta ? "FABRICA" : nombreParada;
+    const tramo = minutosEntre(anteriorNombre, nombreReal);
+    const eta = (horaConocida && tramo!=null) ? new Date(horaConocida.getTime()+tramo*60000) : null;
+
+    const horaReal = esVuelta
+      ? (v.horaLlegada ? new Date(v.horaLlegada) : null)
+      : (()=>{ const r=(S.flotaRegistrosHoy||[]).find(r=>r.id_viaje===v.id && normNotif(r.sucursal)===normNotif(nombreParada) && String(r.evento||"").toUpperCase()==="LLEGADA"); return r?new Date(r.ts):null; })();
+
+    resultado.push({sucursal: esVuelta?"Fábrica (vuelta)":nombreParada, eta, horaReal, esVuelta});
+
+    // Base para la siguiente: si ya hay llegada real, partir de ahí +
+    // descarga real; si no, seguir la cadena estimada.
+    const baseHora = horaReal || eta;
+    if(baseHora && !esVuelta){
+      horaConocida = new Date(baseHora.getTime() + tiempoDescarga(v.recorrido, nombreParada)*60000);
+    } else {
+      horaConocida = baseHora;
+    }
+    anteriorNombre = nombreReal;
+  }
+  return resultado;
+}
+function formatoDiferencia(eta, horaReal){
+  if(!eta || !horaReal) return "";
+  const diffMin = Math.round((horaReal-eta)/60000);
+  if(Math.abs(diffMin)<2) return " (a horario)";
+  return diffMin>0 ? ` (${diffMin} min tarde)` : ` (${Math.abs(diffMin)} min antes)`;
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1029,16 +1076,19 @@ function renderWidgetFlotaHoy(){
         const hojaDeRuta = (S.flotaTiemposViaje||[])
           .filter(p=>normNotif(p.recorrido)===normNotif(v.recorrido))
           .sort((a,b)=>a.orden_parada-b.orden_parada);
-        const hechasSet = new Set((v.paradasHechas||[]).map(normNotif));
-        // Índice de la última parada ya hecha, para saber dónde poner el
-        // camioncito (va hacia la próxima que todavía no se hizo).
-        const idxUltimaHecha = hojaDeRuta.reduce((acc,p,i)=>hechasSet.has(normNotif(p.sucursal))?i:acc, -1);
-        const listaParadas = !hojaDeRuta.length ? "" : `
+        const paradasConEta = !hojaDeRuta.length ? [] : calcularParadasConEta(v, hojaDeRuta);
+        // Índice de la última parada ya hecha (con llegada real), para
+        // saber dónde poner el camioncito (va hacia la próxima).
+        const idxUltimaHecha = paradasConEta.reduce((acc,p,i)=>p.horaReal?i:acc, -1);
+        const listaParadas = !paradasConEta.length ? "" : `
           <div style="display:flex;flex-direction:column;margin-top:8px">
-            ${hojaDeRuta.map((p,i)=>{
-              const hecha = i<=idxUltimaHecha;
+            ${paradasConEta.map((p,i)=>{
+              const hecha = !!p.horaReal;
               const esProxima = activo && i===idxUltimaHecha+1;
-              const esUltima = i===hojaDeRuta.length-1;
+              const esUltima = i===paradasConEta.length-1;
+              const horaTxt = hecha
+                ? `Llegó ${horaCorta(p.horaReal)}${formatoDiferencia(p.eta,p.horaReal)}`
+                : (p.eta ? `ETA ${horaCorta(p.eta)}` : `ETA —`);
               return `
               <div style="display:flex;align-items:flex-start;gap:8px">
                 <div style="display:flex;flex-direction:column;align-items:center;flex-shrink:0">
@@ -1048,8 +1098,11 @@ function renderWidgetFlotaHoy(){
                   </div>
                   ${!esUltima?`<div style="width:2px;flex:1;min-height:14px;background:${hecha?"#1fa86a":"var(--border)"}"></div>`:""}
                 </div>
-                <div style="font-size:12px;padding-bottom:10px;color:${hecha?"#4ade80":esProxima?"var(--amber)":"var(--faint)"};font-weight:${esProxima?"700":"400"}">
-                  ${esProxima?"🚚 ":""}${escH(p.sucursal)}
+                <div style="padding-bottom:10px">
+                  <div style="font-size:12px;color:${hecha?"#4ade80":esProxima?"var(--amber)":"var(--faint)"};font-weight:${esProxima?"700":"400"}">
+                    ${esProxima?"🚚 ":""}${escH(p.sucursal)}
+                  </div>
+                  <div style="font-size:11px;color:${hecha?"var(--muted)":"var(--faint)"}">${horaTxt}</div>
                 </div>
               </div>`;
             }).join("")}
@@ -1057,7 +1110,7 @@ function renderWidgetFlotaHoy(){
         const estadoTxt = activo
           ? (v.ultimaParada ? `Última parada: ${escH(v.ultimaParada.sucursal)} (${horaCorta(v.ultimaParada.ts)})` : `Salió ${horaCorta(v.horaSalida)} — en camino`)
           : `Finalizado ${horaCorta(v.horaLlegada)}`;
-        return `<div style="background:var(--s2);border-radius:8px;padding:10px 14px;border-left:3px solid ${color};min-width:200px">
+        return `<div style="background:var(--s2);border-radius:8px;padding:10px 14px;border-left:3px solid ${color};min-width:230px">
           <div style="font-weight:700;font-size:14px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
           <div style="font-size:12px;color:var(--muted);font-weight:600">👤 ${escH(v.repartidor||"—")}</div>
           <div style="font-size:12px;margin-top:3px">${estadoTxt}</div>
