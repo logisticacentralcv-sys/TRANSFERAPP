@@ -631,6 +631,7 @@ let S = {
   metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"",
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   miIdentidadFresco:null, // {dni,nombre} — idem para Recepción Fresco (login compartido)
+  miIdentidadTesoreria:null, // {dni,nombre} — idem para Tesorería (confirmar recepciones sin pedir DNI cada vez)
   fFrescoFecha:"",
   identidadRepModal: {dni:"", err:"", loading:false},
   selDevolucionId: null,
@@ -2778,6 +2779,15 @@ function renderTesoreria(){
       <button class="btn btn-success btn-md" onclick="openNuevoLote()">📦 Nuevo lote de bolsines</button>
     </div>
 
+    ${S.miIdentidadTesoreria?`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;font-size:12px;color:var(--muted)">
+      👤 Confirmás recepciones como <strong style="color:var(--text)">${escH(S.miIdentidadTesoreria.nombre)}</strong>
+      <button class="btn btn-ghost btn-sm" onclick="cambiarIdentidadTesoreria()">Cambiar</button>
+    </div>`:`
+    <div class="card" style="margin-bottom:16px;padding:12px 16px;border-left:3px solid var(--amber);font-size:13px">
+      👤 Todavía no te identificaste en este dispositivo — la primera vez que confirmes una recepción te va a pedir el DNI, y no te lo vuelve a pedir después (salvo para crear un lote nuevo).
+    </div>`}
+
     <div class="stats-grid">
       ${statCard("🎒","PEDIDOS PENDIENTES",pendientes.length,"var(--amber)")}
       ${statCard("✅","PARA MARCAR LISTOS",aprobadosParaListo.length,"var(--teal)")}
@@ -4792,6 +4802,7 @@ function renderDejarCerradoModal(){
 function renderConfirmarCerradoModal(){
   const d = S.confirmarCerradoModal;
   const r = S.requests.find(x=>x.id===d.id);
+  const identidadFija = (S.user?.rol==="tesoreria" && S.miIdentidadTesoreria) ? S.miIdentidadTesoreria : null;
   return `
   ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
     <div style="display:flex;gap:8px;margin-bottom:8px">
@@ -4810,6 +4821,11 @@ function renderConfirmarCerradoModal(){
       <span style="font-size:12px;color:var(--muted)">Registrando...</span>
     </div>
   ` : `
+    ${identidadFija?`
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px;font-size:12px;color:var(--muted)">
+      <span>👤 Identificado como <strong style="color:var(--text)">${escH(identidadFija.nombre)}</strong></span>
+      <button class="btn btn-ghost btn-sm" onclick="cambiarIdentidadTesoreria()">Cambiar</button>
+    </div>`:`
     <div class="field">
       <label>Tu DNI (sin puntos) <span class="req">*</span></label>
       <input id="confcerrado-dni" class="inp ${d.err?"err":""}"
@@ -4818,7 +4834,7 @@ function renderConfirmarCerradoModal(){
         oninput="S.confirmarCerradoModal.dni=this.value;S.confirmarCerradoModal.err=''"
         onkeydown="if(event.key==='Enter')submitConfirmarCerrado()"/>
       ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
-    </div>
+    </div>`}
     ${r && r.tipoPedido==="bolsin"?`
     <div class="field" style="margin-top:12px">
       <label>Cantidad de bolsines que retiraste <span class="req">*</span></label>
@@ -5899,7 +5915,8 @@ async function submitDejarCerrado(){
 
 // ── Sucursal confirma una transferencia que quedó "sin confirmar" (cerrada) ──
 function openConfirmarCerrado(id){
-  S.confirmarCerradoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
+  const identidadFija = (S.user?.rol==="tesoreria" && S.miIdentidadTesoreria) ? S.miIdentidadTesoreria : null;
+  S.confirmarCerradoModal = {id, dni: identidadFija?identidadFija.dni:"", err:"", loading:false, nombreOk: identidadFija?identidadFija.nombre:""};
   S.modal = "confirmarCerrado";
   render();
 }
@@ -5916,6 +5933,13 @@ async function submitConfirmarCerrado(){
   S.confirmarCerradoModal.nombreOk = check.nombre;
   renderNow();
   await new Promise(r=>setTimeout(r,450));
+
+  // Primera vez que Tesorería confirma en este dispositivo: guardar la
+  // identidad para no volver a pedir el DNI en las próximas.
+  if(S.user?.rol==="tesoreria" && !S.miIdentidadTesoreria){
+    S.miIdentidadTesoreria = {dni, nombre: check.nombre};
+    try{ localStorage.setItem("tl_tesoreria_identidad", JSON.stringify(S.miIdentidadTesoreria)); }catch(e){}
+  }
 
   const comentario = ($("confcerrado-comentario")?.value||d.comentario||"").trim();
   const r = S.requests.find(x=>x.id===d.id);
@@ -6758,6 +6782,11 @@ function cambiarIdentidadFresco(){
   S.miIdentidadFresco = null;
   render();
 }
+function cambiarIdentidadTesoreria(){
+  try{ localStorage.removeItem("tl_tesoreria_identidad"); }catch(e){}
+  S.miIdentidadTesoreria = null;
+  render();
+}
 
 // ══════════════════════════════════════════════════════════
 //  QUIEBRE DE STOCK — la sucursal pide algo puntual y urgente
@@ -7434,7 +7463,7 @@ async function doLogin(){
   S.view = "app";
   S.lastRefresh = Date.now();
   try{ localStorage.setItem("tl_sesion", JSON.stringify(S.user)); }catch(e){}
-  if(S.user.rol==="repartidor" || S.user.rol==="recepcionista") cargarIdentidadRepartidor();
+  if(["repartidor","recepcionista","tesoreria"].includes(S.user.rol)) cargarIdentidadRepartidor();
   reiniciarTimerInactividad();
   render(); // mostrar app ya
 
@@ -7551,8 +7580,10 @@ function doLogout(){
   // dispositivo" pegada para la próxima persona que entre.
   try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
   try{ localStorage.removeItem("tl_fresco_identidad"); }catch(e){}
+  try{ localStorage.removeItem("tl_tesoreria_identidad"); }catch(e){}
   S.miIdentidadRep = null;
   S.miIdentidadFresco = null;
+  S.miIdentidadTesoreria = null;
   try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
   stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
 }
@@ -7572,6 +7603,10 @@ function cargarIdentidadRepartidor(){
   try{
     const guardadaFresco = localStorage.getItem("tl_fresco_identidad");
     if(guardadaFresco) S.miIdentidadFresco = JSON.parse(guardadaFresco);
+  }catch(e){}
+  try{
+    const guardadaTesoreria = localStorage.getItem("tl_tesoreria_identidad");
+    if(guardadaTesoreria) S.miIdentidadTesoreria = JSON.parse(guardadaTesoreria);
   }catch(e){}
 }
 function abrirIdentificarRepartidor(){
