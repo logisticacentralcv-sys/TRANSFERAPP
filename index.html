@@ -615,6 +615,7 @@ let S = {
   flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
   armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:""},
+  flotaDash: null, flotaDashLoading: false, escFlotaDash: "3",
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
@@ -735,6 +736,7 @@ function genId(){
 }
 function now(){ return new Date().toISOString(); }
 function fdt(iso){ return iso ? new Date(iso).toLocaleString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"}) : "—"; }
+function horaSolo(iso){ return iso ? new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}) : "—"; }
 function fd(iso){
   if(!iso) return "—";
   // Fechas SIN hora (ej: "2026-09-05", como fechaRequerida) no deben pasar
@@ -3551,10 +3553,11 @@ function renderLogistica(){
         <button class="tab ${S.tabLog==="solicitudes"?"active":""}" onclick="S.tabLog='solicitudes';render()">📋 Solicitudes</button>
         <button class="tab ${S.tabLog==="metricas"?"active":""}" onclick="S.tabLog='metricas';render()">📊 Métricas</button>
         <button class="tab ${S.tabLog==="recorridos"?"active":""}" onclick="S.tabLog='recorridos';render()">🗺️ Recorridos</button>
+        <button class="tab ${S.tabLog==="flotaDash"?"active":""}" onclick="S.tabLog='flotaDash';if(!S.flotaDash)cargarDashboardFlota();render()">🚚 Dashboard</button>
       </div>
-      ${S.tabLog!=="recorridos"?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>`:""}
+      ${!["recorridos","flotaDash"].includes(S.tabLog)?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>`:""}
     </div>
-    ${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():renderArmarRecorrido()}
+    ${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderArmarRecorrido():renderDashboardFlota()}
   </div>`;
 }
 
@@ -3807,6 +3810,234 @@ async function borrarArmarRecorrido(){
     toast("⚠️ No se pudo borrar: "+e.message, "warn");
   }
   render();
+}
+
+// ══════════════════════════════════════════════════════════
+//  DASHBOARD DE FLOTA — integrado directo en Logística.
+//  Misma arquitectura de capas que la versión aparte (datos/cómputo/
+//  render), portada acá para que quede todo en un solo lugar.
+// ══════════════════════════════════════════════════════════
+async function cargarDashboardFlota(){
+  S.flotaDashLoading = true; render();
+  const hoy = hoyLocalISO();
+  const fetchTabla = async (nombre, query)=>{
+    try{
+      let q = sb.from(nombre).select("*");
+      if(query) q = query(q);
+      const { data, error } = await q;
+      if(error) throw error;
+      return data||[];
+    }catch(e){ console.warn("Flota dashboard, no se pudo leer "+nombre+":", e.message); return []; }
+  };
+  const [cargaPlanificada, camiones, registrosQR, vizVerd] = await Promise.all([
+    fetchTabla("flota_carga_planificada", q=>q.eq("fecha",hoy)),
+    fetchTabla("flota_camiones"),
+    fetchTabla("flota_registros_qr", q=>q.gte("ts", hoy+"T00:00:00")),
+    fetchTabla("flota_viz_verd", q=>q.eq("fecha",hoy)),
+  ]);
+  S.flotaDash = { cargaPlanificada, camiones, registrosQR, vizVerd, ts: new Date() };
+  S.flotaDashLoading = false;
+  render();
+}
+
+function planPrincYVerdParaEscenario(datos, escActivo){
+  const esEspecial = (escActivo==="h"||escActivo==="c"||escActivo==="r"||escActivo==="s");
+  if(esEspecial){
+    const keyMap = {h:"HUEVOS",c:"CONGELADOS",r:"REFUERZO",s:"SECOS"};
+    const keyRec = keyMap[escActivo];
+    const princ = datos.cargaPlanificada.filter(r=>String(r.escenario||"").toUpperCase().includes(keyRec));
+    return { princ, verd:[] };
+  }
+  const filtro = escActivo==="3" ? "3_RECORRIDOS" : "2_RECORRIDOS";
+  const princ = datos.cargaPlanificada.filter(r=>r.escenario===filtro);
+  const verd  = datos.cargaPlanificada.filter(r=>{
+    const e=(r.escenario||"").toUpperCase();
+    return e.includes("VERDULERIA") || e.includes("VERDULERÍA");
+  });
+  return { princ, verd };
+}
+function computeVizRowsDash(datos){
+  return (S.flotaViajesHoy||[]).map(v=>{
+    const plan = datos.cargaPlanificada.find(c=>normNotif(c.recorrido)===normNotif(v.recorrido));
+    const ocupKg = plan && plan.ocup_kg_teorico>0 ? Math.round(plan.ocup_kg_teorico*100) : 0;
+    const estado = v.estado==="FINALIZADO" ? "✅ Finalizado" : "🚛 En ruta";
+    return {
+      recorrido: v.recorrido,
+      repartidor: [v.nombre_rep1, v.nombre_rep2].filter(Boolean).join(" / "),
+      camion: plan ? plan.camion_id : "",
+      realKg: plan ? plan.real_kg : 0,
+      ocupPct: ocupKg,
+      horaSalida: v.hora_salida,
+      horaLlegReal: v.estado==="FINALIZADO" ? v.hora_llegada : null,
+      estado,
+    };
+  });
+}
+function computeParadasDash(datos){
+  const porViajeSucursal = {};
+  datos.registrosQR.forEach(r=>{
+    if(r.sucursal==="FABRICA") return;
+    const clave = r.id_viaje+"|"+r.sucursal;
+    if(!porViajeSucursal[clave]) porViajeSucursal[clave] = {recorrido:r.recorrido, sucursal:r.sucursal, llegada:null, salida:null};
+    if(String(r.evento||"").toUpperCase()==="LLEGADA") porViajeSucursal[clave].llegada = r.ts;
+    if(String(r.evento||"").toUpperCase()==="SALIDA")  porViajeSucursal[clave].salida  = r.ts;
+  });
+  return Object.values(porViajeSucursal).map(p=>{
+    const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(p.recorrido) && normNotif(t.sucursal)===normNotif(p.sucursal));
+    const tEstSeg = est ? est.tiempo_est_seg : 0;
+    let tRealSeg = 0;
+    if(p.llegada && p.salida) tRealSeg = Math.round((new Date(p.salida) - new Date(p.llegada))/1000);
+    const diff = (tEstSeg>0 && tRealSeg>0) ? Math.round((tRealSeg-tEstSeg)/60) : null;
+    return { recorrido:p.recorrido, sucursal:p.sucursal, tEstSeg, tRealSeg, diff,
+      estado: p.llegada && !p.salida ? "Descargando" : (!p.llegada ? "Sin escanear" : "Listo") };
+  });
+}
+function segsToMmSs(s){ if(!s||s<=0) return "—"; const m=Math.floor(s/60), ss=Math.floor(s%60); return (m<10?"0":"")+m+":"+(ss<10?"0":"")+ss; }
+
+function renderDashboardFlota(){
+  if(S.flotaDashLoading || !S.flotaDash){
+    return `<div style="text-align:center;padding:60px;color:var(--muted)"><span class="spinner"></span> Cargando dashboard de Flota...</div>`;
+  }
+  const datos = S.flotaDash;
+  const esc = S.escFlotaDash || "3";
+  const pv = planPrincYVerdParaEscenario(datos, esc);
+  const princ = pv.princ, verd = pv.verd;
+  const vizRows = computeVizRowsDash(datos);
+  const paradas = computeParadasDash(datos);
+
+  const planTotal = princ.reduce((a,r)=>a+(Number(r.plan_kg)||0),0) + verd.reduce((a,r)=>a+(Number(r.plan_kg)||0),0);
+  const bultosTotal = princ.reduce((a,r)=>a+(Number(r.bultos)||0),0) + verd.reduce((a,r)=>a+(Number(r.bultos)||0),0);
+  const enRuta = vizRows.filter(r=>r.estado.includes("En ruta")).length;
+  const finalizados = vizRows.filter(r=>r.estado.includes("Finalizado")).length;
+  const pendientes = Math.max(0, (princ.length+(verd.length>0?1:0)) - vizRows.length);
+
+  const escenarios = [["3","3 recorridos"],["2","2 recorridos"],["h","🥚 Huevos"],["c","Congelados"],["r","Refuerzo"],["s","Secos"]];
+
+  return `
+  <div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${escenarios.map(([v,l])=>`<button class="btn ${esc===v?"btn-primary":"btn-ghost"} btn-sm" onclick="S.escFlotaDash='${v}';render()">${l}</button>`).join("")}
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="cargarDashboardFlota()">↻ Actualizar (${datos.ts.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})})</button>
+    </div>
+
+    <div class="stats-grid" style="margin-bottom:20px">
+      ${statCard("📦","CARGA PLANIFICADA", Math.round(planTotal)+" kg", "var(--amber)")}
+      ${statCard("📬","TOTAL BULTOS", bultosTotal, "var(--blue)")}
+      ${statCard("🚛","EN RUTA", enRuta, "var(--blue)")}
+      ${statCard("✅","FINALIZADOS", finalizados, "#1fa86a")}
+      ${statCard("⏳","PENDIENTES", pendientes, "var(--muted)")}
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🚛 Estado operativo en tiempo real</h3>
+      ${!vizRows.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Ningún camión registró salida todavía hoy.</p>`:`
+      <div class="table-wrap"><table>
+        <thead><tr><th>Recorrido</th><th>Repartidor · Camión</th><th>Salida</th><th>Llegada real</th><th>Carga real</th><th>% Ocup.</th><th>Estado</th></tr></thead>
+        <tbody>
+          ${vizRows.map(r=>{
+            const ocp = Number(r.ocupPct)||0;
+            const col = ocp>=85?"#1fa86a":ocp>=60?"var(--blue)":ocp>=30?"var(--amber)":"var(--muted)";
+            return `<tr>
+              <td><strong>${escH(r.recorrido)}</strong></td>
+              <td>${escH(r.repartidor||"—")}${r.camion?` <span style="color:var(--faint)">(${escH(r.camion)})</span>`:""}</td>
+              <td class="mono">${horaSolo(r.horaSalida)}</td>
+              <td class="mono">${horaSolo(r.horaLlegReal)}</td>
+              <td>${r.realKg>0?`<strong>${Math.round(r.realKg)} kg</strong>`:"—"}</td>
+              <td><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;min-width:60px"><div style="height:100%;width:${Math.min(ocp,100)}%;background:${col}"></div></div><span style="color:${col};font-size:12px;font-weight:600">${Math.round(ocp)}%</span></div></td>
+              <td>${badge(r.estado, r.estado.includes("Final")?"#1fa86a":"var(--blue)")}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table></div>`}
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📦 Carga planificada</h3>
+      ${(!princ.length && !verd.length)?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no hay carga sincronizada para hoy — corré la sincronización desde Apps Script.</p>`:`
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+        ${princ.map(r=>{
+          const esHuevos = String(r.recorrido||"").toUpperCase().includes("HUEVOS");
+          const ocpKg = r.ocup_kg_teorico>0?Math.round(r.ocup_kg_teorico*100):0;
+          const ocpVol = r.ocup_vol_teorico>0?Math.round(r.ocup_vol_teorico*100):0;
+          return `<div style="background:var(--s2);border-radius:10px;padding:14px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${esHuevos?"🥚":"🗺️"} ${escH(r.recorrido)}</div>
+            <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${escH((r.escenario||"").replace(/_/g," "))}${r.camion_id?` · ${escH(r.camion_id)}`:""}</div>
+            ${esHuevos?`
+            <div style="font-size:12px;color:var(--muted)">Cajones: <strong style="color:var(--text)">${Math.round(r.cajones||0)}</strong> · Docena: <strong style="color:var(--text)">${Math.round(r.docenas||0)}</strong> · ½ doc: <strong style="color:var(--text)">${Math.round(r.media_docena||0)}</strong></div>
+            `:`
+            <div style="font-size:12px;color:var(--muted)">Carga: <strong style="color:var(--text)">${Math.round(r.plan_kg||0)} kg</strong> · Bultos: <strong style="color:var(--text)">${Math.round(r.bultos||0)}</strong> · Pallets: <strong style="color:var(--text)">${(r.pallets||0).toFixed(1)}</strong></div>
+            <div style="font-size:11px;color:var(--faint);margin-top:4px">Ocup. peso: ${ocpKg}% · Ocup. volumen: ${ocpVol}%</div>
+            `}
+          </div>`;
+        }).join("")}
+        ${verd.length?`<div style="background:var(--s2);border-radius:10px;padding:14px;border:1px solid #1fa86a40">
+          <div style="font-weight:700;font-size:14px">🥦 Verdulería</div>
+          <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Recorrido especial · ${verd.length} sucursales</div>
+          <div style="font-size:12px;color:var(--muted)">Carga: <strong style="color:var(--text)">${Math.round(verd.reduce((a,r)=>a+(+r.plan_kg||0),0))} kg</strong> · Bultos: <strong style="color:var(--text)">${Math.round(verd.reduce((a,r)=>a+(+r.bultos||0),0))}</strong></div>
+        </div>`:""}
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🚚 Flota</h3>
+      ${!datos.camiones.length?`<p style="color:var(--muted);font-size:13px">Sin datos de flota sincronizados todavía.</p>`:`
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
+        ${datos.camiones.map(f=>`<div style="background:var(--s2);border-radius:8px;padding:10px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+            <strong style="font-size:13px">🚚 ${escH(f.id)}</strong>
+            <span style="font-size:11px;color:${f.disponible?"#1fa86a":"var(--red)"}">${f.disponible?"✓ Disponible":"✗ No disp."}</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted)">Kg máx: ${Math.round(f.kg_max||0)} kg</div>
+        </div>`).join("")}
+      </div>`}
+    </div>
+
+    <div class="card" style="margin-bottom:20px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">⏱️ Tiempos de descarga (real vs. estimado)</h3>
+      ${!paradas.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Los tiempos aparecen a medida que los camiones escanean los QR de llegada/salida.</p>`:`
+      <div class="table-wrap"><table>
+        <thead><tr><th>Recorrido</th><th>Sucursal</th><th>Estimado</th><th>Real</th><th>Estado</th></tr></thead>
+        <tbody>
+          ${paradas.map(p=>{
+            let pill;
+            if(p.tRealSeg>0 && p.tEstSeg>0){
+              if(p.diff>7) pill=badge(`⚠ +${p.diff} min`,"var(--red)");
+              else if(p.diff<-5) pill=badge(`▲ ${Math.abs(p.diff)} min antes`,"#1fa86a");
+              else pill=badge("✓ A tiempo","var(--blue)");
+            } else if(p.tRealSeg>0) pill=badge("✓ Registrado","var(--blue)");
+            else pill=badge(p.estado||"Sin escanear","var(--muted)");
+            return `<tr>
+              <td>${escH(p.recorrido)}</td>
+              <td><strong>${escH(p.sucursal)}</strong></td>
+              <td class="mono">${segsToMmSs(p.tEstSeg)}</td>
+              <td class="mono">${p.tRealSeg>0?segsToMmSs(p.tRealSeg):"—"}</td>
+              <td>${pill}</td>
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table></div>`}
+    </div>
+
+    ${datos.vizVerd && datos.vizVerd.length?`
+    <div class="card">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🥦 Verdulería — fases</h3>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
+        ${datos.vizVerd.map(f=>{
+          const ico = {Mercado:"🏪",Armado:"⚙️",Reparto:"🚚"}[f.fase]||"📋";
+          const ok = (f.estado||"").includes("✅");
+          return `<div style="background:var(--s2);border-radius:8px;padding:12px">
+            <div style="font-size:20px">${ico}</div>
+            <div style="font-weight:700;font-size:13px;margin:4px 0">${escH(f.fase)}</div>
+            <div style="font-size:11px;color:var(--faint)">Inicio: ${horaSolo(f.hora_inicio)}</div>
+            <div style="font-size:11px;color:var(--faint)">Fin: ${horaSolo(f.hora_fin)}</div>
+            <div style="margin-top:6px;font-size:11px;font-weight:600;color:${ok?"#1fa86a":"var(--amber)"}">${escH(f.estado||"⏳ Pendiente")}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`:""}
+  </div>`;
 }
 
 function renderArmarRecorrido(){
