@@ -1126,10 +1126,7 @@ function renderWidgetFlotaHoy(){
       }).join("")}
     </div>`;
 
-  // El buscador de ETA se muestra siempre que Flota esté conectada (aunque
-  // hoy no haya salido ningún recorrido todavía), para que se pueda usar
-  // en cualquier momento del día.
-  if(!listaRecorridos && !S.flotaTiemposViaje) return "";
+  if(!listaRecorridos) return "";
 
   return `
   <div class="card" style="margin-bottom:16px;padding:14px 18px">
@@ -1137,13 +1134,6 @@ function renderWidgetFlotaHoy(){
       <span style="font-size:13px;font-weight:700;color:var(--muted)">🚚 RECORRIDOS DE HOY</span>
     </div>
     ${listaRecorridos || `<p style="font-size:13px;color:var(--muted);margin-bottom:12px">Todavía no salió ningún recorrido hoy.</p>`}
-    <div style="padding-top:12px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-      <span style="font-size:12px;color:var(--muted);white-space:nowrap">🔍 ¿Cuándo llega a...?</span>
-      <input list="flota-sucursales-datalist" id="flota-buscar-suc" class="inp" style="width:200px" placeholder="Elegí una sucursal"
-        onchange="buscarYMostrarEtaSucursal(this.value)"/>
-      <datalist id="flota-sucursales-datalist">${getSucursales().map(s=>`<option value="${escH(s)}">`).join("")}</datalist>
-    </div>
-    ${S.flotaEtaResultado?`<div style="margin-top:10px">${renderResultadoEtaSucursal()}</div>`:""}
   </div>`;
 }
 
