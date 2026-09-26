@@ -614,6 +614,7 @@ let S = {
   flotaHoy: [], // visibilidad cruzada con Flota (tabla flota_viajes/flota_registros_qr)
   flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
+  armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:""},
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
@@ -3549,10 +3550,11 @@ function renderLogistica(){
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${S.tabLog==="solicitudes"?"active":""}" onclick="S.tabLog='solicitudes';render()">📋 Solicitudes</button>
         <button class="tab ${S.tabLog==="metricas"?"active":""}" onclick="S.tabLog='metricas';render()">📊 Métricas</button>
+        <button class="tab ${S.tabLog==="recorridos"?"active":""}" onclick="S.tabLog='recorridos';render()">🗺️ Recorridos</button>
       </div>
-      <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+      ${S.tabLog!=="recorridos"?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>`:""}
     </div>
-    ${S.tabLog==="solicitudes"?renderLogTabla():renderMetricas()}
+    ${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():renderArmarRecorrido()}
   </div>`;
 }
 
@@ -3729,6 +3731,157 @@ function fechaLocalDeTimestamp(iso){
   if(isNaN(d.getTime())) return null;
   const local = new Date(d.getTime() - d.getTimezoneOffset()*60000);
   return local.toISOString().slice(0,10);
+}
+
+// ══════════════════════════════════════════════════════════
+//  ARMAR RECORRIDO — integrado directo en TransferApp/Logística.
+//  Misma lógica que la herramienta aparte de Flota, pero reusando los
+//  datos que ya están cargados acá (matriz de tiempos, hoja de ruta).
+// ══════════════════════════════════════════════════════════
+function puntosDisponiblesRecorrido(){
+  return [...new Set((S.flotaMatrizTiempos||[]).map(m=>m.origen))]
+    .filter(p=>p.toUpperCase()!=="FABRICA")
+    .sort();
+}
+function nombresRecorridosConHoja(){
+  return [...new Set((S.flotaTiemposViaje||[]).map(t=>t.recorrido))];
+}
+function onCambiaNombreRecorrido(nombre){
+  S.armarRecorridoForm.nombre = nombre;
+  const existe = (S.flotaTiemposViaje||[]).some(t=>t.recorrido===nombre);
+  if(existe && nombre!==S.armarRecorridoForm._ultimoCargado){
+    S.armarRecorridoForm._ultimoCargado = nombre;
+    S.armarRecorridoForm.paradas = (S.flotaTiemposViaje||[])
+      .filter(t=>t.recorrido===nombre)
+      .sort((a,b)=>a.orden_parada-b.orden_parada)
+      .map(t=>t.sucursal);
+  } else if(!existe){
+    S.armarRecorridoForm._ultimoCargado = "";
+  }
+  render();
+}
+function agregarParadaRecorrido(){
+  const val = ($("ar-sel-parada")?.value||"").trim();
+  if(!val) return;
+  if(S.armarRecorridoForm.paradas.includes(val)){ toast("Esa parada ya está en la lista","warn"); return; }
+  S.armarRecorridoForm.paradas.push(val);
+  render();
+}
+function quitarParadaRecorrido(i){ S.armarRecorridoForm.paradas.splice(i,1); render(); }
+function subirParadaRecorrido(i){ if(i===0) return; const p=S.armarRecorridoForm.paradas; [p[i-1],p[i]]=[p[i],p[i-1]]; render(); }
+function bajarParadaRecorrido(i){ const p=S.armarRecorridoForm.paradas; if(i===p.length-1) return; [p[i+1],p[i]]=[p[i],p[i+1]]; render(); }
+
+async function guardarArmarRecorrido(){
+  const nombre = S.armarRecorridoForm.nombre.trim();
+  const paradas = S.armarRecorridoForm.paradas;
+  if(!nombre){ toast("Ponele un nombre al recorrido","warn"); return; }
+  if(!paradas.length){ toast("Agregá al menos una parada","warn"); return; }
+  S.armarRecorridoForm.loading = true; render();
+  try{
+    const { error: eDel } = await sb.from("flota_tiempos_viaje").delete().eq("recorrido", nombre);
+    if(eDel) throw eDel;
+    const filas = paradas.map((sucursal,i)=>({recorrido:nombre, orden_parada:i+1, sucursal}));
+    const { error: eIns } = await sb.from("flota_tiempos_viaje").insert(filas);
+    if(eIns) throw eIns;
+    // Actualizar el estado local para que se refleje ya mismo, sin recargar
+    S.flotaTiemposViaje = [...(S.flotaTiemposViaje||[]).filter(t=>t.recorrido!==nombre), ...filas];
+    toast(`✅ "${nombre}" guardado con ${paradas.length} paradas`);
+  }catch(e){
+    toast("⚠️ No se pudo guardar: "+e.message, "warn");
+  }
+  S.armarRecorridoForm.loading = false;
+  render();
+}
+async function borrarArmarRecorrido(){
+  const nombre = S.armarRecorridoForm.nombre.trim();
+  if(!nombre) return;
+  if(!confirm(`¿Borrar todas las paradas guardadas de "${nombre}"?`)) return;
+  try{
+    const { error } = await sb.from("flota_tiempos_viaje").delete().eq("recorrido", nombre);
+    if(error) throw error;
+    S.flotaTiemposViaje = (S.flotaTiemposViaje||[]).filter(t=>t.recorrido!==nombre);
+    S.armarRecorridoForm.paradas = [];
+    S.armarRecorridoForm._ultimoCargado = "";
+    toast(`Borrado "${nombre}"`);
+  }catch(e){
+    toast("⚠️ No se pudo borrar: "+e.message, "warn");
+  }
+  render();
+}
+
+function renderArmarRecorrido(){
+  const f = S.armarRecorridoForm;
+  const puntos = puntosDisponiblesRecorrido();
+  const nombresSugeridos = [...new Set([...(S.recorridos||[]), ...nombresRecorridosConHoja()])];
+
+  if(!S.flotaMatrizTiempos || !S.flotaMatrizTiempos.length){
+    return `<div class="card" style="padding:20px;text-align:center;color:var(--muted)">
+      Todavía no hay ninguna matriz de tiempos cargada (flota_matriz_tiempos) — sin eso no se puede calcular el tiempo entre paradas.
+    </div>`;
+  }
+
+  let acumulado = 0, anterior = "FABRICA", faltaDato = false;
+  const filasParadas = f.paradas.map((p,i)=>{
+    const tramo = minutosEntre(anterior, p);
+    let legTxt;
+    if(tramo===null){ faltaDato = true; legTxt = `<span style="color:var(--red)">sin dato entre "${escH(anterior==="FABRICA"?"Fábrica":anterior)}" y "${escH(p)}"</span>`; }
+    else { acumulado += tramo; legTxt = `+${tramo} min desde ${escH(anterior==="FABRICA"?"Fábrica":anterior)}`; }
+    anterior = p;
+    return `
+    <div class="card" style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:8px">
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--amber);flex-shrink:0">${i+1}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px">${escH(p)}</div>
+        <div style="font-size:12px;color:var(--muted)">${legTxt} · acum: ${faltaDato?"—":Math.round(acumulado)+" min"}</div>
+      </div>
+      <div style="display:flex;gap:4px;flex-shrink:0">
+        <button class="btn btn-ghost btn-sm" onclick="subirParadaRecorrido(${i})" ${i===0?"disabled":""}>↑</button>
+        <button class="btn btn-ghost btn-sm" onclick="bajarParadaRecorrido(${i})" ${i===f.paradas.length-1?"disabled":""}>↓</button>
+        <button class="btn btn-ghost btn-sm" onclick="quitarParadaRecorrido(${i})">✕</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  return `
+  <div>
+    <div class="card" style="margin-bottom:16px">
+      <div class="field">
+        <label>Nombre del recorrido</label>
+        <div style="display:flex;gap:10px">
+          <input id="ar-nombre" class="inp" list="ar-dl-recorridos" placeholder="Ej: SUR, CENTRO, NORTE..." value="${escH(f.nombre)}"
+            oninput="onCambiaNombreRecorrido(this.value)"/>
+          <datalist id="ar-dl-recorridos">${nombresSugeridos.map(n=>`<option value="${escH(n)}">`).join("")}</datalist>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <label style="display:block;margin-bottom:8px">Agregar parada</label>
+      <div style="display:flex;gap:10px;margin-bottom:16px">
+        <select id="ar-sel-parada" class="inp" style="flex:1">
+          ${puntos.map(p=>`<option>${escH(p)}</option>`).join("")}
+        </select>
+        <button class="btn btn-teal btn-md" onclick="agregarParadaRecorrido()">+ Agregar</button>
+      </div>
+
+      ${f.paradas.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no agregaste ninguna parada — arranca siempre desde Fábrica.</p>`:filasParadas}
+
+      ${f.paradas.length>0?`
+      <div style="margin-top:6px;padding:12px 16px;background:#e8a02018;border:1px solid #e8a02040;border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:13px">🕐 Tiempo total de viaje (sin contar descargas)</span>
+        <strong style="color:var(--amber)">${faltaDato?"Faltan datos":Math.round(acumulado)+" min"}</strong>
+      </div>`:""}
+
+      <p style="font-size:12px;color:var(--faint);margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">📦 El tiempo de descarga por parada se suma aparte (ya está integrado en el cálculo de llegada estimada de arriba).</p>
+
+      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
+        <button class="btn btn-danger btn-md" onclick="borrarArmarRecorrido()" ${!f.nombre.trim()?"disabled":""}>🗑️ Borrar este recorrido</button>
+        <button class="btn btn-success btn-md" onclick="guardarArmarRecorrido()" ${(!f.nombre.trim()||f.loading)?"disabled":""}>
+          ${f.loading?`<span class="spinner"></span> Guardando...`:"💾 Guardar recorrido"}
+        </button>
+      </div>
+    </div>
+  </div>`;
 }
 
 function renderMetricas(){
