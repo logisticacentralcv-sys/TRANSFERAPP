@@ -3949,7 +3949,7 @@ function renderDashboardFlota(){
       <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${color}"></div>
       <div style="display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-size:22px;font-weight:800;margin-bottom:2px">${val}</div>
+          <div style="font-size:22px;font-weight:800;margin-bottom:2px;color:#fff">${val}</div>
           <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">${lbl}</div>
           <div style="font-size:11px;color:var(--faint);margin-top:4px">${sub}</div>
         </div>
@@ -3992,11 +3992,11 @@ function renderDashboardFlota(){
             const ocp = Number(r.ocupPct)||0;
             const col = ocp>=85?"#1fa86a":ocp>=60?"var(--blue)":ocp>=30?"var(--amber)":"var(--muted)";
             return `<tr>
-              <td><strong>${escH(r.recorrido)}</strong></td>
+              <td><strong style="color:#fff">${escH(r.recorrido)}</strong></td>
               <td>${escH(r.repartidor||"—")}${r.camion?` <span style="color:var(--faint)">(${escH(r.camion)})</span>`:""}</td>
               <td class="mono">${horaSolo(r.horaSalida)}</td>
               <td class="mono">${horaSolo(r.horaLlegReal)}</td>
-              <td>${r.realKg>0?`<strong>${Math.round(r.realKg)} kg</strong>`:"—"}</td>
+              <td>${r.realKg>0?`<strong style="color:#fff">${Math.round(r.realKg)} kg</strong>`:"—"}</td>
               <td><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden;min-width:60px"><div style="height:100%;width:${Math.min(ocp,100)}%;background:${col}"></div></div><span style="color:${col};font-size:12px;font-weight:600">${Math.round(ocp)}%</span></div></td>
               <td>${badge(r.estado, r.estado.includes("Final")?"#1fa86a":"var(--blue)")}</td>
             </tr>`;
@@ -4008,7 +4008,7 @@ function renderDashboardFlota(){
     <div class="card" style="margin-bottom:20px">
       ${secTitle("📦 Carga planificada")}
       ${(!princ.length && !verd.length)?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no hay carga sincronizada para hoy — corré la sincronización desde Apps Script.</p>`:(()=>{
-        const statRow = (l,v) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px"><span style="color:var(--muted)">${l}</span><strong>${v}</strong></div>`;
+        const statRow = (l,v) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px"><span style="color:var(--muted)">${l}</span><strong style="color:#fff">${v}</strong></div>`;
         const occRow = (l,pct,color) => `<div style="margin-top:8px">
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--muted)">${l}</span><strong style="color:${color}">${pct}%</strong></div>
           <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:4px"></div></div>
@@ -4038,7 +4038,7 @@ function renderDashboardFlota(){
             return `<div style="background:var(--s2);border-radius:10px;padding:16px">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
                 <div>
-                  <div style="font-weight:700;font-size:15px">${esHuevos?"🥚":"🗺️"} ${escH(r.recorrido)}</div>
+                  <div style="font-weight:700;font-size:15px;color:#fff">${esHuevos?"🥚":"🗺️"} ${escH(r.recorrido)}</div>
                   <div style="font-size:11px;color:var(--faint)">${escH((r.escenario||"").replace(/_/g," "))}</div>
                 </div>
               </div>
@@ -4075,7 +4075,7 @@ function renderDashboardFlota(){
             return `<div style="background:var(--s2);border-radius:10px;padding:16px;border:1px solid #1fa86a40">
               <div style="display:flex;justify-content:space-between;align-items:flex-start">
                 <div>
-                  <div style="font-weight:700;font-size:15px">🥦 Verdulería</div>
+                  <div style="font-weight:700;font-size:15px;color:#fff">🥦 Verdulería</div>
                   <div style="font-size:11px;color:var(--faint)">Recorrido especial · ${verd.length} sucursales</div>
                 </div>
                 ${verd[0].camion_id?badge(verd[0].camion_id,"#1fa86a"):""}
@@ -4131,7 +4131,7 @@ function renderDashboardFlota(){
             else pill=badge(p.estado||"Sin escanear","var(--muted)");
             return `<tr>
               <td>${escH(p.recorrido)}</td>
-              <td><strong>${escH(p.sucursal)}</strong></td>
+              <td><strong style="color:#fff">${escH(p.sucursal)}</strong></td>
               <td class="mono">${segsToMmSs(p.tEstSeg)}</td>
               <td class="mono">${p.tRealSeg>0?segsToMmSs(p.tRealSeg):"—"}</td>
               <td>${pill}</td>
@@ -4150,7 +4150,7 @@ function renderDashboardFlota(){
           const ok = (f.estado||"").includes("✅");
           return `<div style="background:var(--s2);border-radius:8px;padding:12px">
             <div style="font-size:20px">${ico}</div>
-            <div style="font-weight:700;font-size:13px;margin:4px 0">${escH(f.fase)}</div>
+            <div style="font-weight:700;font-size:13px;margin:4px 0;color:#fff">${escH(f.fase)}</div>
             <div style="font-size:11px;color:var(--faint)">Inicio: ${horaSolo(f.hora_inicio)}</div>
             <div style="font-size:11px;color:var(--faint)">Fin: ${horaSolo(f.hora_fin)}</div>
             <div style="margin-top:6px;font-size:11px;font-weight:600;color:${ok?"#1fa86a":"var(--amber)"}">${escH(f.estado||"⏳ Pendiente")}</div>
