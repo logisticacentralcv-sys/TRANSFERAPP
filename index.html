@@ -3781,6 +3781,92 @@ function quitarParadaRecorrido(i){ S.armarRecorridoForm.paradas.splice(i,1); ren
 function subirParadaRecorrido(i){ if(i===0) return; const p=S.armarRecorridoForm.paradas; [p[i-1],p[i]]=[p[i],p[i-1]]; render(); }
 function bajarParadaRecorrido(i){ const p=S.armarRecorridoForm.paradas; if(i===p.length-1) return; [p[i+1],p[i]]=[p[i],p[i+1]]; render(); }
 
+// Genera todas las permutaciones de un array (para listas chicas —
+// hasta 8 paradas, 40320 combinaciones, se calcula al instante).
+function _permutaciones(arr){
+  if(arr.length<=1) return [arr];
+  const out = [];
+  for(let i=0;i<arr.length;i++){
+    const resto = [...arr.slice(0,i), ...arr.slice(i+1)];
+    for(const p of _permutaciones(resto)) out.push([arr[i], ...p]);
+  }
+  return out;
+}
+function _cumpleRestricciones(orden, restricciones){
+  return restricciones.every(([antes,despues])=>{
+    const iA = orden.indexOf(antes), iD = orden.indexOf(despues);
+    return iA===-1 || iD===-1 || iA<iD;
+  });
+}
+function _tiempoTotalOrden(orden){
+  let total=0, anterior="FABRICA", nulos=0;
+  for(const p of orden){
+    const t = minutosEntre(anterior,p);
+    if(t===null) nulos++; else total+=t;
+    anterior = p;
+  }
+  const vuelta = minutosEntre(anterior,"FABRICA");
+  if(vuelta===null) nulos++; else total+=vuelta;
+  return {total, nulos};
+}
+function sugerirOrdenOptimo(){
+  const paradas = S.armarRecorridoForm.paradas;
+  if(paradas.length<2){ toast("Agregá al menos 2 paradas para poder sugerir un orden","warn"); return; }
+
+  // Restricciones: para cada transferencia pendiente donde el origen Y
+  // el destino ya están en la lista, hay que visitar el origen antes.
+  const restricciones = transferenciasPendientesEntreSucursales()
+    .filter(r=>paradas.includes(r.sucursal) && paradas.includes(r.destino))
+    .map(r=>[r.sucursal, r.destino]);
+
+  let candidatos;
+  if(paradas.length<=8){
+    candidatos = _permutaciones(paradas).filter(o=>_cumpleRestricciones(o,restricciones));
+    if(!candidatos.length) candidatos = _permutaciones(paradas); // si ninguna cumple todo, elegir por tiempo igual
+  } else {
+    // Con más de 8 paradas no se prueban todas las combinaciones —
+    // se arma con un heurístico simple (vecino más cercano) respetando
+    // las restricciones lo mejor posible.
+    candidatos = [_ordenVecinoMasCercano(paradas, restricciones)];
+  }
+
+  let mejor = null, mejorScore = null;
+  for(const orden of candidatos){
+    const {total,nulos} = _tiempoTotalOrden(orden);
+    const score = nulos*100000 + total; // priorizar 0 tramos sin dato, después el tiempo más corto
+    if(mejorScore===null || score<mejorScore){ mejorScore=score; mejor=orden; }
+  }
+
+  S.armarRecorridoForm.paradas = mejor;
+  const {total,nulos} = _tiempoTotalOrden(mejor);
+  toast(nulos>0
+    ? `🧭 Orden sugerido (con ${nulos} tramo${nulos!==1?"s":""} sin dato en la matriz)`
+    : `🧭 Orden sugerido — ${Math.round(total)} min totales, respetando ${restricciones.length} transferencia${restricciones.length!==1?"s":""} pendiente${restricciones.length!==1?"s":""}`);
+  render();
+}
+function _ordenVecinoMasCercano(paradas, restricciones){
+  const restantes = new Set(paradas);
+  const orden = [];
+  let actual = "FABRICA";
+  while(restantes.size){
+    // Solo candidatas que no violen una restricción de "debe ir después de otra que todavía no se visitó"
+    const candidatas = [...restantes].filter(p=>{
+      return !restricciones.some(([antes,despues])=>despues===p && restantes.has(antes));
+    });
+    const pool = candidatas.length ? candidatas : [...restantes];
+    let mejorP=null, mejorT=Infinity;
+    for(const p of pool){
+      const t = minutosEntre(actual,p);
+      const tt = t===null ? 999999 : t;
+      if(tt<mejorT){ mejorT=tt; mejorP=p; }
+    }
+    orden.push(mejorP);
+    restantes.delete(mejorP);
+    actual = mejorP;
+  }
+  return orden;
+}
+
 async function guardarArmarRecorrido(){
   const nombre = S.armarRecorridoForm.nombre.trim();
   const paradas = S.armarRecorridoForm.paradas;
@@ -4168,6 +4254,17 @@ function renderDashboardFlota(){
   </div>`;
 }
 
+function transferenciasPendientesEntreSucursales(){
+  const cerrados = ["Entregada","Rechazada","Cancelada","No entregada","No levantada"];
+  return (S.requests||[]).filter(r=>{
+    if(cerrados.includes(r.estado)) return false;
+    if(esOrigenFabrica(r)) return false; // esas ya se ven en Carga planificada
+    if(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)) return false; // bolsín al buzón, no es ruta entre sucursales
+    if(!r.sucursal || !r.destino) return false;
+    return true;
+  }).sort((a,b)=>(a.fechaRequerida||"").localeCompare(b.fechaRequerida||""));
+}
+
 function renderArmarRecorrido(){
   const f = S.armarRecorridoForm;
   const puntos = puntosDisponiblesRecorrido();
@@ -4205,43 +4302,25 @@ function renderArmarRecorrido(){
   // Fábrica — esas ya están en "Carga planificada" — sino las que van
   // de una sucursal a otra, que son las que definen si conviene armar
   // el recorrido en un sentido o en el otro).
-  const cerrados = ["Entregada","Rechazada","Cancelada","No entregada","No levantada"];
-  const transferenciasEntreSucursales = (S.requests||[]).filter(r=>{
-    if(cerrados.includes(r.estado)) return false;
-    if(esOrigenFabrica(r)) return false; // esas ya se ven en Carga planificada
-    if(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)) return false; // bolsín al buzón, no es ruta entre sucursales
-    if(!r.sucursal || !r.destino) return false;
-    return true;
-  }).sort((a,b)=>(a.fechaRequerida||"").localeCompare(b.fechaRequerida||""));
+  const transferenciasEntreSucursales = transferenciasPendientesEntreSucursales();
 
   const panelTransferencias = `
     <div class="card" style="margin-bottom:16px">
       <label style="display:block;margin-bottom:8px">🔄 Transferencias pendientes entre sucursales</label>
-      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Para decidir el sentido del recorrido — si hay carga de A hacia B, conviene visitar A antes que B.</p>
+      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Usalas como referencia para el sentido del recorrido, o dejá que "Sugerir orden óptimo" (abajo) las tenga en cuenta solo.</p>
       ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
       <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
-        ${transferenciasEntreSucursales.map(r=>{
-          const origenEnLista = f.paradas.includes(r.sucursal);
-          const destinoEnLista = f.paradas.includes(r.destino);
-          const ordenOk = origenEnLista && destinoEnLista && f.paradas.indexOf(r.sucursal) < f.paradas.indexOf(r.destino);
-          const ordenMal = origenEnLista && destinoEnLista && !ordenOk;
-          return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;${ordenMal?"border:1px solid var(--red)":""}">
+        ${transferenciasEntreSucursales.map(r=>`
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;cursor:pointer" onclick="openDetalle('${escH(r.id)}')">
             <div style="min-width:0">
-              <div style="font-size:13px;font-weight:600">
-                <span style="color:${origenEnLista?"#4ade80":"var(--text)"}">${escH(r.sucursal)}</span>
-                →
-                <span style="color:${destinoEnLista?"#4ade80":"var(--text)"}">${escH(r.destino)}</span>
-                ${ordenMal?` <span style="color:var(--red);font-size:11px">⚠ orden invertido</span>`:""}
-                ${ordenOk?` <span style="color:#4ade80;font-size:11px">✓ ya cubierto</span>`:""}
-              </div>
+              <div style="font-size:13px;font-weight:600">${escH(r.sucursal)} → ${escH(r.destino)}</div>
               <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}</div>
             </div>
-            <div style="display:flex;gap:4px;flex-shrink:0">
-              ${!origenEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
-              ${!destinoEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
+            <div style="display:flex;gap:4px;flex-shrink:0" onclick="event.stopPropagation()">
+              ${!f.paradas.includes(r.sucursal)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
+              ${!f.paradas.includes(r.destino)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
             </div>
-          </div>`;
-        }).join("")}
+          </div>`).join("")}
       </div>`}
     </div>`;
 
@@ -4268,6 +4347,8 @@ function renderArmarRecorrido(){
         </select>
         <button class="btn btn-teal btn-md" onclick="agregarParadaRecorrido()">+ Agregar</button>
       </div>
+
+      ${f.paradas.length>1?`<button class="btn btn-primary btn-sm" style="margin-bottom:14px" onclick="sugerirOrdenOptimo()">🧭 Sugerir orden óptimo</button>`:""}
 
       ${f.paradas.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no agregaste ninguna parada — arranca siempre desde Fábrica.</p>`:filasParadas}
 
