@@ -3909,11 +3909,34 @@ function renderDashboardFlota(){
 
   const planTotal = princ.reduce((a,r)=>a+(Number(r.plan_kg)||0),0) + verd.reduce((a,r)=>a+(Number(r.plan_kg)||0),0);
   const bultosTotal = princ.reduce((a,r)=>a+(Number(r.bultos)||0),0) + verd.reduce((a,r)=>a+(Number(r.bultos)||0),0);
+  const pallets = princ.reduce((a,r)=>a+(Number(r.pallets)||0),0);
   const enRuta = vizRows.filter(r=>r.estado.includes("En ruta")).length;
   const finalizados = vizRows.filter(r=>r.estado.includes("Finalizado")).length;
   const pendientes = Math.max(0, (princ.length+(verd.length>0?1:0)) - vizRows.length);
 
   const escenarios = [["3","3 recorridos"],["2","2 recorridos"],["h","🥚 Huevos"],["c","Congelados"],["r","Refuerzo"],["s","Secos"]];
+
+  // KPI con barra de color arriba, como el dashboard original de Flota
+  // (distinto del stat-card genérico que usa el resto de TransferApp)
+  const kpiFlota = (color,icon,val,lbl,sub) => `
+    <div style="position:relative;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:16px;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;right:0;height:3px;background:${color}"></div>
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div>
+          <div style="font-size:22px;font-weight:800;margin-bottom:2px">${val}</div>
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600">${lbl}</div>
+          <div style="font-size:11px;color:var(--faint);margin-top:4px">${sub}</div>
+        </div>
+        <span style="font-size:20px;opacity:.7">${icon}</span>
+      </div>
+    </div>`;
+  // Título de sección con numerito ámbar, como el original
+  let _secNum = 0;
+  const secTitle = (texto) => { _secNum++; return `
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <span style="width:22px;height:22px;border-radius:50%;background:#e8a02022;border:1px solid #e8a02055;color:var(--amber);font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">${_secNum}</span>
+      <span style="font-size:12px;font-weight:800;letter-spacing:.1em;color:var(--amber);text-transform:uppercase">${texto}</span>
+    </div>`; };
 
   return `
   <div>
@@ -3924,16 +3947,17 @@ function renderDashboardFlota(){
       <span style="font-size:12px;color:var(--faint)">🟢 En vivo · última actualización ${datos.ts.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
     </div>
 
-    <div class="stats-grid" style="margin-bottom:20px">
-      ${statCard("📦","CARGA PLANIFICADA", Math.round(planTotal)+" kg", "var(--amber)")}
-      ${statCard("📬","TOTAL BULTOS", Math.round(bultosTotal), "var(--blue)")}
-      ${statCard("🚛","EN RUTA", enRuta, "var(--blue)")}
-      ${statCard("✅","FINALIZADOS", finalizados, "#1fa86a")}
-      ${statCard("⏳","PENDIENTES", pendientes, "var(--muted)")}
+    ${secTitle("Resumen del día")}
+    <div class="stats-grid" style="margin-bottom:24px">
+      ${kpiFlota("var(--amber)","📦", Math.round(planTotal)+" kg", "Carga planificada", pallets.toFixed(1)+" pallets")}
+      ${kpiFlota("var(--blue)","📬", Math.round(bultosTotal), "Total bultos", (princ.length+(verd.length?1:0))+" recorridos")}
+      ${kpiFlota("var(--blue)","🚛", enRuta, "En ruta", vizRows.length+" salidas registradas")}
+      ${kpiFlota("#1fa86a","✅", finalizados, "Finalizados", "Recorridos completos")}
+      ${kpiFlota("var(--muted)","⏳", pendientes, "Pendientes", "Sin registrar salida")}
     </div>
 
     <div class="card" style="margin-bottom:20px">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🚛 Estado operativo en tiempo real</h3>
+      ${secTitle("🚛 Estado operativo en tiempo real")}
       ${!vizRows.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Ningún camión registró salida todavía hoy.</p>`:`
       <div class="table-wrap"><table>
         <thead><tr><th>Recorrido</th><th>Repartidor · Camión</th><th>Salida</th><th>Llegada real</th><th>Carga real</th><th>% Ocup.</th><th>Estado</th></tr></thead>
@@ -3956,7 +3980,7 @@ function renderDashboardFlota(){
     </div>
 
     <div class="card" style="margin-bottom:20px">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📦 Carga planificada</h3>
+      ${secTitle("📦 Carga planificada")}
       ${(!princ.length && !verd.length)?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no hay carga sincronizada para hoy — corré la sincronización desde Apps Script.</p>`:(()=>{
         const statRow = (l,v) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px"><span style="color:var(--muted)">${l}</span><strong>${v}</strong></div>`;
         const occRow = (l,pct,color) => `<div style="margin-top:8px">
@@ -4024,7 +4048,7 @@ function renderDashboardFlota(){
     </div>
 
     <div class="card" style="margin-bottom:20px">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🚚 Flota</h3>
+      ${secTitle("🚚 Flota")}
       ${!datos.camiones.length?`<p style="color:var(--muted);font-size:13px">Sin datos de flota sincronizados todavía.</p>`:`
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
         ${datos.camiones.map(f=>{
@@ -4045,7 +4069,7 @@ function renderDashboardFlota(){
     </div>
 
     <div class="card" style="margin-bottom:20px">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">⏱️ Tiempos de descarga (real vs. estimado)</h3>
+      ${secTitle("⏱️ Tiempos de descarga (real vs. estimado)")}
       ${!paradas.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Los tiempos aparecen a medida que los camiones escanean los QR de llegada/salida.</p>`:`
       <div class="table-wrap"><table>
         <thead><tr><th>Recorrido</th><th>Sucursal</th><th>Estimado</th><th>Real</th><th>Estado</th></tr></thead>
@@ -4072,7 +4096,7 @@ function renderDashboardFlota(){
 
     ${datos.vizVerd && datos.vizVerd.length?`
     <div class="card">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🥦 Verdulería — fases</h3>
+      ${secTitle("🥦 Verdulería — fases")}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
         ${datos.vizVerd.map(f=>{
           const ico = {Mercado:"🏪",Armado:"⚙️",Reparto:"🚚"}[f.fase]||"📋";
