@@ -784,6 +784,47 @@ function drow(label,val,mono=false){
   return `<div class="drow"><span class="drow-label">${label}</span><span class="drow-val ${mono?"mono":""}">${escH(String(val||"—"))}</span></div>`;
 }
 
+// ── Gráfico de dona (SVG puro, sin librerías) — recibe [{label,valor,color}] ──
+function donutChart(datos, size=140){
+  const total = datos.reduce((a,d)=>a+d.valor,0);
+  if(!total) return `<div style="width:${size}px;height:${size}px;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px;flex-shrink:0">Sin datos</div>`;
+  const r = size/2 - 10, cx = size/2, cy = size/2, grosor = 18;
+  const circ = 2*Math.PI*r;
+  let acumulado = 0;
+  const segmentos = datos.map(d=>{
+    const frac = d.valor/total;
+    const largo = frac*circ;
+    const offset = -acumulado*circ;
+    acumulado += frac;
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${d.color}" stroke-width="${grosor}"
+      stroke-dasharray="${largo} ${circ-largo}" stroke-dashoffset="${offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  }).join("");
+  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0">
+    ${segmentos}
+    <text x="${cx}" y="${cy-4}" text-anchor="middle" font-size="22" font-weight="800" fill="var(--white,#e2e8f4)">${total}</text>
+    <text x="${cx}" y="${cy+14}" text-anchor="middle" font-size="10" fill="var(--faint,#3d5070)">total</text>
+  </svg>`;
+}
+
+// ── Gráfico de barras verticales (SVG puro) — recibe [{label,valor}] ──
+function barChart(datos, color){
+  if(!datos.length) return `<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin datos.</p>`;
+  const max = Math.max(...datos.map(d=>d.valor));
+  const w = 60, gap = 14, alturaMax = 140, padLabel = 46;
+  const anchoTotal = datos.length*(w+gap);
+  const barras = datos.map((d,i)=>{
+    const h = max? (d.valor/max)*alturaMax : 0;
+    const x = i*(w+gap);
+    const y = alturaMax - h;
+    return `
+      <text x="${x+w/2}" y="${y-6}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--white,#e2e8f4)">${d.valor}</text>
+      <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="4" fill="${color}"/>
+      <text x="${x+w/2}" y="${alturaMax+16}" text-anchor="middle" font-size="10" fill="var(--muted,#7a90b0)">${escH((d.label||"").slice(0,10))}</text>
+    `;
+  }).join("");
+  return `<div style="overflow-x:auto"><svg width="${anchoTotal}" height="${alturaMax+padLabel}" viewBox="0 0 ${anchoTotal} ${alturaMax+padLabel}">${barras}</svg></div>`;
+}
+
 // ══════════════════════════════════════════════════════════
 //  SUPABASE — capa de datos
 //  Mantiene los mismos nombres de función que usaba Sheets
@@ -3619,12 +3660,6 @@ function renderLogTabla(){
         </div>`).join("")}
     </div>
   </div>`:""}
-  <div class="stats-grid">
-    ${statCard("📋","PENDIENTES",reqs.filter(r=>r.estado==="Pendiente").length,"var(--muted)")}
-    ${statCard("✅","APROBADAS",reqs.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
-    ${statCard("📅","PROGRAMADAS",reqs.filter(r=>r.estado==="Programada").length,"var(--purple)")}
-    ${statCard("📦","ENTREGADAS",reqs.filter(r=>r.estado==="Entregada").length,"var(--teal)")}
-  </div>
   <div class="card" style="margin-bottom:20px;padding:14px 16px">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <button class="btn ${S.fSoloActivas?"btn-primary":"btn-ghost"} btn-sm" onclick="S.fSoloActivas=!S.fSoloActivas;render()">
@@ -4606,13 +4641,21 @@ function renderMetricas(){
     </div>
     <div class="card">
       <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR ESTADO</p>
-      ${ESTADOS.map(e=>bar(e,byE[e]||0,total,S_COLOR[e])).join("")}
+      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+        ${donutChart(ESTADOS.filter(e=>byE[e]>0).map(e=>({label:e, valor:byE[e], color:S_COLOR[e]})), 140)}
+        <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:6px">
+          ${ESTADOS.filter(e=>byE[e]>0).sort((a,b)=>byE[b]-byE[a]).map(e=>`
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+              <span style="width:9px;height:9px;border-radius:50%;background:${S_COLOR[e]};flex-shrink:0"></span>
+              <span style="flex:1;color:var(--muted)">${escH(e)}</span>
+              <strong>${byE[e]}</strong>
+            </div>`).join("")}
+        </div>
+      </div>
     </div>
     <div class="card" style="grid-column:1/-1">
       <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR SUCURSAL / ÁREA</p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 32px">
-        ${Object.entries(byS).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).map(([s,v])=>bar(s,v,total,"var(--blue)")).join("")}
-      </div>
+      ${barChart(Object.entries(byS).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).slice(0,12).map(([s,v])=>({label:s, valor:v})), "var(--blue)")}
     </div>
     ${fueraDeFecha.length?`
     <div class="card" style="grid-column:1/-1">
