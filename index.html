@@ -4399,6 +4399,24 @@ function renderArmarRecorrido(){
     </div>`;
   }).join("");
 
+  // Vuelta a Fábrica — siempre el cierre del recorrido, se suma acá
+  // para que el total mostrado sea el del recorrido completo (antes
+  // solo se veía en el toast de "Sugerir orden óptimo", no acá).
+  let filaVuelta = "";
+  if(f.paradas.length>0){
+    const tramoVuelta = minutosEntre(anterior, "FABRICA");
+    if(tramoVuelta===null){ faltaDato = true; }
+    else { acumulado += tramoVuelta; }
+    filaVuelta = `
+    <div class="card" style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:8px;opacity:.75">
+      <div style="width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">🏠</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:14px">Fábrica (vuelta)</div>
+        <div style="font-size:12px;color:var(--muted)">${tramoVuelta===null?`<span style="color:var(--red)">sin dato desde "${escH(anterior)}"</span>`:`+${tramoVuelta} min desde ${escH(anterior)}`} · acum: ${faltaDato?"—":Math.round(acumulado)+" min"}</div>
+      </div>
+    </div>`;
+  }
+
   // Transferencias PENDIENTES entre sucursales (no las que salen de
   // Fábrica — esas ya están en "Carga planificada" — sino las que van
   // de una sucursal a otra, que son las que definen si conviene armar
@@ -4498,11 +4516,11 @@ function renderArmarRecorrido(){
 
       ${f.paradas.length>1?`<button class="btn btn-primary btn-sm" style="margin-bottom:14px" onclick="sugerirOrdenOptimo()">🧭 Sugerir orden óptimo</button>`:""}
 
-      ${f.paradas.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no agregaste ninguna parada — arranca siempre desde Fábrica.</p>`:filasParadas}
+      ${f.paradas.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no agregaste ninguna parada — arranca siempre desde Fábrica.</p>`:filasParadas+filaVuelta}
 
       ${f.paradas.length>0?`
       <div style="margin-top:6px;padding:12px 16px;background:#e8a02018;border:1px solid #e8a02040;border-radius:8px;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:13px">🕐 Tiempo total de viaje (sin contar descargas)</span>
+        <span style="font-size:13px">🕐 Tiempo total del recorrido completo (ida y vuelta, sin contar descargas)</span>
         <strong style="color:var(--amber)">${faltaDato?"Faltan datos":Math.round(acumulado)+" min"}</strong>
       </div>`:""}
 
