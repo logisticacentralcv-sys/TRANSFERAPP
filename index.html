@@ -615,7 +615,7 @@ let S = {
   flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
   armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:""},
-  flotaDash: null, flotaDashLoading: false, escFlotaDash: "3",
+  flotaDash: null, flotaDashLoading: false, escFlotaDash: "3", camionOverride: {},
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
@@ -3817,6 +3817,32 @@ async function borrarArmarRecorrido(){
 //  Misma arquitectura de capas que la versión aparte (datos/cómputo/
 //  render), portada acá para que quede todo en un solo lugar.
 // ══════════════════════════════════════════════════════════
+// Prueba un camión distinto en una tarjeta (solo vista previa, no
+// guarda nada hasta tocar "Asignar este camión")
+function cambiarCamionRecorrido(clave, nuevoCamionId){
+  if(!S.camionOverride) S.camionOverride = {};
+  S.camionOverride[clave] = nuevoCamionId;
+  render();
+}
+async function guardarCamionRecorrido(clave, recorrido, escenario){
+  const nuevoCamionId = S.camionOverride[clave];
+  const hoy = hoyLocalISO();
+  try{
+    const { error } = await sb.from("flota_carga_planificada")
+      .update({camion_id: nuevoCamionId})
+      .eq("fecha", hoy).eq("recorrido", recorrido).eq("escenario", escenario);
+    if(error) throw error;
+    S.flotaDash.cargaPlanificada = S.flotaDash.cargaPlanificada.map(r=>
+      (r.recorrido===recorrido && r.escenario===escenario) ? {...r, camion_id:nuevoCamionId} : r
+    );
+    delete S.camionOverride[clave];
+    toast(`✅ Camión asignado a ${recorrido}`);
+  }catch(e){
+    toast("⚠️ No se pudo guardar: "+e.message, "warn");
+  }
+  render();
+}
+
 async function cargarDashboardFlota(){
   S.flotaDashLoading = true; render();
   const hoy = hoyLocalISO();
@@ -3989,19 +4015,32 @@ function renderDashboardFlota(){
         </div>`;
         const COLOR_PESO = "#f97316";    // naranja
         const COLOR_VOLUMEN = "#0ea5e9"; // celeste oscuro
+        const camiones = datos.camiones||[];
+        // El volumen de la carga en m3 no viene directo — se lo
+        // "destapa" a partir del % que ya calculó Sheets contra el
+        // camión ORIGINALMENTE asignado (una sola vez por fila, no
+        // cambia aunque el usuario pruebe otro camión después).
+        const volM3DeLaFila = r => {
+          const camOriginal = camiones.find(c=>c.id===r.camion_id);
+          return (r.ocup_vol_teorico>0 && camOriginal && camOriginal.vol_max_m3) ? r.ocup_vol_teorico*camOriginal.vol_max_m3 : null;
+        };
         return `
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
           ${princ.map(r=>{
             const esHuevos = String(r.recorrido||"").toUpperCase().includes("HUEVOS");
-            const ocpKg = r.ocup_kg_teorico>0?Math.round(r.ocup_kg_teorico*100):0;
-            const ocpVol = r.ocup_vol_teorico>0?Math.round(r.ocup_vol_teorico*100):0;
+            const clave = r.recorrido+"|"+r.escenario;
+            const camionElegidoId = (S.camionOverride && S.camionOverride[clave]) || r.camion_id;
+            const camionElegido = camiones.find(c=>c.id===camionElegidoId);
+            const volM3 = volM3DeLaFila(r);
+            const ocpKg = (camionElegido && camionElegido.kg_max>0 && r.plan_kg>0) ? Math.round((r.plan_kg/camionElegido.kg_max)*100) : 0;
+            const ocpVol = (camionElegido && camionElegido.vol_max_m3>0 && volM3>0) ? Math.round((volM3/camionElegido.vol_max_m3)*100) : 0;
+            const huboCambio = S.camionOverride && S.camionOverride[clave] && S.camionOverride[clave]!==r.camion_id;
             return `<div style="background:var(--s2);border-radius:10px;padding:16px">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
                 <div>
                   <div style="font-weight:700;font-size:15px">${esHuevos?"🥚":"🗺️"} ${escH(r.recorrido)}</div>
                   <div style="font-size:11px;color:var(--faint)">${escH((r.escenario||"").replace(/_/g," "))}</div>
                 </div>
-                ${r.camion_id?badge(r.camion_id,"var(--blue)"):""}
               </div>
               <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
                 ${esHuevos?`
@@ -4012,13 +4051,20 @@ function renderDashboardFlota(){
                   ${statRow("Carga planif.", Math.round(r.plan_kg||0)+" kg")}
                   ${statRow("Bultos", Math.round(r.bultos||0))}
                   ${statRow("Pallets", (r.pallets||0).toFixed(1))}
-                  ${r.kg_max>0?statRow("Cap. máx. camión", Math.round(r.kg_max)+" kg"):""}
                 `}
               </div>
-              ${(ocpKg>0||ocpVol>0)?`<div style="margin-top:6px">
+              <div class="field" style="margin:10px 0 0">
+                <label style="font-size:10px">Camión asignado</label>
+                <select class="inp" style="font-size:12px;padding:7px 10px" onchange="cambiarCamionRecorrido('${escH(clave)}',this.value)">
+                  <option value="">— Elegir —</option>
+                  ${camiones.map(c=>`<option value="${escH(c.id)}" ${camionElegidoId===c.id?"selected":""}>${escH(c.vehiculo||c.id)} (${escH(c.id)})</option>`).join("")}
+                </select>
+              </div>
+              ${(ocpKg>0||ocpVol>0)?`<div style="margin-top:10px">
                 ${!esHuevos && ocpKg>0?occRow("Ocup. peso (kg)", ocpKg, COLOR_PESO):""}
                 ${ocpVol>0?occRow("Ocup. volumen", ocpVol, COLOR_VOLUMEN):""}
-              </div>`:""}
+              </div>`:(!camionElegido?`<p style="font-size:11px;color:var(--faint);margin-top:8px">Elegí un camión para ver el % de ocupación.</p>`:"")}
+              ${huboCambio?`<button class="btn btn-success btn-sm" style="width:100%;margin-top:10px" onclick="guardarCamionRecorrido('${escH(clave)}','${escH(r.recorrido)}','${escH(r.escenario)}')">💾 Asignar este camión</button>`:""}
             </div>`;
           }).join("")}
           ${verd.length?(()=>{
