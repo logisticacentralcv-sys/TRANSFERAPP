@@ -3829,13 +3829,15 @@ async function cargarDashboardFlota(){
       return data||[];
     }catch(e){ console.warn("Flota dashboard, no se pudo leer "+nombre+":", e.message); return []; }
   };
-  const [cargaPlanificada, camiones, registrosQR, vizVerd] = await Promise.all([
+  const [cargaPlanificada, camiones, viajes, registrosQR, vizVerd, tiemposEstimados] = await Promise.all([
     fetchTabla("flota_carga_planificada", q=>q.eq("fecha",hoy)),
     fetchTabla("flota_camiones"),
+    fetchTabla("flota_viajes", q=>q.eq("fecha",hoy)),
     fetchTabla("flota_registros_qr", q=>q.gte("ts", hoy+"T00:00:00")),
     fetchTabla("flota_viz_verd", q=>q.eq("fecha",hoy)),
+    fetchTabla("flota_tiempos_estimados"),
   ]);
-  S.flotaDash = { cargaPlanificada, camiones, registrosQR, vizVerd, ts: new Date() };
+  S.flotaDash = { cargaPlanificada, camiones, viajes, registrosQR, vizVerd, tiemposEstimados, ts: new Date() };
   S.flotaDashLoading = false;
   render();
 }
@@ -3857,7 +3859,7 @@ function planPrincYVerdParaEscenario(datos, escActivo){
   return { princ, verd };
 }
 function computeVizRowsDash(datos){
-  return (S.flotaViajesHoy||[]).map(v=>{
+  return (datos.viajes||[]).map(v=>{
     const plan = datos.cargaPlanificada.find(c=>normNotif(c.recorrido)===normNotif(v.recorrido));
     const ocupKg = plan && plan.ocup_kg_teorico>0 ? Math.round(plan.ocup_kg_teorico*100) : 0;
     const estado = v.estado==="FINALIZADO" ? "✅ Finalizado" : "🚛 En ruta";
@@ -3883,7 +3885,7 @@ function computeParadasDash(datos){
     if(String(r.evento||"").toUpperCase()==="SALIDA")  porViajeSucursal[clave].salida  = r.ts;
   });
   return Object.values(porViajeSucursal).map(p=>{
-    const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(p.recorrido) && normNotif(t.sucursal)===normNotif(p.sucursal));
+    const est = (datos.tiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(p.recorrido) && normNotif(t.sucursal)===normNotif(p.sucursal));
     const tEstSeg = est ? est.tiempo_est_seg : 0;
     let tRealSeg = 0;
     if(p.llegada && p.salida) tRealSeg = Math.round((new Date(p.salida) - new Date(p.llegada))/1000);
@@ -3924,7 +3926,7 @@ function renderDashboardFlota(){
 
     <div class="stats-grid" style="margin-bottom:20px">
       ${statCard("📦","CARGA PLANIFICADA", Math.round(planTotal)+" kg", "var(--amber)")}
-      ${statCard("📬","TOTAL BULTOS", bultosTotal, "var(--blue)")}
+      ${statCard("📬","TOTAL BULTOS", Math.round(bultosTotal), "var(--blue)")}
       ${statCard("🚛","EN RUTA", enRuta, "var(--blue)")}
       ${statCard("✅","FINALIZADOS", finalizados, "#1fa86a")}
       ${statCard("⏳","PENDIENTES", pendientes, "var(--muted)")}
