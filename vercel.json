@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/agregar-punto-matriz.js": {
+      "maxDuration": 30
+    }
+  }
+}

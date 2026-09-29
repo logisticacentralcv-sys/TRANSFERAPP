@@ -67,10 +67,11 @@ module.exports = async (req, res) => {
     // que Google los geocodifique de nuevo en el mismo pedido.
     const destinosStr = puntosExistentes.map((p) => encodeURIComponent(p + ", Mar del Plata, Argentina")).join("|");
 
-    const idaRes = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${nuevoOrigen}&destinations=${destinosStr}&mode=driving&key=${GOOGLE_KEY}`);
-    const idaData = await idaRes.json();
-    const vueltaRes = await fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${destinosStr}&destinations=${nuevoOrigen}&mode=driving&key=${GOOGLE_KEY}`);
-    const vueltaData = await vueltaRes.json();
+    const [idaRes, vueltaRes] = await Promise.all([
+      fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${nuevoOrigen}&destinations=${destinosStr}&mode=driving&key=${GOOGLE_KEY}`),
+      fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${destinosStr}&destinations=${nuevoOrigen}&mode=driving&key=${GOOGLE_KEY}`),
+    ]);
+    const [idaData, vueltaData] = await Promise.all([idaRes.json(), vueltaRes.json()]);
 
     if (idaData.status !== "OK" || vueltaData.status !== "OK") {
       res.status(500).json({ error: "Error de Google Distance Matrix: " + idaData.status + " / " + vueltaData.status });
