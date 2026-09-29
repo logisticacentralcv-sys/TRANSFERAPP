@@ -615,7 +615,7 @@ let S = {
   flotaEstadoHoyLoading: false,
   flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
-  armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:""},
+  armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:"", mostrarAgregarDireccion:false},
   flotaDash: null, flotaDashLoading: false, escFlotaDash: "3", camionOverride: {},
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
@@ -3755,6 +3755,35 @@ function puntosDisponiblesRecorrido(){
 function nombresRecorridosConHoja(){
   return [...new Set((S.flotaTiemposViaje||[]).map(t=>t.recorrido))];
 }
+async function agregarDireccionNueva(){
+  const nombre = ($("ar-nueva-direccion-nombre")?.value||"").trim();
+  const direccion = ($("ar-nueva-direccion-calle")?.value||"").trim();
+  const msgEl = $("ar-nueva-direccion-msg");
+  if(!nombre || !direccion){
+    if(msgEl) msgEl.innerHTML = `<div class="err-msg" style="display:block;margin-top:8px">Completá nombre y dirección.</div>`;
+    return;
+  }
+  const btn = $("ar-btn-agregar-direccion");
+  if(btn){ btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Calculando (puede tardar unos segundos)...`; }
+  if(msgEl) msgEl.innerHTML = "";
+  try{
+    const resp = await fetch("/api/agregar-punto-matriz", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({nombre, direccion}),
+    });
+    const texto = await resp.text();
+    let j; try{ j = JSON.parse(texto); }catch(e){ throw new Error("Respuesta inesperada del servidor"); }
+    if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
+    toast(`✅ "${nombre}" agregado — ${j.filas} tramos calculados`);
+    S.armarRecorridoForm.mostrarAgregarDireccion = false;
+    await cargarEstadoFlotaHoy(); // refresca la matriz para que ya aparezca disponible
+  }catch(e){
+    if(msgEl) msgEl.innerHTML = `<div class="err-msg" style="display:block;margin-top:8px">${escH(e.message)}</div>`;
+  }
+  if(btn){ btn.disabled = false; btn.innerHTML = "📍 Calcular y agregar"; }
+  render();
+}
+
 function onCambiaNombreRecorrido(nombre){
   S.armarRecorridoForm.nombre = nombre;
   const existe = (S.flotaTiemposViaje||[]).some(t=>t.recorrido===nombre);
@@ -4383,6 +4412,29 @@ function renderArmarRecorrido(){
     </div>
 
     ${panelTransferencias}
+
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="S.armarRecorridoForm.mostrarAgregarDireccion=!S.armarRecorridoForm.mostrarAgregarDireccion;render()">
+        <label style="margin-bottom:0;cursor:pointer">➕ Agregar una dirección nueva a la matriz</label>
+        <span style="color:var(--faint)">${S.armarRecorridoForm.mostrarAgregarDireccion?"▲":"▼"}</span>
+      </div>
+      ${S.armarRecorridoForm.mostrarAgregarDireccion?`
+      <div style="margin-top:12px">
+        <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Calcula el tiempo hacia y desde todos los puntos que ya existen — tarda unos segundos.</p>
+        <div class="field">
+          <label>Nombre (como querés que aparezca)</label>
+          <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Ej: Marconi"/>
+        </div>
+        <div class="field" style="margin-top:10px">
+          <label>Dirección completa</label>
+          <input id="ar-nueva-direccion-calle" class="inp" placeholder="Ej: Marconi 1234, Mar del Plata"/>
+        </div>
+        <div id="ar-nueva-direccion-msg"></div>
+        <button class="btn btn-teal btn-md" style="margin-top:10px" onclick="agregarDireccionNueva()" id="ar-btn-agregar-direccion">
+          📍 Calcular y agregar
+        </button>
+      </div>`:""}
+    </div>
 
     <div class="card">
       <label style="display:block;margin-bottom:8px">Agregar parada</label>
