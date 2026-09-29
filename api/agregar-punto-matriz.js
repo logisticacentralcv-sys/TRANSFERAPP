@@ -1,12 +1,13 @@
 // ══════════════════════════════════════════════════════════
-//  /api/agregar-punto-matriz — geocodifica una dirección nueva y
-//  calcula el tiempo de viaje hacia/desde TODOS los puntos que ya
-//  están en flota_matriz_tiempos, agregando las filas nuevas.
+//  /api/agregar-punto-matriz — geocodifica una dirección y calcula
+//  el tiempo de viaje hacia/desde TODOS los puntos que ya existen,
+//  usando sus DIRECCIONES REALES guardadas (no adivinando por el
+//  nombre) — así el cálculo es preciso incluso para nombres como
+//  "Fábrica", que no son una dirección real por sí solos.
 //
-//  Usa la clave de Google Maps SOLO acá (variable de entorno de
-//  Vercel, nunca en el código que llega al navegador) y la clave
-//  pública de Supabase para escribir (la tabla ya es de lectura
-//  abierta, sin necesitar la service_role).
+//  Con { reemplazar: true } en el pedido, primero borra lo que
+//  hubiera de ese mismo nombre (matriz + dirección guardada) antes
+//  de recalcular — se usa para "editar" un punto ya cargado.
 //
 //  Necesita esta variable de entorno en Vercel:
 //    GOOGLE_MAPS_API_KEY
@@ -30,7 +31,7 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const { nombre, direccion } = req.body || {};
+    const { nombre, direccion, reemplazar } = req.body || {};
     if (!nombre || !direccion) {
       res.status(400).json({ error: "Faltan nombre y/o dirección." });
       return;
@@ -38,16 +39,24 @@ module.exports = async (req, res) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { transport: ws } });
 
-    // Puntos ya existentes en la matriz (uno por nombre, con su origen ya calculado)
-    const { data: filasExistentes, error: errLeer } = await supabase.from("flota_matriz_tiempos").select("origen");
+    // Direcciones reales ya guardadas (fábrica + sucursales + agregados a mano)
+    const { data: direccionesExistentes, error: errLeer } = await supabase.from("flota_direcciones").select("nombre,direccion");
     if (errLeer) throw errLeer;
-    const puntosExistentes = [...new Set((filasExistentes || []).map((f) => f.origen))];
-    if (puntosExistentes.some((p) => p.toLowerCase() === nombre.toLowerCase())) {
-      res.status(400).json({ error: `Ya existe un punto llamado "${nombre}" en la matriz.` });
+
+    const yaExiste = (direccionesExistentes || []).some((d) => d.nombre.toLowerCase() === nombre.toLowerCase());
+    if (yaExiste && !reemplazar) {
+      res.status(400).json({ error: `Ya existe un punto llamado "${nombre}". Si querés cambiarle la dirección, usá "Editar".` });
       return;
     }
+
+    if (reemplazar) {
+      await supabase.from("flota_matriz_tiempos").delete().or(`origen.eq.${nombre},destino.eq.${nombre}`);
+      await supabase.from("flota_direcciones").delete().eq("nombre", nombre);
+    }
+
+    const puntosExistentes = (direccionesExistentes || []).filter((d) => d.nombre.toLowerCase() !== nombre.toLowerCase());
     if (!puntosExistentes.length) {
-      res.status(400).json({ error: "La matriz está vacía — no hay ningún punto contra el cual calcular." });
+      res.status(400).json({ error: "Todavía no hay ningún punto con dirección guardada contra el cual calcular (correr primero flota_07_direcciones.sql)." });
       return;
     }
 
@@ -62,11 +71,9 @@ module.exports = async (req, res) => {
     const loc = geoData.results[0].geometry.location; // {lat, lng}
     const nuevoOrigen = `${loc.lat},${loc.lng}`;
 
-    // Distance Matrix: nuevo punto -> todos los existentes, y todos los existentes -> nuevo punto.
-    // Como no tenemos guardadas las coordenadas de los puntos existentes (solo sus
-    // nombres), usamos el nombre + ", Mar del Plata, Argentina" como dirección para
-    // que Google los geocodifique de nuevo en el mismo pedido.
-    const destinosStr = puntosExistentes.map((p) => encodeURIComponent(p + ", Mar del Plata, Argentina")).join("|");
+    // Distance Matrix usando las DIRECCIONES REALES de los puntos existentes
+    // (no sus nombres) — esto es lo que antes fallaba.
+    const destinosStr = puntosExistentes.map((p) => encodeURIComponent(p.direccion)).join("|");
 
     const [idaRes, vueltaRes] = await Promise.all([
       fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${nuevoOrigen}&destinations=${destinosStr}&mode=driving&key=${GOOGLE_KEY}`),
@@ -83,11 +90,11 @@ module.exports = async (req, res) => {
     const idaElementos = idaData.rows[0].elements;
     puntosExistentes.forEach((p, i) => {
       if (idaElementos[i].status === "OK") {
-        filasNuevas.push({ origen: nombre, destino: p, minutos: Math.round((idaElementos[i].duration.value / 60) * 10) / 10 });
+        filasNuevas.push({ origen: nombre, destino: p.nombre, minutos: Math.round((idaElementos[i].duration.value / 60) * 10) / 10 });
       }
       const elVuelta = vueltaData.rows[i].elements[0];
       if (elVuelta && elVuelta.status === "OK") {
-        filasNuevas.push({ origen: p, destino: nombre, minutos: Math.round((elVuelta.duration.value / 60) * 10) / 10 });
+        filasNuevas.push({ origen: p.nombre, destino: nombre, minutos: Math.round((elVuelta.duration.value / 60) * 10) / 10 });
       }
     });
 
@@ -98,6 +105,11 @@ module.exports = async (req, res) => {
 
     const { error: errInsert } = await supabase.from("flota_matriz_tiempos").insert(filasNuevas);
     if (errInsert) throw errInsert;
+
+    const { error: errDireccion } = await supabase.from("flota_direcciones").insert({
+      nombre, direccion, lat: loc.lat, lon: loc.lng, es_original: false,
+    });
+    if (errDireccion) throw errDireccion;
 
     res.status(200).json({ ok: true, filas: filasNuevas.length, punto: nombre });
   } catch (e) {

@@ -612,10 +612,11 @@ let S = {
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
   flotaHoy: [], // visibilidad cruzada con Flota (tabla flota_viajes/flota_registros_qr)
+  flotaDirecciones: [],
   flotaEstadoHoyLoading: false,
   flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
-  armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:"", mostrarAgregarDireccion:false},
+  armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:"", mostrarAgregarDireccion:false, editandoDireccion:null, editandoDireccionValor:""},
   flotaDash: null, flotaDashLoading: false, escFlotaDash: "3", camionOverride: {},
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
@@ -913,12 +914,13 @@ async function cargarEstadoFlotaHoy(){
   S.flotaEstadoHoyLoading = true;
   try{
     const hoy = hoyLocalISO();
-    const [viajesRes, regsRes, tviajeRes, testRes, matrizRes] = await Promise.all([
+    const [viajesRes, regsRes, tviajeRes, testRes, matrizRes, direccionesRes] = await Promise.all([
       sb.from("flota_viajes").select("*").eq("fecha", hoy),
       sb.from("flota_registros_qr").select("*").gte("ts", hoy+"T00:00:00-03:00").order("ts",{ascending:true}),
       sb.from("flota_tiempos_viaje").select("*"),
       sb.from("flota_tiempos_estimados").select("*"),
       sb.from("flota_matriz_tiempos").select("*"),
+      sb.from("flota_direcciones").select("*"),
     ]);
     if(viajesRes.error || regsRes.error) throw (viajesRes.error||regsRes.error);
     const registros = regsRes.data||[];
@@ -927,6 +929,7 @@ async function cargarEstadoFlotaHoy(){
     S.flotaTiemposViaje = tviajeRes.error ? [] : (tviajeRes.data||[]); // orden de paradas de cada recorrido
     S.flotaTiemposEstimados = testRes.error ? [] : (testRes.data||[]); // tiempo de descarga por parada
     S.flotaMatrizTiempos = matrizRes.error ? [] : (matrizRes.data||[]); // tiempo de viaje entre cualquier par de puntos
+    S.flotaDirecciones = direccionesRes.error ? [] : (direccionesRes.data||[]); // direcciones reales de cada punto
     S.flotaHoy = (viajesRes.data||[]).map(v=>{
       const paradas = registros.filter(r=>r.id_viaje===v.id && r.sucursal!=="FABRICA" && String(r.evento||"").toUpperCase()==="LLEGADA");
       const ultima = paradas[paradas.length-1] || null;
@@ -942,7 +945,7 @@ async function cargarEstadoFlotaHoy(){
       };
     });
   }catch(e){
-    S.flotaHoy = []; S.flotaViajesHoy = []; S.flotaRegistrosHoy = []; S.flotaTiemposViaje = []; S.flotaTiemposEstimados = []; S.flotaMatrizTiempos = [];
+    S.flotaHoy = []; S.flotaViajesHoy = []; S.flotaRegistrosHoy = []; S.flotaTiemposViaje = []; S.flotaTiemposEstimados = []; S.flotaMatrizTiempos = []; S.flotaDirecciones = [];
     // Flota no disponible todavía — TransferApp sigue funcionando igual
   }
   S.flotaEstadoHoyLoading = false;
@@ -3756,7 +3759,8 @@ function nombresRecorridosConHoja(){
   return [...new Set((S.flotaTiemposViaje||[]).map(t=>t.recorrido))];
 }
 async function agregarDireccionNueva(){
-  const nombre = ($("ar-nueva-direccion-nombre")?.value||"").trim();
+  const editando = S.armarRecorridoForm.editandoDireccion;
+  const nombre = editando || ($("ar-nueva-direccion-nombre")?.value||"").trim();
   const direccion = ($("ar-nueva-direccion-calle")?.value||"").trim();
   const msgEl = $("ar-nueva-direccion-msg");
   if(!nombre || !direccion){
@@ -3769,19 +3773,42 @@ async function agregarDireccionNueva(){
   try{
     const resp = await fetch("/api/agregar-punto-matriz", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({nombre, direccion}),
+      body: JSON.stringify({nombre, direccion, reemplazar: !!editando}),
     });
     const texto = await resp.text();
     let j; try{ j = JSON.parse(texto); }catch(e){ throw new Error("Respuesta inesperada del servidor"); }
     if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
-    toast(`✅ "${nombre}" agregado — ${j.filas} tramos calculados`);
-    S.armarRecorridoForm.mostrarAgregarDireccion = false;
+    toast(`✅ "${nombre}" ${editando?"actualizado":"agregado"} — ${j.filas} tramos calculados`);
+    S.armarRecorridoForm.editandoDireccion = null;
+    S.armarRecorridoForm.editandoDireccionValor = "";
     await cargarEstadoFlotaHoy(); // refresca la matriz para que ya aparezca disponible
   }catch(e){
     if(msgEl) msgEl.innerHTML = `<div class="err-msg" style="display:block;margin-top:8px">${escH(e.message)}</div>`;
   }
   if(btn){ btn.disabled = false; btn.innerHTML = "📍 Calcular y agregar"; }
   render();
+}
+function editarDireccionManual(nombre, direccionActual){
+  S.armarRecorridoForm.editandoDireccion = nombre;
+  S.armarRecorridoForm.editandoDireccionValor = direccionActual;
+  render();
+}
+function cancelarEdicionDireccion(){
+  S.armarRecorridoForm.editandoDireccion = null;
+  S.armarRecorridoForm.editandoDireccionValor = "";
+  render();
+}
+async function borrarDireccionManual(nombre){
+  if(!confirm(`¿Borrar "${nombre}"? Se va a sacar de la matriz de tiempos y de cualquier recorrido que la use.`)) return;
+  try{
+    await sb.from("flota_matriz_tiempos").delete().or(`origen.eq.${nombre},destino.eq.${nombre}`);
+    await sb.from("flota_direcciones").delete().eq("nombre", nombre);
+    await sb.from("flota_tiempos_viaje").delete().eq("sucursal", nombre);
+    toast(`Borrado "${nombre}"`);
+    await cargarEstadoFlotaHoy();
+  }catch(e){
+    toast("⚠️ No se pudo borrar: "+e.message, "warn");
+  }
 }
 
 function onCambiaNombreRecorrido(nombre){
@@ -4415,25 +4442,49 @@ function renderArmarRecorrido(){
 
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="S.armarRecorridoForm.mostrarAgregarDireccion=!S.armarRecorridoForm.mostrarAgregarDireccion;render()">
-        <label style="margin-bottom:0;cursor:pointer">➕ Agregar una dirección nueva a la matriz</label>
+        <label style="margin-bottom:0;cursor:pointer">➕ Direcciones agregadas a mano</label>
         <span style="color:var(--faint)">${S.armarRecorridoForm.mostrarAgregarDireccion?"▲":"▼"}</span>
       </div>
-      ${S.armarRecorridoForm.mostrarAgregarDireccion?`
-      <div style="margin-top:12px">
-        <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Calcula el tiempo hacia y desde todos los puntos que ya existen — tarda unos segundos.</p>
-        <div class="field">
-          <label>Nombre (como querés que aparezca)</label>
-          <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Ej: Marconi"/>
-        </div>
-        <div class="field" style="margin-top:10px">
-          <label>Dirección completa</label>
-          <input id="ar-nueva-direccion-calle" class="inp" placeholder="Ej: Marconi 1234, Mar del Plata"/>
-        </div>
-        <div id="ar-nueva-direccion-msg"></div>
-        <button class="btn btn-teal btn-md" style="margin-top:10px" onclick="agregarDireccionNueva()" id="ar-btn-agregar-direccion">
-          📍 Calcular y agregar
-        </button>
-      </div>`:""}
+      ${S.armarRecorridoForm.mostrarAgregarDireccion?(()=>{
+        const manuales = (S.flotaDirecciones||[]).filter(d=>!d.es_original);
+        const editando = S.armarRecorridoForm.editandoDireccion;
+        return `
+        <div style="margin-top:12px">
+          ${manuales.length?`
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+            ${manuales.map(d=>`
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px">
+                <div style="min-width:0">
+                  <div style="font-size:13px;font-weight:600">${escH(d.nombre)}</div>
+                  <div style="font-size:11px;color:var(--faint)">${escH(d.direccion)}</div>
+                </div>
+                <div style="display:flex;gap:4px;flex-shrink:0">
+                  <button class="btn btn-ghost btn-sm" onclick="editarDireccionManual('${escH(d.nombre)}','${escH(d.direccion)}')">✏️</button>
+                  <button class="btn btn-ghost btn-sm" onclick="borrarDireccionManual('${escH(d.nombre)}')">🗑️</button>
+                </div>
+              </div>`).join("")}
+          </div>`:`<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Todavía no agregaste ninguna dirección a mano — las sucursales fijas no aparecen acá.</p>`}
+
+          <p style="font-size:12px;color:var(--faint);margin-bottom:10px;padding-top:10px;border-top:1px dashed var(--border)">
+            ${editando?`✏️ Editando "${escH(editando)}"`:"Calcula el tiempo hacia y desde todos los puntos que ya existen — tarda unos segundos."}
+          </p>
+          <div class="field">
+            <label>Nombre (como querés que aparezca)</label>
+            <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Ej: Marconi" value="${escH(editando||"")}" ${editando?"disabled":""}/>
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label>Dirección completa</label>
+            <input id="ar-nueva-direccion-calle" class="inp" placeholder="Ej: Marconi 1234, Mar del Plata" value="${escH(S.armarRecorridoForm.editandoDireccionValor||"")}"/>
+          </div>
+          <div id="ar-nueva-direccion-msg"></div>
+          <div style="display:flex;gap:8px;margin-top:10px">
+            ${editando?`<button class="btn btn-ghost btn-md" onclick="cancelarEdicionDireccion()">Cancelar</button>`:""}
+            <button class="btn btn-teal btn-md" onclick="agregarDireccionNueva()" id="ar-btn-agregar-direccion">
+              📍 ${editando?"Recalcular y guardar":"Calcular y agregar"}
+            </button>
+          </div>
+        </div>`;
+      })():""}
     </div>
 
     <div class="card">
