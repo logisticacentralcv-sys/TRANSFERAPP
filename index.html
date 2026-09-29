@@ -4026,14 +4026,21 @@ function renderDashboardFlota(){
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🚚 Flota</h3>
       ${!datos.camiones.length?`<p style="color:var(--muted);font-size:13px">Sin datos de flota sincronizados todavía.</p>`:`
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px">
-        ${datos.camiones.map(f=>`<div style="background:var(--s2);border-radius:8px;padding:10px 14px">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <strong style="font-size:13px">🚚 ${escH(f.id)}</strong>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px">
+        ${datos.camiones.map(f=>{
+          const tieneDim = f.altura_cm && f.ancho_cm && f.largo_cm;
+          return `<div style="background:var(--s2);border-radius:8px;padding:12px 14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+            <strong style="font-size:13px">🚚 ${escH(f.vehiculo||f.id)}</strong>
             <span style="font-size:11px;color:${f.disponible?"#1fa86a":"var(--red)"}">${f.disponible?"✓ Disponible":"✗ No disp."}</span>
           </div>
-          <div style="font-size:12px;color:var(--muted)">Kg máx: ${Math.round(f.kg_max||0)} kg</div>
-        </div>`).join("")}
+          <div style="font-size:11px;color:var(--faint);margin-bottom:6px">${escH(f.id)}${f.anio?` · ${f.anio}`:""}</div>
+          <div style="font-size:12px;color:var(--muted)">Cap. operativa: <strong style="color:var(--text)">${f.kg_max?Math.round(f.kg_max)+" kg":"—"}</strong></div>
+          ${f.capacidad_bruta_kg?`<div style="font-size:11px;color:var(--faint)">Cap. bruta: ${Math.round(f.capacidad_bruta_kg)} kg</div>`:""}
+          ${f.vol_max_m3?`<div style="font-size:12px;color:var(--muted);margin-top:2px">Volumen: <strong style="color:var(--text)">${f.vol_max_m3} m³</strong></div>`:""}
+          ${tieneDim?`<div style="font-size:11px;color:var(--faint);margin-top:2px">Caja: ${f.altura_cm}×${f.ancho_cm}×${f.largo_cm} cm</div>`:""}
+        </div>`;
+        }).join("")}
       </div>`}
     </div>
 
