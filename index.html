@@ -3957,29 +3957,70 @@ function renderDashboardFlota(){
 
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📦 Carga planificada</h3>
-      ${(!princ.length && !verd.length)?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no hay carga sincronizada para hoy — corré la sincronización desde Apps Script.</p>`:`
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
-        ${princ.map(r=>{
-          const esHuevos = String(r.recorrido||"").toUpperCase().includes("HUEVOS");
-          const ocpKg = r.ocup_kg_teorico>0?Math.round(r.ocup_kg_teorico*100):0;
-          const ocpVol = r.ocup_vol_teorico>0?Math.round(r.ocup_vol_teorico*100):0;
-          return `<div style="background:var(--s2);border-radius:10px;padding:14px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${esHuevos?"🥚":"🗺️"} ${escH(r.recorrido)}</div>
-            <div style="font-size:11px;color:var(--faint);margin-bottom:8px">${escH((r.escenario||"").replace(/_/g," "))}${r.camion_id?` · ${escH(r.camion_id)}`:""}</div>
-            ${esHuevos?`
-            <div style="font-size:12px;color:var(--muted)">Cajones: <strong style="color:var(--text)">${Math.round(r.cajones||0)}</strong> · Docena: <strong style="color:var(--text)">${Math.round(r.docenas||0)}</strong> · ½ doc: <strong style="color:var(--text)">${Math.round(r.media_docena||0)}</strong></div>
-            `:`
-            <div style="font-size:12px;color:var(--muted)">Carga: <strong style="color:var(--text)">${Math.round(r.plan_kg||0)} kg</strong> · Bultos: <strong style="color:var(--text)">${Math.round(r.bultos||0)}</strong> · Pallets: <strong style="color:var(--text)">${(r.pallets||0).toFixed(1)}</strong></div>
-            <div style="font-size:11px;color:var(--faint);margin-top:4px">Ocup. peso: ${ocpKg}% · Ocup. volumen: ${ocpVol}%</div>
-            `}
-          </div>`;
-        }).join("")}
-        ${verd.length?`<div style="background:var(--s2);border-radius:10px;padding:14px;border:1px solid #1fa86a40">
-          <div style="font-weight:700;font-size:14px">🥦 Verdulería</div>
-          <div style="font-size:11px;color:var(--faint);margin-bottom:8px">Recorrido especial · ${verd.length} sucursales</div>
-          <div style="font-size:12px;color:var(--muted)">Carga: <strong style="color:var(--text)">${Math.round(verd.reduce((a,r)=>a+(+r.plan_kg||0),0))} kg</strong> · Bultos: <strong style="color:var(--text)">${Math.round(verd.reduce((a,r)=>a+(+r.bultos||0),0))}</strong></div>
-        </div>`:""}
-      </div>`}
+      ${(!princ.length && !verd.length)?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no hay carga sincronizada para hoy — corré la sincronización desde Apps Script.</p>`:(()=>{
+        const statRow = (l,v) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:13px"><span style="color:var(--muted)">${l}</span><strong>${v}</strong></div>`;
+        const occRow = (l,pct,color) => `<div style="margin-top:8px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--muted)">${l}</span><strong style="color:${color}">${pct}%</strong></div>
+          <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:4px"></div></div>
+        </div>`;
+        const colorOcup = pct => pct>=80?"var(--red)":pct>=60?"var(--blue)":pct>=40?"var(--amber)":"var(--muted)";
+        return `
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
+          ${princ.map(r=>{
+            const esHuevos = String(r.recorrido||"").toUpperCase().includes("HUEVOS");
+            const ocpKg = r.ocup_kg_teorico>0?Math.round(r.ocup_kg_teorico*100):0;
+            const ocpVol = r.ocup_vol_teorico>0?Math.round(r.ocup_vol_teorico*100):0;
+            return `<div style="background:var(--s2);border-radius:10px;padding:16px">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:2px">
+                <div>
+                  <div style="font-weight:700;font-size:15px">${esHuevos?"🥚":"🗺️"} ${escH(r.recorrido)}</div>
+                  <div style="font-size:11px;color:var(--faint)">${escH((r.escenario||"").replace(/_/g," "))}</div>
+                </div>
+                ${r.camion_id?badge(r.camion_id,"var(--blue)"):""}
+              </div>
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+                ${esHuevos?`
+                  ${statRow("Cajones", Math.round(r.cajones||0))}
+                  ${statRow("Cajas docena", Math.round(r.docenas||0))}
+                  ${statRow("Bultos ½ doc.", Math.round(r.media_docena||0))}
+                `:`
+                  ${statRow("Carga planif.", Math.round(r.plan_kg||0)+" kg")}
+                  ${statRow("Bultos", Math.round(r.bultos||0))}
+                  ${statRow("Pallets", (r.pallets||0).toFixed(1))}
+                  ${r.kg_max>0?statRow("Cap. máx. camión", Math.round(r.kg_max)+" kg"):""}
+                `}
+              </div>
+              ${(ocpKg>0||ocpVol>0)?`<div style="margin-top:6px">
+                ${!esHuevos && ocpKg>0?occRow("Ocup. peso (kg)", ocpKg, colorOcup(ocpKg)):""}
+                ${ocpVol>0?occRow("Ocup. volumen", ocpVol, colorOcup(ocpVol)):""}
+              </div>`:""}
+            </div>`;
+          }).join("")}
+          ${verd.length?(()=>{
+            const vTotal = Math.round(verd.reduce((a,r)=>a+(+r.plan_kg||0),0));
+            const vBultos = Math.round(verd.reduce((a,r)=>a+(+r.bultos||0),0));
+            const vOcpKg = verd[0]&&verd[0].ocup_kg_teorico>0?Math.round(verd[0].ocup_kg_teorico*100):0;
+            const vOcpVol = verd[0]&&verd[0].ocup_vol_teorico>0?Math.round(verd[0].ocup_vol_teorico*100):0;
+            return `<div style="background:var(--s2);border-radius:10px;padding:16px;border:1px solid #1fa86a40">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                <div>
+                  <div style="font-weight:700;font-size:15px">🥦 Verdulería</div>
+                  <div style="font-size:11px;color:var(--faint)">Recorrido especial · ${verd.length} sucursales</div>
+                </div>
+                ${verd[0].camion_id?badge(verd[0].camion_id,"#1fa86a"):""}
+              </div>
+              <div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+                ${statRow("Carga total", vTotal+" kg")}
+                ${statRow("Bultos", vBultos)}
+              </div>
+              ${(vOcpKg>0||vOcpVol>0)?`<div style="margin-top:6px">
+                ${vOcpKg>0?occRow("Ocup. peso (kg)", vOcpKg, "#1fa86a"):""}
+                ${vOcpVol>0?occRow("Ocup. volumen", vOcpVol, "#1fa86a"):""}
+              </div>`:""}
+            </div>`;
+          })():""}
+        </div>`;
+      })()}
     </div>
 
     <div class="card" style="margin-bottom:20px">
