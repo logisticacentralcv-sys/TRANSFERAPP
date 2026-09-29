@@ -952,9 +952,12 @@ async function cargarEstadoFlotaHoy(){
 // Busca el tiempo de viaje entre dos puntos en la matriz general
 // (fábrica + sucursales) — no depende de ningún recorrido puntual.
 function minutosEntre(origen, destino){
-  const o = normNotif(origen), d = normNotif(destino);
+  // Tesorería queda físicamente en Fábrica — para cualquier cálculo de
+  // ruta son el mismo punto.
+  const aliasFabrica = s => ["tesoreria","tesorería"].includes(normNotif(s)) ? "fabrica" : normNotif(s);
+  const o = aliasFabrica(origen), d = aliasFabrica(destino);
   if(o===d) return 0;
-  const fila = (S.flotaMatrizTiempos||[]).find(m=>normNotif(m.origen)===o && normNotif(m.destino)===d);
+  const fila = (S.flotaMatrizTiempos||[]).find(m=>aliasFabrica(m.origen)===o && aliasFabrica(m.destino)===d);
   return fila ? Number(fila.minutos)||0 : null; // null = no hay dato cargado para ese tramo
 }
 
@@ -3746,7 +3749,7 @@ function fechaLocalDeTimestamp(iso){
 // ══════════════════════════════════════════════════════════
 function puntosDisponiblesRecorrido(){
   return [...new Set((S.flotaMatrizTiempos||[]).map(m=>m.origen))]
-    .filter(p=>p.toUpperCase()!=="FABRICA")
+    .filter(p=>!["FABRICA","TESORERIA","TESORERÍA"].includes(p.toUpperCase()))
     .sort();
 }
 function nombresRecorridosConHoja(){
@@ -3801,6 +3804,31 @@ function _cumpleRestricciones(orden, restricciones){
     return iA===-1 || iD===-1 || iA<iD;
   });
 }
+// A qué zona base (SUR/CENTRO/NORTE) pertenece una parada, según los
+// recorridos fijos ya cargados — para que el orden sugerido no
+// zigzaguee entre zonas (arrancar por una punta e ir "bajando", no
+// saltar de zona en zona porque una parada suelta está más cerca).
+function _zonaDeParada(parada){
+  const zonasBase = ["SUR","CENTRO","NORTE"];
+  for(const zona of zonasBase){
+    const stops = (S.flotaTiemposViaje||[])
+      .filter(t=>normNotif(t.recorrido)===normNotif(zona))
+      .map(t=>normNotif(t.sucursal));
+    if(stops.includes(normNotif(parada))) return zona;
+  }
+  return null; // no pertenece a ninguna zona conocida — no penaliza cambios hacia/desde ella
+}
+// Cuenta cuántas veces el orden "cambia de zona" innecesariamente —
+// una parada sin zona conocida no cuenta como cambio.
+function _cambiosDeZona(orden){
+  let cambios=0, zonaAnterior=null;
+  for(const p of orden){
+    const zona = _zonaDeParada(p);
+    if(zona && zonaAnterior && zona!==zonaAnterior) cambios++;
+    if(zona) zonaAnterior = zona;
+  }
+  return cambios;
+}
 function _tiempoTotalOrden(orden){
   let total=0, anterior="FABRICA", nulos=0;
   for(const p of orden){
@@ -3836,7 +3864,11 @@ function sugerirOrdenOptimo(){
   let mejor = null, mejorScore = null;
   for(const orden of candidatos){
     const {total,nulos} = _tiempoTotalOrden(orden);
-    const score = nulos*100000 + total; // priorizar 0 tramos sin dato, después el tiempo más corto
+    const cambiosZona = _cambiosDeZona(orden);
+    // Prioridad: 1) no dejar tramos sin dato, 2) no zigzaguear entre
+    // zonas (arrancar por una punta e ir bajando, no saltar), 3) el
+    // tiempo total más corto como desempate.
+    const score = nulos*1e8 + cambiosZona*1e5 + total;
     if(mejorScore===null || score<mejorScore){ mejorScore=score; mejor=orden; }
   }
 
@@ -3851,21 +3883,27 @@ function _ordenVecinoMasCercano(paradas, restricciones){
   const restantes = new Set(paradas);
   const orden = [];
   let actual = "FABRICA";
+  let zonaActual = null;
   while(restantes.size){
     // Solo candidatas que no violen una restricción de "debe ir después de otra que todavía no se visitó"
     const candidatas = [...restantes].filter(p=>{
       return !restricciones.some(([antes,despues])=>despues===p && restantes.has(antes));
     });
     const pool = candidatas.length ? candidatas : [...restantes];
-    let mejorP=null, mejorT=Infinity;
+    let mejorP=null, mejorScore=Infinity;
     for(const p of pool){
       const t = minutosEntre(actual,p);
       const tt = t===null ? 999999 : t;
-      if(tt<mejorT){ mejorT=tt; mejorP=p; }
+      const zonaP = _zonaDeParada(p);
+      const penalizacionZona = (zonaActual && zonaP && zonaP!==zonaActual) ? 100000 : 0;
+      const score = penalizacionZona + tt;
+      if(score<mejorScore){ mejorScore=score; mejorP=p; }
     }
     orden.push(mejorP);
     restantes.delete(mejorP);
     actual = mejorP;
+    const zonaMejor = _zonaDeParada(mejorP);
+    if(zonaMejor) zonaActual = zonaMejor;
   }
   return orden;
 }
@@ -4262,7 +4300,7 @@ function transferenciasPendientesEntreSucursales(){
   return (S.requests||[]).filter(r=>{
     if(cerrados.includes(r.estado)) return false;
     if(esOrigenFabrica(r)) return false; // esas ya se ven en Carga planificada
-    if(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)) return false; // bolsín al buzón, no es ruta entre sucursales
+    if(esDestinoBuzon(r.destino)) return false; // Tesorería queda en Fábrica — es la vuelta, no una parada real
     if(!r.sucursal || !r.destino) return false;
     return true;
   }).sort((a,b)=>(a.fechaRequerida||"").localeCompare(b.fechaRequerida||""));
