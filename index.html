@@ -612,6 +612,7 @@ let S = {
   config: {}, // pares clave/valor de la tabla "config" en Supabase (ej: bolsinesActivo)
   notificaciones: [], // alertas internas (tabla "notificaciones") — reemplazo del mail que no llegaba
   flotaHoy: [], // visibilidad cruzada con Flota (tabla flota_viajes/flota_registros_qr)
+  flotaEstadoHoyLoading: false,
   flotaViajesHoy: [], flotaRegistrosHoy: [], flotaTiemposViaje: [], flotaTiemposEstimados: [], flotaMatrizTiempos: [],
   flotaEtaResultado: null,
   armarRecorridoForm: {nombre:"", paradas:[], loading:false, _ultimoCargado:""},
@@ -909,6 +910,7 @@ function hoyLocalISO(){
   return local.toISOString().slice(0,10);
 }
 async function cargarEstadoFlotaHoy(){
+  S.flotaEstadoHoyLoading = true;
   try{
     const hoy = hoyLocalISO();
     const [viajesRes, regsRes, tviajeRes, testRes, matrizRes] = await Promise.all([
@@ -943,6 +945,7 @@ async function cargarEstadoFlotaHoy(){
     S.flotaHoy = []; S.flotaViajesHoy = []; S.flotaRegistrosHoy = []; S.flotaTiemposViaje = []; S.flotaTiemposEstimados = []; S.flotaMatrizTiempos = [];
     // Flota no disponible todavía — TransferApp sigue funcionando igual
   }
+  S.flotaEstadoHoyLoading = false;
   render();
 }
 
@@ -4270,9 +4273,13 @@ function renderArmarRecorrido(){
   const puntos = puntosDisponiblesRecorrido();
   const nombresSugeridos = [...new Set([...(S.recorridos||[]), ...nombresRecorridosConHoja()])];
 
+  if(S.flotaEstadoHoyLoading){
+    return `<div style="text-align:center;padding:60px;color:var(--muted)"><span class="spinner"></span> Cargando datos de Flota...</div>`;
+  }
   if(!S.flotaMatrizTiempos || !S.flotaMatrizTiempos.length){
     return `<div class="card" style="padding:20px;text-align:center;color:var(--muted)">
       Todavía no hay ninguna matriz de tiempos cargada (flota_matriz_tiempos) — sin eso no se puede calcular el tiempo entre paradas.
+      <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="cargarEstadoFlotaHoy()">↻ Reintentar</button></div>
     </div>`;
   }
 
