@@ -3919,7 +3919,7 @@ function renderDashboardFlota(){
       <div style="display:flex;gap:6px;flex-wrap:wrap">
         ${escenarios.map(([v,l])=>`<button class="btn ${esc===v?"btn-primary":"btn-ghost"} btn-sm" onclick="S.escFlotaDash='${v}';render()">${l}</button>`).join("")}
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="cargarDashboardFlota()">↻ Actualizar (${datos.ts.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})})</button>
+      <span style="font-size:12px;color:var(--faint)">🟢 En vivo · última actualización ${datos.ts.toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"})}</span>
     </div>
 
     <div class="stats-grid" style="margin-bottom:20px">
@@ -7905,7 +7905,37 @@ function startAutoRefresh(){
       }
       if(!S.modal) render();
     })
+    .on("postgres_changes", {event:"*", schema:"public", table:"flota_viajes"}, ()=>{
+      if(S.view!=="app") return;
+      debounceRefrescarFlota();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"flota_registros_qr"}, ()=>{
+      if(S.view!=="app") return;
+      debounceRefrescarFlota();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"flota_carga_planificada"}, ()=>{
+      if(S.view!=="app") return;
+      debounceRefrescarFlota();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"flota_camiones"}, ()=>{
+      if(S.view!=="app") return;
+      debounceRefrescarFlota();
+    })
+    .on("postgres_changes", {event:"*", schema:"public", table:"flota_viz_verd"}, ()=>{
+      if(S.view!=="app") return;
+      debounceRefrescarFlota();
+    })
     .subscribe();
+}
+let _timerRefrescarFlota = null;
+function debounceRefrescarFlota(){
+  // Varios escaneos pueden llegar casi juntos — esperamos un toque
+  // para no disparar recargas pisándose una a la otra.
+  if(_timerRefrescarFlota) clearTimeout(_timerRefrescarFlota);
+  _timerRefrescarFlota = setTimeout(()=>{
+    cargarEstadoFlotaHoy(); // widget "Recorridos de hoy"
+    if(S.tabLog==="flotaDash") cargarDashboardFlota(); // solo si están mirando esa pestaña
+  }, 1500);
 }
 function stopAutoRefresh(){
   if(_rtChannel){ sb.removeChannel(_rtChannel); _rtChannel=null; }
