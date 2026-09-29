@@ -12,6 +12,7 @@
 //    GOOGLE_MAPS_API_KEY
 // ══════════════════════════════════════════════════════════
 const { createClient } = require("@supabase/supabase-js");
+const ws = require("ws");
 
 const SUPABASE_URL = "https://lrwwpulunfcavmvmwotd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_SrUcYrDVBIOvZgF-DSPcyg_qV0LXEDQ";
@@ -35,7 +36,7 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, { realtime: { transport: ws } });
 
     // Puntos ya existentes en la matriz (uno por nombre, con su origen ya calculado)
     const { data: filasExistentes, error: errLeer } = await supabase.from("flota_matriz_tiempos").select("origen");

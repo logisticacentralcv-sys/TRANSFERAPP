@@ -13,6 +13,7 @@
 //    SUPABASE_SERVICE_ROLE_KEY
 // ══════════════════════════════════════════════════════════
 const { createClient } = require("@supabase/supabase-js");
+const ws = require("ws");
 
 const SUPABASE_URL = "https://lrwwpulunfcavmvmwotd.supabase.co";
 
@@ -50,7 +51,7 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, { realtime: { transport: ws } });
 
     // Sucursal y Repartidor nunca escriben contraseña -> se genera una
     // al azar, invisible, para que la app los loguee solos.
