@@ -3770,6 +3770,13 @@ function agregarParadaRecorrido(){
   S.armarRecorridoForm.paradas.push(val);
   render();
 }
+// Atajo desde el panel de transferencias pendientes: agrega la parada
+// directo, sin pasar por el desplegable de "Agregar parada".
+function agregarParadaDirecta(nombre){
+  if(S.armarRecorridoForm.paradas.includes(nombre)){ toast("Esa parada ya está en la lista","warn"); return; }
+  S.armarRecorridoForm.paradas.push(nombre);
+  render();
+}
 function quitarParadaRecorrido(i){ S.armarRecorridoForm.paradas.splice(i,1); render(); }
 function subirParadaRecorrido(i){ if(i===0) return; const p=S.armarRecorridoForm.paradas; [p[i-1],p[i]]=[p[i],p[i-1]]; render(); }
 function bajarParadaRecorrido(i){ const p=S.armarRecorridoForm.paradas; if(i===p.length-1) return; [p[i+1],p[i]]=[p[i],p[i+1]]; render(); }
@@ -3940,7 +3947,7 @@ function renderDashboardFlota(){
   const finalizados = vizRows.filter(r=>r.estado.includes("Finalizado")).length;
   const pendientes = Math.max(0, (princ.length+(verd.length>0?1:0)) - vizRows.length);
 
-  const escenarios = [["3","3 recorridos"],["2","2 recorridos"],["h","🥚 Huevos"],["c","Congelados"],["r","Refuerzo"],["s","Secos"]];
+  const escenarios = [["3","3 recorridos"],["2","2 recorridos"],["h","🥚 Huevos"],["c","Congelados"],["r","Refuerzo"]];
 
   // KPI con barra de color arriba, como el dashboard original de Flota
   // (distinto del stat-card genérico que usa el resto de TransferApp)
@@ -4194,6 +4201,50 @@ function renderArmarRecorrido(){
     </div>`;
   }).join("");
 
+  // Transferencias PENDIENTES entre sucursales (no las que salen de
+  // Fábrica — esas ya están en "Carga planificada" — sino las que van
+  // de una sucursal a otra, que son las que definen si conviene armar
+  // el recorrido en un sentido o en el otro).
+  const cerrados = ["Entregada","Rechazada","Cancelada","No entregada","No levantada"];
+  const transferenciasEntreSucursales = (S.requests||[]).filter(r=>{
+    if(cerrados.includes(r.estado)) return false;
+    if(esOrigenFabrica(r)) return false; // esas ya se ven en Carga planificada
+    if(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)) return false; // bolsín al buzón, no es ruta entre sucursales
+    if(!r.sucursal || !r.destino) return false;
+    return true;
+  }).sort((a,b)=>(a.fechaRequerida||"").localeCompare(b.fechaRequerida||""));
+
+  const panelTransferencias = `
+    <div class="card" style="margin-bottom:16px">
+      <label style="display:block;margin-bottom:8px">🔄 Transferencias pendientes entre sucursales</label>
+      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Para decidir el sentido del recorrido — si hay carga de A hacia B, conviene visitar A antes que B.</p>
+      ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
+      <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
+        ${transferenciasEntreSucursales.map(r=>{
+          const origenEnLista = f.paradas.includes(r.sucursal);
+          const destinoEnLista = f.paradas.includes(r.destino);
+          const ordenOk = origenEnLista && destinoEnLista && f.paradas.indexOf(r.sucursal) < f.paradas.indexOf(r.destino);
+          const ordenMal = origenEnLista && destinoEnLista && !ordenOk;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;${ordenMal?"border:1px solid var(--red)":""}">
+            <div style="min-width:0">
+              <div style="font-size:13px;font-weight:600">
+                <span style="color:${origenEnLista?"#4ade80":"var(--text)"}">${escH(r.sucursal)}</span>
+                →
+                <span style="color:${destinoEnLista?"#4ade80":"var(--text)"}">${escH(r.destino)}</span>
+                ${ordenMal?` <span style="color:var(--red);font-size:11px">⚠ orden invertido</span>`:""}
+                ${ordenOk?` <span style="color:#4ade80;font-size:11px">✓ ya cubierto</span>`:""}
+              </div>
+              <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}</div>
+            </div>
+            <div style="display:flex;gap:4px;flex-shrink:0">
+              ${!origenEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
+              ${!destinoEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
+            </div>
+          </div>`;
+        }).join("")}
+      </div>`}
+    </div>`;
+
   return `
   <div>
     <div class="card" style="margin-bottom:16px">
@@ -4206,6 +4257,8 @@ function renderArmarRecorrido(){
         </div>
       </div>
     </div>
+
+    ${panelTransferencias}
 
     <div class="card">
       <label style="display:block;margin-bottom:8px">Agregar parada</label>
