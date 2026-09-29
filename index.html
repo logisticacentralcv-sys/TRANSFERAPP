@@ -3987,7 +3987,8 @@ function renderDashboardFlota(){
           <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px"><span style="color:var(--muted)">${l}</span><strong style="color:${color}">${pct}%</strong></div>
           <div style="height:7px;background:var(--border);border-radius:4px;overflow:hidden"><div style="height:100%;width:${Math.min(pct,100)}%;background:${color};border-radius:4px"></div></div>
         </div>`;
-        const colorOcup = pct => pct>=80?"var(--red)":pct>=60?"var(--blue)":pct>=40?"var(--amber)":"var(--muted)";
+        const COLOR_PESO = "#f97316";    // naranja
+        const COLOR_VOLUMEN = "#0ea5e9"; // celeste oscuro
         return `
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px">
           ${princ.map(r=>{
@@ -4015,8 +4016,8 @@ function renderDashboardFlota(){
                 `}
               </div>
               ${(ocpKg>0||ocpVol>0)?`<div style="margin-top:6px">
-                ${!esHuevos && ocpKg>0?occRow("Ocup. peso (kg)", ocpKg, colorOcup(ocpKg)):""}
-                ${ocpVol>0?occRow("Ocup. volumen", ocpVol, colorOcup(ocpVol)):""}
+                ${!esHuevos && ocpKg>0?occRow("Ocup. peso (kg)", ocpKg, COLOR_PESO):""}
+                ${ocpVol>0?occRow("Ocup. volumen", ocpVol, COLOR_VOLUMEN):""}
               </div>`:""}
             </div>`;
           }).join("")}
