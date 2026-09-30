@@ -3900,6 +3900,40 @@ function quitarParadaRecorrido(i){ S.armarRecorridoForm.paradas.splice(i,1); ren
 function subirParadaRecorrido(i){ if(i===0) return; const p=S.armarRecorridoForm.paradas; [p[i-1],p[i]]=[p[i],p[i-1]]; render(); }
 function bajarParadaRecorrido(i){ const p=S.armarRecorridoForm.paradas; if(i===p.length-1) return; [p[i+1],p[i]]=[p[i],p[i+1]]; render(); }
 
+// Drag & drop de paradas — tomar la tarjeta y soltarla en otra posición,
+// sin tener que ir tocando las flechitas una por una. Importante: NO
+// se re-renderiza mientras se arrastra (eso destruye el elemento que
+// el navegador está arrastrando y corta el drag) — solo se resalta
+// visualmente por dónde se va a soltar, y el reordenamiento real pasa
+// recién en el "drop".
+let _dragParadaIdx = null;
+function _dragParadaStart(ev, i){
+  _dragParadaIdx = i;
+  ev.dataTransfer.effectAllowed = "move";
+  try{ ev.dataTransfer.setData("text/plain", String(i)); }catch(e){}
+  setTimeout(()=>{ ev.target.style.opacity = "0.4"; }, 0);
+}
+function _dragParadaEnter(ev, i){
+  if(_dragParadaIdx===null || _dragParadaIdx===i) return;
+  document.querySelectorAll("[id^='ar-parada-']").forEach(el=>el.style.borderTop="");
+  const el = document.getElementById("ar-parada-"+i);
+  if(el) el.style.borderTop = "2px solid var(--amber)";
+}
+function _dragParadaDrop(ev, i){
+  ev.preventDefault();
+  if(_dragParadaIdx===null || _dragParadaIdx===i) return;
+  const paradas = S.armarRecorridoForm.paradas;
+  const [movida] = paradas.splice(_dragParadaIdx, 1);
+  paradas.splice(i, 0, movida);
+  _dragParadaIdx = null;
+  render();
+}
+function _dragParadaEnd(ev){
+  ev.target.style.opacity = "1";
+  document.querySelectorAll("[id^='ar-parada-']").forEach(el=>el.style.borderTop="");
+  _dragParadaIdx = null;
+}
+
 // Genera todas las permutaciones de un array (para listas chicas —
 // hasta 8 paradas, 40320 combinaciones, se calcula al instante).
 function _permutaciones(arr){
@@ -4454,7 +4488,9 @@ function renderArmarRecorrido(){
     }
 
     return `
-    <div class="card" style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:8px">
+    <div class="card" draggable="true" ondragstart="_dragParadaStart(event,${i})" ondragover="event.preventDefault()" ondragenter="_dragParadaEnter(event,${i})" ondrop="_dragParadaDrop(event,${i})" ondragend="_dragParadaEnd(event)"
+      style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:8px;transition:opacity .15s" id="ar-parada-${i}">
+      <div style="cursor:grab;color:var(--faint);font-size:16px;flex-shrink:0;touch-action:none" title="Arrastrá para reordenar">⠿</div>
       <div style="width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--amber);flex-shrink:0">${i+1}</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:14px">${escH(p)}</div>
