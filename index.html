@@ -4537,9 +4537,15 @@ function renderArmarRecorrido(){
 
     // Transferencias ya asignadas a este recorrido que salen justo de
     // esta parada — se muestran acá para verlas en el punto exacto del
-    // recorrido donde se recogen.
+    // recorrido donde se recogen. Mismo criterio que el panel de
+    // arriba (no bolsines al buzón, solo estados relevantes).
     const asignadasDesdeAca = f.nombre.trim()
-      ? (S.requests||[]).filter(r=>normNotif(r.recorrido)===normNotif(f.nombre) && normNotif(r.sucursal)===normNotif(p) && !["Entregada","Rechazada","Cancelada","No entregada"].includes(r.estado))
+      ? (S.requests||[]).filter(r=>
+          normNotif(r.recorrido)===normNotif(f.nombre) &&
+          normNotif(r.sucursal)===normNotif(p) &&
+          ["Aprobada","Lista para retirar","En fábrica"].includes(r.estado) &&
+          !esDestinoBuzon(r.destino)
+        )
       : [];
 
     return `
@@ -4558,11 +4564,17 @@ function renderArmarRecorrido(){
       </div>
     </div>
     <div ondragover="event.preventDefault()" ondrop="_dropTransferenciaEnParada(event,'${escH(p)}')" id="ar-conector-${i}"
-      style="min-height:10px;margin:0 0 8px 38px;padding:${asignadasDesdeAca.length?"6px 10px":"2px"};border-radius:6px;border:1px dashed var(--border);display:flex;flex-direction:column;gap:4px;transition:background .15s">
+      style="min-height:10px;margin:0 0 8px 38px;padding:${asignadasDesdeAca.length?"6px":"2px"};border-radius:6px;border:1px dashed var(--border);display:flex;flex-direction:column;gap:6px;transition:background .15s">
       ${asignadasDesdeAca.map(r=>`
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted)">
-          <span onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">🔄 → ${escH(r.destino)} · ${escH(r.descripcion||"")}</span>
-          <button class="btn btn-ghost btn-sm" style="padding:1px 6px" onclick="desasignarTransferenciaDeRecorrido('${escH(r.id)}')" title="Quitar del recorrido">✕</button>
+        <div onclick="openDetalle('${escH(r.id)}')" style="border-left:3px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--surface);border-radius:6px;padding:7px 10px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="font-size:12px;font-weight:700">→ ${escH(r.destino)}</div>
+            <div style="display:flex;gap:3px;flex-shrink:0" onclick="event.stopPropagation()">
+              ${badge(r.prioridad,P_COLOR[r.prioridad])}
+              <button class="btn btn-ghost btn-sm" style="padding:1px 6px" onclick="desasignarTransferenciaDeRecorrido('${escH(r.id)}')" title="Quitar del recorrido">✕</button>
+            </div>
+          </div>
+          <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}</div>
         </div>`).join("")}
     </div>`;
   }).join("");
@@ -4602,9 +4614,8 @@ function renderArmarRecorrido(){
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
           return `
           <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)" onclick="openDetalle('${escH(r.id)}')"
-            style="position:relative;overflow:hidden;background:var(--s2);border-radius:8px;padding:10px 12px 10px 16px;cursor:grab;${cubierta?"box-shadow:0 0 0 1px #1fa86a50":""}">
-            <div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:${S_COLOR[r.estado]||"var(--border)"}"></div>
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px">
+            style="border-left:4px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--s2);border-radius:6px;padding:10px 12px;cursor:grab;${cubierta?"box-shadow:0 0 0 1px #1fa86a50":""}">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;flex-wrap:wrap">
               <div style="font-size:13px;font-weight:700">${escH(r.sucursal)} → ${escH(r.destino)}</div>
               <div style="display:flex;gap:4px;flex-shrink:0">${badge(r.prioridad,P_COLOR[r.prioridad])}${badge(r.estado,S_COLOR[r.estado])}</div>
             </div>
