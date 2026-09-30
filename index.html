@@ -4490,9 +4490,9 @@ function renderDashboardFlota(){
 }
 
 function transferenciasPendientesEntreSucursales(){
-  const cerrados = ["Entregada","Rechazada","Cancelada","No entregada","No levantada"];
+  const permitidos = ["Aprobada","Lista para retirar","En fábrica"];
   return (S.requests||[]).filter(r=>{
-    if(cerrados.includes(r.estado)) return false;
+    if(!permitidos.includes(r.estado)) return false;
     if(esOrigenFabrica(r)) return false; // esas ya se ven en Carga planificada
     if(esDestinoBuzon(r.destino)) return false; // Tesorería queda en Fábrica — es la vuelta, no una parada real
     if(!r.sucursal || !r.destino) return false;
@@ -4601,13 +4601,15 @@ function renderArmarRecorrido(){
           const cubierta = f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino);
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
           return `
-          <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)"
-            style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;cursor:grab;${cubierta?"border:1px solid #1fa86a50":""}" onclick="openDetalle('${escH(r.id)}')">
-            <div style="min-width:0">
-              <div style="font-size:13px;font-weight:600">${escH(r.sucursal)} → ${escH(r.destino)} ${yaAsignada?` <span style="color:#4ade80;font-size:11px">✓ asignada</span>`:""}</div>
-              <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}</div>
+          <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)" onclick="openDetalle('${escH(r.id)}')"
+            style="position:relative;overflow:hidden;background:var(--s2);border-radius:8px;padding:10px 12px 10px 16px;cursor:grab;${cubierta?"box-shadow:0 0 0 1px #1fa86a50":""}">
+            <div style="position:absolute;left:0;top:0;bottom:0;width:4px;background:${S_COLOR[r.estado]||"var(--border)"}"></div>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px">
+              <div style="font-size:13px;font-weight:700">${escH(r.sucursal)} → ${escH(r.destino)}</div>
+              <div style="display:flex;gap:4px;flex-shrink:0">${badge(r.prioridad,P_COLOR[r.prioridad])}${badge(r.estado,S_COLOR[r.estado])}</div>
             </div>
-            <div style="display:flex;gap:4px;flex-shrink:0" onclick="event.stopPropagation()">
+            <div style="font-size:11px;color:var(--faint);margin-bottom:6px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}${yaAsignada?` · <span style="color:#4ade80">✓ asignada</span>`:""}</div>
+            <div style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
               ${!f.paradas.includes(r.sucursal)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
               ${!f.paradas.includes(r.destino)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
               ${cubierta && f.nombre.trim() && !yaAsignada?`<button class="btn btn-success btn-sm" onclick="asignarTransferenciaARecorrido('${escH(r.id)}','${escH(f.nombre)}')">📍 Asignar</button>`:""}
