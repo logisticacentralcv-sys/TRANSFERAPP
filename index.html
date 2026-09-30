@@ -3896,6 +3896,17 @@ function agregarParadaDirecta(nombre){
   S.armarRecorridoForm.paradas.push(nombre);
   render();
 }
+async function asignarTransferenciaARecorrido(id, nombreRecorrido){
+  try{
+    const { error } = await sb.from("solicitudes").update(toSnakeRow({recorrido: nombreRecorrido, updatedAt: now()})).eq("id", id);
+    if(error) throw error;
+    S.requests = S.requests.map(r=>r.id===id?{...r, recorrido:nombreRecorrido}:r);
+    toast(`✅ Transferencia asignada a "${nombreRecorrido}"`);
+    render();
+  }catch(e){
+    toast("⚠️ No se pudo asignar: "+e.message, "warn");
+  }
+}
 function quitarParadaRecorrido(i){ S.armarRecorridoForm.paradas.splice(i,1); render(); }
 function subirParadaRecorrido(i){ if(i===0) return; const p=S.armarRecorridoForm.paradas; [p[i-1],p[i]]=[p[i],p[i-1]]; render(); }
 function bajarParadaRecorrido(i){ const p=S.armarRecorridoForm.paradas; if(i===p.length-1) return; [p[i+1],p[i]]=[p[i],p[i+1]]; render(); }
@@ -4531,20 +4542,25 @@ function renderArmarRecorrido(){
   const panelTransferencias = `
     <div class="card" style="margin-bottom:16px">
       <label style="display:block;margin-bottom:8px">🔄 Transferencias pendientes entre sucursales</label>
-      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Usalas como referencia para el sentido del recorrido, o dejá que "Sugerir orden óptimo" (abajo) las tenga en cuenta solo.</p>
+      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Cuando el recorrido ya cubre el origen y el destino, aparece "Asignar" para dejarla enganchada acá mismo.</p>
       ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
       <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
-        ${transferenciasEntreSucursales.map(r=>`
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;cursor:pointer" onclick="openDetalle('${escH(r.id)}')">
+        ${transferenciasEntreSucursales.map(r=>{
+          const cubierta = f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino);
+          const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
+          return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;cursor:pointer;${cubierta?"border:1px solid #1fa86a50":""}" onclick="openDetalle('${escH(r.id)}')">
             <div style="min-width:0">
-              <div style="font-size:13px;font-weight:600">${escH(r.sucursal)} → ${escH(r.destino)}</div>
+              <div style="font-size:13px;font-weight:600">${escH(r.sucursal)} → ${escH(r.destino)} ${yaAsignada?` <span style="color:#4ade80;font-size:11px">✓ asignada</span>`:""}</div>
               <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}</div>
             </div>
             <div style="display:flex;gap:4px;flex-shrink:0" onclick="event.stopPropagation()">
               ${!f.paradas.includes(r.sucursal)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
               ${!f.paradas.includes(r.destino)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
+              ${cubierta && f.nombre.trim() && !yaAsignada?`<button class="btn btn-success btn-sm" onclick="asignarTransferenciaARecorrido('${escH(r.id)}','${escH(f.nombre)}')">📍 Asignar</button>`:""}
             </div>
-          </div>`).join("")}
+          </div>`;
+        }).join("")}
       </div>`}
     </div>`;
 
