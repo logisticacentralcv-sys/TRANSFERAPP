@@ -1005,9 +1005,31 @@ function minutosEntre(origen, destino){
   return fila ? Number(fila.minutos)||0 : null; // null = no hay dato cargado para ese tramo
 }
 
+// Cuántos bultos van REALMENTE hoy a esa sucursal por ese recorrido —
+// sumando las solicitudes que salen de Fábrica con esa fecha requerida
+// y ese destino (no cuenta bolsines que vuelven hacia el buzón, esos
+// son un viaje distinto).
+function bultosRealesHoy(recorrido, sucursal){
+  const hoy = hoyLocalISO();
+  return (S.requests||[]).filter(r=>
+    esOrigenFabrica(r) &&
+    normNotif(r.recorrido)===normNotif(recorrido) &&
+    normNotif(r.destino)===normNotif(sucursal) &&
+    r.fechaRequerida===hoy &&
+    !["Rechazada","Cancelada","No entregada"].includes(r.estado)
+  ).reduce((a,r)=>a+(Number(r.cantidad)||0),0);
+}
+
 function tiempoDescarga(recorrido, sucursal){
   const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(recorrido) && normNotif(t.sucursal)===normNotif(sucursal));
-  return est ? (Number(est.tiempo_est_seg)||0)/60 : 0;
+  if(!est) return 0;
+  const bultosRef = Number(est.bultos_ref)||0;
+  const tiempoRefSeg = Number(est.tiempo_est_seg)||0;
+  if(bultosRef<=0) return tiempoRefSeg/60; // sin referencia de cuántos bultos representa ese tiempo — usar el fijo tal cual
+  const segPorBulto = tiempoRefSeg/bultosRef;
+  const bultosHoy = bultosRealesHoy(recorrido, sucursal);
+  if(bultosHoy<=0) return tiempoRefSeg/60; // no se encontró carga real de hoy para esa parada — usar el de referencia como respaldo
+  return (segPorBulto*bultosHoy)/60;
 }
 
 // Arma, parada por parada, la hora estimada de llegada — y a medida que
@@ -4136,8 +4158,7 @@ function computeParadasDash(datos){
     if(String(r.evento||"").toUpperCase()==="SALIDA")  porViajeSucursal[clave].salida  = r.ts;
   });
   return Object.values(porViajeSucursal).map(p=>{
-    const est = (datos.tiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(p.recorrido) && normNotif(t.sucursal)===normNotif(p.sucursal));
-    const tEstSeg = est ? est.tiempo_est_seg : 0;
+    const tEstSeg = Math.round(tiempoDescarga(p.recorrido, p.sucursal)*60);
     let tRealSeg = 0;
     if(p.llegada && p.salida) tRealSeg = Math.round((new Date(p.salida) - new Date(p.llegada))/1000);
     const diff = (tEstSeg>0 && tRealSeg>0) ? Math.round((tRealSeg-tEstSeg)/60) : null;
