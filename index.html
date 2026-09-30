@@ -3740,10 +3740,10 @@ function renderLogTabla(){
           ${S.modoSeleccion?`<th><input type="checkbox" class="chk-round" ${filtered.length&&filtered.every(r=>S.logSeleccion.has(r.id))?"checked":""} onchange="toggleLogSeleccionTodos(this.checked)"/></th>`:""}
           <th>N°</th><th>Fecha</th><th>Origen</th><th>Solicitante</th>
           <th>Destino</th><th>Descripción</th><th>Cant.</th><th>F.Req.</th>
-          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>Acción</th>
+          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>¿Quién la tiene?</th><th>Acción</th>
         </tr></thead>
         <tbody>
-          ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?13:12}">Sin resultados</td></tr>`:""}
+          ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?14:13}">Sin resultados</td></tr>`:""}
           ${filtered.map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
             ${S.modoSeleccion?`<td onclick="event.stopPropagation()"><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
             <td class="id-cell">${escH(r.id)}</td>
@@ -3757,9 +3757,9 @@ function renderLogTabla(){
             <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
             <td>${estadoBadges(r)}</td>
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
+            <td class="muted-cell">${["En tránsito","En fábrica"].includes(r.estado) && r.nombreQuienLevanto?escH(r.nombreQuienLevanto):"—"}</td>
             <td style="white-space:nowrap" onclick="event.stopPropagation()">
-              <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-              ${r.estado!=="Entregada"&&r.estado!=="Rechazada"&&r.estado!=="Cancelada"?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
+              ${r.estado!=="Entregada"&&r.estado!=="Rechazada"&&r.estado!=="Cancelada"?`<button class="btn btn-primary btn-sm" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
             </td>
           </tr>`).join("")}
         </tbody>
