@@ -4443,12 +4443,14 @@ function renderArmarRecorrido(){
 
     // Tiempo de descarga de esta parada — si el recorrido no tiene
     // nombre todavía, no hay con qué buscarlo en flota_tiempos_estimados.
+    const estDescarga = f.nombre.trim() ? (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(f.nombre) && normNotif(t.sucursal)===normNotif(p)) : null;
     const bultosHoy = f.nombre.trim() ? bultosRealesHoy(f.nombre, p) : 0;
+    const bultosMostrar = bultosHoy>0 ? bultosHoy : (estDescarga ? Number(estDescarga.bultos_ref)||0 : 0);
     const minDescarga = f.nombre.trim() ? Math.round(tiempoDescarga(f.nombre, p)) : 0;
     let descargaTxt = "";
     if(f.nombre.trim() && minDescarga>0){
       acumulado += minDescarga;
-      descargaTxt = ` · 📦 ${minDescarga} min descarga${bultosHoy>0?` (${bultosHoy} bultos hoy)`:` (sin carga real hoy, usando referencia)`}`;
+      descargaTxt = ` · 📦 ${minDescarga} min descarga${bultosMostrar>0?` (${bultosMostrar} bultos)`:""}`;
     }
 
     return `
