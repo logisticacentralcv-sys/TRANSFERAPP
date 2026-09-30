@@ -3907,6 +3907,43 @@ async function asignarTransferenciaARecorrido(id, nombreRecorrido){
     toast("⚠️ No se pudo asignar: "+e.message, "warn");
   }
 }
+async function desasignarTransferenciaDeRecorrido(id){
+  try{
+    const { error } = await sb.from("solicitudes").update(toSnakeRow({recorrido: "", updatedAt: now()})).eq("id", id);
+    if(error) throw error;
+    S.requests = S.requests.map(r=>r.id===id?{...r, recorrido:""}:r);
+    toast("Transferencia quitada del recorrido");
+    render();
+  }catch(e){
+    toast("⚠️ No se pudo quitar: "+e.message, "warn");
+  }
+}
+// Arrastrar una transferencia pendiente (desde el panel de arriba) y
+// soltarla justo en el tramo de la parada donde sale — la asigna a
+// este recorrido directo, sin tocar ningún botón.
+let _dragTransferenciaId = null;
+function _dragTransferenciaStart(ev, id){
+  _dragTransferenciaId = id;
+  ev.dataTransfer.effectAllowed = "copy";
+  try{ ev.dataTransfer.setData("text/plain", id); }catch(e){}
+}
+function _dragTransferenciaEnd(ev){
+  _dragTransferenciaId = null;
+}
+function _dropTransferenciaEnParada(ev, nombreParadaOrigen){
+  ev.preventDefault();
+  if(!_dragTransferenciaId) return;
+  const r = S.requests.find(x=>x.id===_dragTransferenciaId);
+  _dragTransferenciaId = null;
+  if(!r) return;
+  if(normNotif(r.sucursal)!==normNotif(nombreParadaOrigen)){
+    toast(`Esa transferencia sale de "${r.sucursal}", no de "${nombreParadaOrigen}" — soltala en su propia parada.`, "warn");
+    return;
+  }
+  const nombreRecorrido = S.armarRecorridoForm.nombre.trim();
+  if(!nombreRecorrido){ toast("Ponele un nombre al recorrido primero","warn"); return; }
+  asignarTransferenciaARecorrido(r.id, nombreRecorrido);
+}
 function quitarParadaRecorrido(i){ S.armarRecorridoForm.paradas.splice(i,1); render(); }
 function subirParadaRecorrido(i){ if(i===0) return; const p=S.armarRecorridoForm.paradas; [p[i-1],p[i]]=[p[i],p[i-1]]; render(); }
 function bajarParadaRecorrido(i){ const p=S.armarRecorridoForm.paradas; if(i===p.length-1) return; [p[i+1],p[i]]=[p[i],p[i+1]]; render(); }
@@ -4498,9 +4535,16 @@ function renderArmarRecorrido(){
       descargaTxt = ` · 📦 ${minDescarga} min descarga${bultosMostrar>0?` (${bultosMostrar} bultos)`:""}`;
     }
 
+    // Transferencias ya asignadas a este recorrido que salen justo de
+    // esta parada — se muestran acá para verlas en el punto exacto del
+    // recorrido donde se recogen.
+    const asignadasDesdeAca = f.nombre.trim()
+      ? (S.requests||[]).filter(r=>normNotif(r.recorrido)===normNotif(f.nombre) && normNotif(r.sucursal)===normNotif(p) && !["Entregada","Rechazada","Cancelada","No entregada"].includes(r.estado))
+      : [];
+
     return `
     <div class="card" draggable="true" ondragstart="_dragParadaStart(event,${i})" ondragover="event.preventDefault()" ondragenter="_dragParadaEnter(event,${i})" ondrop="_dragParadaDrop(event,${i})" ondragend="_dragParadaEnd(event)"
-      style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:8px;transition:opacity .15s" id="ar-parada-${i}">
+      style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:4px;transition:opacity .15s" id="ar-parada-${i}">
       <div style="cursor:grab;color:var(--faint);font-size:16px;flex-shrink:0;touch-action:none" title="Arrastrá para reordenar">⠿</div>
       <div style="width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--amber);flex-shrink:0">${i+1}</div>
       <div style="flex:1;min-width:0">
@@ -4512,6 +4556,14 @@ function renderArmarRecorrido(){
         <button class="btn btn-ghost btn-sm" onclick="bajarParadaRecorrido(${i})" ${i===f.paradas.length-1?"disabled":""}>↓</button>
         <button class="btn btn-ghost btn-sm" onclick="quitarParadaRecorrido(${i})">✕</button>
       </div>
+    </div>
+    <div ondragover="event.preventDefault()" ondrop="_dropTransferenciaEnParada(event,'${escH(p)}')" id="ar-conector-${i}"
+      style="min-height:10px;margin:0 0 8px 38px;padding:${asignadasDesdeAca.length?"6px 10px":"2px"};border-radius:6px;border:1px dashed var(--border);display:flex;flex-direction:column;gap:4px;transition:background .15s">
+      ${asignadasDesdeAca.map(r=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted)">
+          <span onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">🔄 → ${escH(r.destino)} · ${escH(r.descripcion||"")}</span>
+          <button class="btn btn-ghost btn-sm" style="padding:1px 6px" onclick="desasignarTransferenciaDeRecorrido('${escH(r.id)}')" title="Quitar del recorrido">✕</button>
+        </div>`).join("")}
     </div>`;
   }).join("");
 
@@ -4549,7 +4601,8 @@ function renderArmarRecorrido(){
           const cubierta = f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino);
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
           return `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;cursor:pointer;${cubierta?"border:1px solid #1fa86a50":""}" onclick="openDetalle('${escH(r.id)}')">
+          <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)"
+            style="display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px;cursor:grab;${cubierta?"border:1px solid #1fa86a50":""}" onclick="openDetalle('${escH(r.id)}')">
             <div style="min-width:0">
               <div style="font-size:13px;font-weight:600">${escH(r.sucursal)} → ${escH(r.destino)} ${yaAsignada?` <span style="color:#4ade80;font-size:11px">✓ asignada</span>`:""}</div>
               <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}</div>
