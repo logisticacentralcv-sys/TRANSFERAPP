@@ -3912,7 +3912,7 @@ async function asignarTodasLasCubiertas(){
   const nombreRecorrido = f.nombre.trim();
   if(!nombreRecorrido) return;
   const cubiertas = transferenciasPendientesEntreSucursales().filter(r=>
-    f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino) &&
+    f.paradas.includes(r.sucursal) &&
     normNotif(r.recorrido)!==normNotif(nombreRecorrido)
   );
   if(!cubiertas.length) return;
@@ -4623,7 +4623,7 @@ function renderArmarRecorrido(){
   // el recorrido en un sentido o en el otro).
   const transferenciasEntreSucursales = transferenciasPendientesEntreSucursales();
   const cubiertasSinAsignar = transferenciasEntreSucursales.filter(r=>
-    f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino) &&
+    f.paradas.includes(r.sucursal) &&
     !(f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre))
   );
 
@@ -4633,24 +4633,26 @@ function renderArmarRecorrido(){
         <label style="margin-bottom:0">🔄 Transferencias pendientes entre sucursales</label>
         ${cubiertasSinAsignar.length && f.nombre.trim()?`<button class="btn btn-success btn-sm" onclick="asignarTodasLasCubiertas()">✅ Asignar las ${cubiertasSinAsignar.length} cubiertas</button>`:""}
       </div>
-      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Cuando el recorrido ya cubre el origen y el destino, aparece "Asignar" para dejarla enganchada acá mismo.</p>
+      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Con que el recorrido pase por el origen ya se puede asignar — si no agregás también el destino, vuelve a Fábrica con el resto.</p>
       ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
       <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
         ${transferenciasEntreSucursales.map(r=>{
-          const cubierta = f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino);
+          const origenEnLista = f.paradas.includes(r.sucursal);
+          const destinoEnLista = f.paradas.includes(r.destino);
+          const asignable = origenEnLista; // alcanza con pasar por el origen — la vuelta a Fábrica ya está implícita
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
           return `
           <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)" onclick="openDetalle('${escH(r.id)}')"
-            style="border-left:4px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--s2);border-radius:6px;padding:10px 12px;cursor:grab;${cubierta?"box-shadow:0 0 0 1px #1fa86a50":""}">
+            style="border-left:4px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--s2);border-radius:6px;padding:10px 12px;cursor:grab;${destinoEnLista?"box-shadow:0 0 0 1px #1fa86a50":origenEnLista?"box-shadow:0 0 0 1px #e8a02050":""}">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;flex-wrap:wrap">
               <div style="font-size:13px;font-weight:700">${escH(r.sucursal)} → ${escH(r.destino)}</div>
               <div style="display:flex;gap:4px;flex-shrink:0">${badge(r.prioridad,P_COLOR[r.prioridad])}${badge(r.estado,S_COLOR[r.estado])}</div>
             </div>
-            <div style="font-size:11px;color:var(--faint);margin-bottom:6px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}${yaAsignada?` · <span style="color:#4ade80">✓ asignada</span>`:""}</div>
+            <div style="font-size:11px;color:var(--faint);margin-bottom:6px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}${yaAsignada?` · <span style="color:#4ade80">✓ asignada</span>`:""}${(yaAsignada && origenEnLista && !destinoEnLista)?` · <span style="color:var(--amber)">🏠 vuelve a Fábrica</span>`:""}</div>
             <div style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
-              ${!f.paradas.includes(r.sucursal)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
-              ${!f.paradas.includes(r.destino)?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
-              ${cubierta && f.nombre.trim() && !yaAsignada?`<button class="btn btn-success btn-sm" onclick="asignarTransferenciaARecorrido('${escH(r.id)}','${escH(f.nombre)}')">📍 Asignar</button>`:""}
+              ${!origenEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
+              ${!destinoEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
+              ${asignable && f.nombre.trim() && !yaAsignada?`<button class="btn btn-success btn-sm" onclick="asignarTransferenciaARecorrido('${escH(r.id)}','${escH(f.nombre)}')">📍 Asignar</button>`:""}
             </div>
           </div>`;
         }).join("")}
