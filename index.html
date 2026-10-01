@@ -3907,6 +3907,26 @@ async function asignarTransferenciaARecorrido(id, nombreRecorrido){
     toast("⚠️ No se pudo asignar: "+e.message, "warn");
   }
 }
+async function asignarTodasLasCubiertas(){
+  const f = S.armarRecorridoForm;
+  const nombreRecorrido = f.nombre.trim();
+  if(!nombreRecorrido) return;
+  const cubiertas = transferenciasPendientesEntreSucursales().filter(r=>
+    f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino) &&
+    normNotif(r.recorrido)!==normNotif(nombreRecorrido)
+  );
+  if(!cubiertas.length) return;
+  try{
+    const ids = cubiertas.map(r=>r.id);
+    const { error } = await sb.from("solicitudes").update(toSnakeRow({recorrido: nombreRecorrido, updatedAt: now()})).in("id", ids);
+    if(error) throw error;
+    S.requests = S.requests.map(r=>ids.includes(r.id)?{...r, recorrido:nombreRecorrido}:r);
+    toast(`✅ ${ids.length} transferencias asignadas a "${nombreRecorrido}"`);
+    render();
+  }catch(e){
+    toast("⚠️ No se pudo asignar: "+e.message, "warn");
+  }
+}
 async function desasignarTransferenciaDeRecorrido(id){
   try{
     const { error } = await sb.from("solicitudes").update(toSnakeRow({recorrido: "", updatedAt: now()})).eq("id", id);
@@ -4602,10 +4622,17 @@ function renderArmarRecorrido(){
   // de una sucursal a otra, que son las que definen si conviene armar
   // el recorrido en un sentido o en el otro).
   const transferenciasEntreSucursales = transferenciasPendientesEntreSucursales();
+  const cubiertasSinAsignar = transferenciasEntreSucursales.filter(r=>
+    f.paradas.includes(r.sucursal) && f.paradas.includes(r.destino) &&
+    !(f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre))
+  );
 
   const panelTransferencias = `
     <div class="card" style="margin-bottom:16px">
-      <label style="display:block;margin-bottom:8px">🔄 Transferencias pendientes entre sucursales</label>
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+        <label style="margin-bottom:0">🔄 Transferencias pendientes entre sucursales</label>
+        ${cubiertasSinAsignar.length && f.nombre.trim()?`<button class="btn btn-success btn-sm" onclick="asignarTodasLasCubiertas()">✅ Asignar las ${cubiertasSinAsignar.length} cubiertas</button>`:""}
+      </div>
       <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Cuando el recorrido ya cubre el origen y el destino, aparece "Asignar" para dejarla enganchada acá mismo.</p>
       ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
       <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
