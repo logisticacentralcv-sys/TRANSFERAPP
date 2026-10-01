@@ -3912,7 +3912,7 @@ async function asignarTodasLasCubiertas(){
   const nombreRecorrido = f.nombre.trim();
   if(!nombreRecorrido) return;
   const cubiertas = transferenciasPendientesEntreSucursales().filter(r=>
-    origenCubierto(r, f.paradas) &&
+    esAsignable(r, f.paradas) &&
     normNotif(r.recorrido)!==normNotif(nombreRecorrido)
   );
   if(!cubiertas.length) return;
@@ -4515,6 +4515,14 @@ function renderDashboardFlota(){
 function origenCubierto(r, paradas){
   return esOrigenFabrica(r) || paradas.includes(r.sucursal);
 }
+// Si sale de Fábrica, además del origen (siempre cubierto) hace falta
+// que el DESTINO esté en la lista — si no, no tiene sentido levantarla
+// para volver a traerla a Fábrica sin entregarla en ningún lado. Si es
+// entre sucursales, alcanza con el origen (la vuelta a Fábrica ya
+// resuelve el resto, por si no se agrega el destino).
+function esAsignable(r, paradas){
+  return esOrigenFabrica(r) ? paradas.includes(r.destino) : paradas.includes(r.sucursal);
+}
 function transferenciasPendientesEntreSucursales(){
   const permitidos = ["Aprobada","Lista para retirar","En fábrica"];
   return (S.requests||[]).filter(r=>{
@@ -4628,23 +4636,27 @@ function renderArmarRecorrido(){
   // el recorrido en un sentido o en el otro).
   const transferenciasEntreSucursales = transferenciasPendientesEntreSucursales();
   const cubiertasSinAsignar = transferenciasEntreSucursales.filter(r=>
-    origenCubierto(r, f.paradas) &&
+    esAsignable(r, f.paradas) &&
     !(f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre))
   );
 
   const panelTransferencias = `
     <div class="card" style="margin-bottom:16px">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        <label style="margin-bottom:0">🔄 Transferencias pendientes entre sucursales</label>
+        <label style="margin-bottom:0">🔄 Transferencias pendientes entre sucursales (${transferenciasEntreSucursales.length})</label>
         ${cubiertasSinAsignar.length && f.nombre.trim()?`<button class="btn btn-success btn-sm" onclick="asignarTodasLasCubiertas()">✅ Asignar las ${cubiertasSinAsignar.length} cubiertas</button>`:""}
       </div>
       <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Con que el recorrido pase por el origen ya se puede asignar — si no agregás también el destino, vuelve a Fábrica con el resto.</p>
       ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
-      <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
+      <div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">
         ${transferenciasEntreSucursales.map(r=>{
           const origenEnLista = origenCubierto(r, f.paradas);
           const destinoEnLista = f.paradas.includes(r.destino);
-          const asignable = origenEnLista; // alcanza con pasar por el origen — la vuelta a Fábrica ya está implícita
+          // Si sale de Fábrica, no alcanza con "pasar por el origen"
+          // (ya arranca ahí siempre) — hace falta que el destino
+          // también esté en la lista, porque si no, no tiene sentido
+          // levantarla para volver a traerla a Fábrica sin entregarla.
+          const asignable = esOrigenFabrica(r) ? destinoEnLista : origenEnLista;
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
           return `
           <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)" onclick="openDetalle('${escH(r.id)}')"
