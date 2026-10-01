@@ -5207,7 +5207,11 @@ function renderRepartidor(){
               </button>
               <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoEntrega('${escH(r.id)}')">
                 ✕ No entregué
-              </button>`:""}
+              </button>
+              ${!(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)) && !esOtraDireccion(r.destino)?`
+              <button class="btn btn-warn btn-sm" style="flex:1 0 100%" onclick="openDejarCerrado('${escH(r.id)}')">
+                🔒 Sucursal cerrada
+              </button>`:""}`:""}
             </div>
 
           </div>
@@ -5643,7 +5647,7 @@ function renderDetalle(){
         </button>
       </div>
       ${puedeDejarCerrado?`
-      <button class="btn btn-ghost btn-md btn-full" style="margin-top:8px" onclick="closeModal();openDejarCerrado('${escH(r.id)}')">
+      <button class="btn btn-warn btn-md btn-full" style="margin-top:8px" onclick="closeModal();openDejarCerrado('${escH(r.id)}')">
         🔒 Sucursal cerrada — dejar igual
       </button>`:""}
     </div>`:""}`;
