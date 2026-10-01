@@ -4549,6 +4549,35 @@ function renderArmarRecorrido(){
   }
 
   let acumulado = 0, anterior = "FABRICA", faltaDato = false;
+
+  // Transferencias asignadas a este recorrido que salen de FÁBRICA —
+  // no aparecen bajo ninguna parada (su origen literal es "Fábrica",
+  // no una sucursal de la lista), así que van en su propia sección
+  // arriba de todo, antes de la primera parada.
+  const asignadasDesdeFabrica = f.nombre.trim()
+    ? (S.requests||[]).filter(r=>
+        normNotif(r.recorrido)===normNotif(f.nombre) &&
+        esOrigenFabrica(r) &&
+        ["Aprobada","Lista para retirar","En fábrica"].includes(r.estado) &&
+        !esDestinoBuzon(r.destino)
+      )
+    : [];
+  const filaSalidaFabrica = asignadasDesdeFabrica.length ? `
+    <div style="margin:0 0 10px 0;display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:12px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">🏭 Se levantan al salir de Fábrica</div>
+      ${asignadasDesdeFabrica.map(r=>`
+        <div onclick="openDetalle('${escH(r.id)}')" style="border-left:3px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--surface);border-radius:6px;padding:9px 12px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div style="font-size:13px;font-weight:700">→ ${escH(r.destino)}</div>
+            <div style="display:flex;gap:3px;flex-shrink:0" onclick="event.stopPropagation()">
+              ${badge(r.prioridad,P_COLOR[r.prioridad])}
+              <button class="btn btn-ghost btn-sm" style="padding:1px 6px" onclick="desasignarTransferenciaDeRecorrido('${escH(r.id)}')" title="Quitar del recorrido">✕</button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}</div>
+        </div>`).join("")}
+    </div>`:"";
+
   const filasParadas = f.paradas.map((p,i)=>{
     const tramo = minutosEntre(anterior, p);
     let legTxt;
@@ -4660,13 +4689,13 @@ function renderArmarRecorrido(){
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
           return `
           <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)" onclick="openDetalle('${escH(r.id)}')"
-            style="border-left:4px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--s2);border-radius:6px;padding:10px 12px;cursor:grab;${destinoEnLista?"box-shadow:0 0 0 1px #1fa86a50":origenEnLista?"box-shadow:0 0 0 1px #e8a02050":""}">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;flex-wrap:wrap">
-              <div style="font-size:13px;font-weight:700">${escH(r.sucursal)} → ${escH(r.destino)}</div>
-              <div style="display:flex;gap:4px;flex-shrink:0">${badge(r.prioridad,P_COLOR[r.prioridad])}${badge(r.estado,S_COLOR[r.estado])}</div>
+            style="border-left:4px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--s2);border-radius:6px;padding:14px 16px;cursor:grab;${destinoEnLista?"box-shadow:0 0 0 1px #1fa86a50":origenEnLista?"box-shadow:0 0 0 1px #e8a02050":""}">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+              <div style="font-size:17px;font-weight:700">${escH(r.sucursal)} → ${escH(r.destino)}</div>
+              <div style="display:flex;gap:6px;flex-shrink:0">${badge(r.prioridad,P_COLOR[r.prioridad])}${badge(r.estado,S_COLOR[r.estado])}</div>
             </div>
-            <div style="font-size:11px;color:var(--faint);margin-bottom:6px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}${yaAsignada?` · <span style="color:#4ade80">✓ asignada</span>`:""}${(yaAsignada && origenEnLista && !destinoEnLista)?` · <span style="color:var(--amber)">🏠 vuelve a Fábrica</span>`:""}</div>
-            <div style="display:flex;gap:4px;flex-wrap:wrap" onclick="event.stopPropagation()">
+            <div style="font-size:14px;color:var(--muted);margin-bottom:10px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.fechaRequerida?" · req. "+fd(r.fechaRequerida):""}${yaAsignada?` · <span style="color:#4ade80;font-weight:600">✓ asignada</span>`:""}${(yaAsignada && origenEnLista && !destinoEnLista)?` · <span style="color:var(--amber);font-weight:600">🏠 vuelve a Fábrica</span>`:""}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap" onclick="event.stopPropagation()">
               ${!origenEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
               ${!destinoEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
               ${asignable && f.nombre.trim() && !yaAsignada?`<button class="btn btn-success btn-sm" onclick="asignarTransferenciaARecorrido('${escH(r.id)}','${escH(f.nombre)}')">📍 Asignar</button>`:""}
@@ -4749,6 +4778,7 @@ function renderArmarRecorrido(){
 
       ${f.paradas.length>1?`<button class="btn btn-primary btn-sm" style="margin-bottom:14px" onclick="sugerirOrdenOptimo()">🧭 Sugerir orden óptimo</button>`:""}
 
+      ${filaSalidaFabrica}
       ${f.paradas.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no agregaste ninguna parada — arranca siempre desde Fábrica.</p>`:filasParadas+filaVuelta}
 
       ${f.paradas.length>0?`
