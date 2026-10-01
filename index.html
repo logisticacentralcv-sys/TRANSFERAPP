@@ -3912,7 +3912,7 @@ async function asignarTodasLasCubiertas(){
   const nombreRecorrido = f.nombre.trim();
   if(!nombreRecorrido) return;
   const cubiertas = transferenciasPendientesEntreSucursales().filter(r=>
-    f.paradas.includes(r.sucursal) &&
+    origenCubierto(r, f.paradas) &&
     normNotif(r.recorrido)!==normNotif(nombreRecorrido)
   );
   if(!cubiertas.length) return;
@@ -4509,13 +4509,18 @@ function renderDashboardFlota(){
   </div>`;
 }
 
+// El origen está "cubierto" si es Fábrica (todo recorrido arranca ahí,
+// siempre se levanta antes de salir) o si esa sucursal ya está en la
+// lista de paradas armada.
+function origenCubierto(r, paradas){
+  return esOrigenFabrica(r) || paradas.includes(r.sucursal);
+}
 function transferenciasPendientesEntreSucursales(){
   const permitidos = ["Aprobada","Lista para retirar","En fábrica"];
   return (S.requests||[]).filter(r=>{
     if(!permitidos.includes(r.estado)) return false;
-    if(esOrigenFabrica(r)) return false; // esas ya se ven en Carga planificada
     if(esDestinoBuzon(r.destino)) return false; // Tesorería queda en Fábrica — es la vuelta, no una parada real
-    if(!r.sucursal || !r.destino) return false;
+    if(!r.destino) return false;
     return true;
   }).sort((a,b)=>(a.fechaRequerida||"").localeCompare(b.fechaRequerida||""));
 }
@@ -4623,7 +4628,7 @@ function renderArmarRecorrido(){
   // el recorrido en un sentido o en el otro).
   const transferenciasEntreSucursales = transferenciasPendientesEntreSucursales();
   const cubiertasSinAsignar = transferenciasEntreSucursales.filter(r=>
-    f.paradas.includes(r.sucursal) &&
+    origenCubierto(r, f.paradas) &&
     !(f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre))
   );
 
@@ -4637,7 +4642,7 @@ function renderArmarRecorrido(){
       ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
       <div style="display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto">
         ${transferenciasEntreSucursales.map(r=>{
-          const origenEnLista = f.paradas.includes(r.sucursal);
+          const origenEnLista = origenCubierto(r, f.paradas);
           const destinoEnLista = f.paradas.includes(r.destino);
           const asignable = origenEnLista; // alcanza con pasar por el origen — la vuelta a Fábrica ya está implícita
           const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
