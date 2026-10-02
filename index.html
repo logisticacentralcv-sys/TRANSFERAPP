@@ -25,7 +25,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* LAYOUT */
-.navbar{background:var(--s1);border-bottom:1px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200}
+.navbar{background:var(--s1);border-bottom:1px solid var(--border);padding:8px 20px;display:flex;align-items:center;justify-content:space-between;min-height:52px;position:sticky;top:0;z-index:200;flex-wrap:wrap;gap:8px 12px}
+@media(max-width:600px){
+  .navbar{padding:8px 12px;justify-content:flex-start}
+  .navbar-brand{flex:1 0 100%;justify-content:space-between;display:flex}
+}
 .navbar-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
 .ntag{padding:2px 9px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.8px;border:1px solid}
 .ntag-log{background:#2ecc7a18;color:var(--green);border-color:#2ecc7a30}
@@ -189,8 +193,13 @@ tr:hover td{background:var(--s2)}
   td{padding:10px 10px;font-size:14px}
   .role-grid{grid-template-columns:1fr 1fr}
   .inp,select,textarea{font-size:16px} /* evita zoom en iOS */
-  .btn-md{font-size:15px;padding:12px 20px}
-  .btn-sm{font-size:13px;padding:9px 14px}
+  .btn-md{font-size:15px;padding:12px 20px;min-height:44px}
+  .btn-sm{font-size:13px;padding:10px 14px;min-height:40px}
+  .btn{min-height:40px}
+  /* Scroll más cómodo en cualquier contenedor con scroll interno
+     (listas largas, tablas, paneles) — evita que el gesto se sienta
+     "trabado" en celular */
+  [style*="overflow-y:auto"],[style*="overflow-x:auto"],.table-wrap{-webkit-overflow-scrolling:touch}
 }
 @media(max-width:380px){
   .filter-grid,.role-grid{grid-template-columns:1fr}
