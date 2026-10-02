@@ -2446,7 +2446,7 @@ function aplicarRenderDOM(){
     morphSeguro(elBg, `<div id="app">${htmlBg}</div>`);
   }
 
-  const htmlModal = S.view==="login" ? "" : (renderModals() + renderLightbox());
+  const htmlModal = (S.view==="login" && S.modal!=="identificarLogistica") ? "" : (renderModals() + renderLightbox());
   if(htmlModal !== _ultimoHTMLModal){
     _ultimoHTMLModal = htmlModal;
     morphSeguro(elModal, `<div id="app-modal">${htmlModal}</div>`);
@@ -5259,6 +5259,7 @@ function renderModals(){
   if(S.modal==="noLevanta")   return wrapModal("m","Reportar que no pude levantar",renderNoLevantaModal(),480);
   if(S.modal==="listo")      return wrapModal("m","Transferencia lista para retirar",renderListoModal(),420);
   if(S.modal==="cerrado")    return wrapModal("m","Dejar en sucursal cerrada",renderDejarCerradoModal(),420);
+  if(S.modal==="identificarLogistica") return wrapModal("m","¿Quién sos?",renderIdentificarLogisticaModal(),420);
   if(S.modal==="confirmarCerrado") return wrapModal("m","Confirmar transferencia recibida",renderConfirmarCerradoModal(),420);
   if(S.modal==="editar")     return wrapModal("m","Editar solicitud",renderEditarModal(),460);
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
@@ -8535,6 +8536,21 @@ async function doLogin(){
     render(); return;
   }
 
+  // Logística es un login compartido — antes de entrar, pedimos el DNI
+  // de quién lo está usando hoy, así todo (aprobaciones, gestiones)
+  // queda a nombre de esa persona real y no de quien configuró el
+  // usuario originalmente.
+  if(S.user.rol==="logistica"){
+    S.identificarLogisticaModal = {dni:"", err:"", loading:false};
+    S.modal = "identificarLogistica";
+    render();
+    return;
+  }
+
+  finalizarEntradaApp();
+}
+
+function finalizarEntradaApp(){
   // Entrar inmediatamente — FASE 2 carga datos en background
   S.view = "app";
   S.lastRefresh = Date.now();
@@ -8546,6 +8562,36 @@ async function doLogin(){
   // Cargar solicitudes, recorridos y destinos en background sin bloquear
   sheetsLoadDatos().then(()=>{ render(); });
   startAutoRefresh(); // iniciar auto-refresh en background
+}
+
+function renderIdentificarLogisticaModal(){
+  const d = S.identificarLogisticaModal;
+  return `
+  <div class="alert-info" style="margin-bottom:14px;font-size:13px">👤 Este usuario es compartido — confirmá tu DNI antes de entrar, así las aprobaciones y gestiones de hoy quedan a tu nombre.</div>
+  <div class="field">
+    <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+    <input id="idlog-dni" class="inp ${d.err?"err":""}" type="number" placeholder="Ej: 30123456"
+      value="${escH(d.dni)}"
+      oninput="S.identificarLogisticaModal.dni=this.value;S.identificarLogisticaModal.err=''"
+      onkeydown="if(event.key==='Enter')submitIdentificarLogistica()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
+  </div>
+  <button class="btn btn-success btn-md btn-full" style="margin-top:14px" onclick="submitIdentificarLogistica()" ${d.loading?"disabled":""}>
+    ${d.loading?`<span class="spinner"></span> Verificando...`:"Ingresar →"}
+  </button>`;
+}
+function submitIdentificarLogistica(){
+  const d = S.identificarLogisticaModal;
+  if(d.loading) return;
+  const dni = String($("idlog-dni")?.value||d.dni||"").replace(/\D/g,"");
+  if(!dni){ d.err="Ingresá tu DNI."; render(); return; }
+  const check = validarDNI(dni);
+  if(!check.ok){ d.err=check.msg; render(); return; }
+  d.loading = true; render();
+  S.user.nombre = check.nombre;
+  S.user.dni = dni;
+  S.modal = null;
+  finalizarEntradaApp();
 }
 
 // Tiempo real: en vez de "preguntar cada 90 segundos si pasó algo nuevo",
