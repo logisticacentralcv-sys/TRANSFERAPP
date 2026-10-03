@@ -2716,6 +2716,7 @@ function aplicarRenderDOMInterno(){
     _ultimoHTMLModal = htmlModal;
     morphSeguro(elModal, `<div id="app-modal">${htmlModal}</div>`);
   }  actualizarIndicadoresTabs();
+  ajustarAnchoGraficos();
 }
 
 function render(){
@@ -3127,6 +3128,19 @@ function barrasHorizontales(filas, color, total){
 // vertical, punto resaltado y un cartel con la fecha y el valor); tocar
 // dispara onClickFn(key) para bajar al detalle de ese día.
 const _evReg = {};
+const _evAncho = {};
+// Mide el ancho real de cada gráfico de línea y, si cambió (primer dibujo,
+// cambio de ventana, rotación del celular), lo vuelve a dibujar a la medida.
+function ajustarAnchoGraficos(){
+  let cambio=false;
+  document.querySelectorAll("[data-evwrap]").forEach(w=>{
+    const id=w.dataset.evwrap, ancho=Math.floor(w.clientWidth);
+    if(ancho>200 && Math.abs((_evAncho[id]||0)-ancho)>8){ _evAncho[id]=ancho; cambio=true; }
+  });
+  if(cambio) render();
+}
+let _tResizeEv=null;
+window.addEventListener("resize",()=>{ clearTimeout(_tResizeEv); _tResizeEv=setTimeout(ajustarAnchoGraficos,200); });
 function diaLargo(key){
   const d=new Date(String(key)+"T12:00:00");
   if(isNaN(d)) return String(key);
@@ -3136,7 +3150,12 @@ function diaLargo(key){
 function graficoEvolucion(puntos, color, id, opts){
   opts=opts||{};
   if(!puntos.length) return `<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:30px">Sin datos en este rango.</p>`;
-  const n=puntos.length, W=Math.min(Math.max(720,n*52),1000), H=300, pL=54, pR=24, pT=34, pB=50;
+  // El ancho se toma del contenedor real (se mide después de cada dibujo
+  // y se ajusta solo): así el gráfico se estira hasta los bordes en
+  // cualquier pantalla y el texto no se agranda ni se achica. Si hay
+  // tantos puntos que no entran, se desplaza hacia el costado.
+  const base = _evAncho[id] || Math.max(320, Math.min(window.innerWidth,1800)-98);
+  const n=puntos.length, W=Math.max(base,n*52), H=Math.round(Math.min(Math.max(300,base*0.26),440)), pL=54, pR=28, pT=34, pB=50;
   const maxV=Math.max(...puntos.map(p=>p.valor),0.0001);
   const crudo=maxV/4, pot=Math.pow(10,Math.floor(Math.log10(crudo))), f=crudo/pot;
   const paso=(f<=1?1:f<=2?2:f<=5?5:10)*pot;
@@ -3163,7 +3182,7 @@ function graficoEvolucion(puntos, color, id, opts){
   const ancho = n===1 ? W-pL-pR : (W-pL-pR)/(n-1);
   const bandas=puntos.map((p,i)=>`<rect x="${Xs[i]-ancho/2}" y="${pT-10}" width="${ancho}" height="${H-pT-pB+10}" fill="transparent" style="cursor:pointer"
     onmouseenter="evResaltar('${id}',${i})" onmouseleave="evRestaurar('${id}')" onclick="evClick('${id}',${i})"/>`).join("");
-  return `<div style="overflow-x:auto"><svg id="ev-${id}" viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${W}px;max-height:440px;height:auto;display:block">
+  return `<div data-evwrap="${id}" style="overflow-x:auto"><svg id="ev-${id}" viewBox="0 0 ${W} ${H}" style="width:100%;${W>base?`min-width:${W}px;`:""}height:auto;display:block">
     <defs><linearGradient id="grad-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".38"/><stop offset="100%" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs>
     ${grid}
     <path class="ev-area" d="${area}" fill="url(#grad-${id})"/>
@@ -3466,12 +3485,12 @@ function renderMetricasCalidad(){
   ${barraSticky}
 
   ${(topProd||topMotivo)?`
-  <div class="card" style="${cardStyle};border-left:4px solid var(--amber)">
-    <div style="font-size:15px;color:#a9b8d0;margin-bottom:6px">🔎 Lo que más se destaca</div>
-    <div style="font-size:18px;line-height:1.5;color:var(--text)">
+  <div class="card" style="padding:12px 18px;margin-bottom:16px;border-left:4px solid var(--amber);display:flex;align-items:baseline;gap:10px 16px;flex-wrap:wrap">
+    <span style="font-size:13px;font-weight:700;color:#a9b8d0;text-transform:uppercase;letter-spacing:.07em">🔎 Destacado</span>
+    <span style="font-size:16px;line-height:1.45;color:var(--text)">
       ${topProd&&!q?`Lo que más se devuelve: <strong style="color:var(--amber)">${escH(topProd[0])}</strong> (${topProd[1].veces} ${topProd[1].veces===1?"vez":"veces"}${topProd[1].kg?`, ${fmtNum(topProd[1].kg)} kg`:""}). `:""}
-      ${topMotivo?`Motivo principal: <strong style="color:${topMotivo.color}">${escH(topMotivo.label)}</strong> (${pctTxt(topMotivo.valor,items.length)} de las líneas).`:""}
-    </div>
+      ${topMotivo?`Motivo principal: <strong style="color:${topMotivo.color}">${escH(topMotivo.label)}</strong> (${pctTxt(topMotivo.valor,items.length)}).`:""}
+    </span>
   </div>`:""}
 
   <div class="card" style="${cardStyle}">
