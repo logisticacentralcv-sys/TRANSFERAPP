@@ -242,13 +242,6 @@ tr[onclick]:active td{background:var(--s3)}
 
 /* Entrada: lo que aparece nuevo entra con suavidad (fill "backwards" para
    no pisar los efectos de hover una vez terminada la animación) */
-.card,.card-flush,.stat-card,.del-card{animation:cardIn .4s cubic-bezier(.2,.8,.2,1) backwards}
-.stats-grid>*:nth-child(2),.del-grid>*:nth-child(2){animation-delay:.04s}
-.stats-grid>*:nth-child(3),.del-grid>*:nth-child(3){animation-delay:.08s}
-.stats-grid>*:nth-child(4),.del-grid>*:nth-child(4){animation-delay:.12s}
-.stats-grid>*:nth-child(5),.del-grid>*:nth-child(5){animation-delay:.16s}
-.del-grid>*:nth-child(6){animation-delay:.2s}
-.del-grid>*:nth-child(n+7){animation-delay:.24s}
 .modal-bg{animation:fadeIn .22s ease}
 .modal-box{animation:popIn .3s cubic-bezier(.2,.9,.25,1.05)}
 .toast{animation:toastIn .38s cubic-bezier(.2,.9,.25,1.1)}
@@ -256,12 +249,10 @@ tr[onclick]:active td{background:var(--s3)}
 /* Gráficos */
 .hbar-row{border-radius:10px;padding:7px 9px;margin:-7px -9px;transition:background-color .15s}
 .hbar-row[onclick]:hover{background:var(--s2)}
-.hbar-fill{transform-origin:left center;animation:growX .75s cubic-bezier(.2,.8,.2,1) backwards;transition:width .5s ease,filter .15s}
+.hbar-fill{transform-origin:left center;transition:width .5s ease,filter .15s}
 .hbar-row:hover .hbar-fill{filter:brightness(1.18)}
-.ev-line{stroke-dasharray:1;animation:drawLine 1.1s ease-out backwards}
-.ev-area{animation:fadeIn .9s ease .25s backwards}
-.ev-dot{transform-box:fill-box;transform-origin:center;animation:dotIn .35s cubic-bezier(.2,1.2,.4,1) backwards}
-.dn-anim{animation:donutIn .7s cubic-bezier(.2,.9,.25,1) backwards}
+.ev-line{stroke-dasharray:1}
+.ev-dot{transform-box:fill-box;transform-origin:center}
 
 /* Cambio de pestaña/vista (View Transitions): la barra de arriba queda
    quieta y el contenido se desliza */
@@ -296,16 +287,10 @@ tr[onclick]:active td{background:var(--s3)}
 .datepill button:hover{color:var(--text);background:var(--s3)}
 
 .sol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
-.sol-card{display:flex;flex-direction:column;position:relative;background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:16px 18px 16px 22px;cursor:pointer;overflow:hidden;transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .25s,border-color .2s;animation:cardIn .4s cubic-bezier(.2,.8,.2,1) backwards}
+.sol-card{display:flex;flex-direction:column;position:relative;background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:16px 18px 16px 22px;cursor:pointer;overflow:hidden;transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .25s,border-color .2s}
 .sol-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--c,var(--border2))}
 .sol-card:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(0,0,0,.38);border-color:var(--border2)}
 .sol-card:active{transform:translateY(-1px) scale(.99)}
-.sol-grid>.sol-card:nth-child(2){animation-delay:.04s}
-.sol-grid>.sol-card:nth-child(3){animation-delay:.08s}
-.sol-grid>.sol-card:nth-child(4){animation-delay:.12s}
-.sol-grid>.sol-card:nth-child(5){animation-delay:.16s}
-.sol-grid>.sol-card:nth-child(6){animation-delay:.2s}
-.sol-grid>.sol-card:nth-child(n+7){animation-delay:.24s}
 .sol-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
 .sol-id{font-family:var(--mono);font-size:12px;color:#8ea2c4}
 .sol-route{font-size:19px;font-weight:700;line-height:1.25;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
@@ -386,6 +371,24 @@ tr[onclick]:active td{background:var(--s3)}
   .brand-name{font-size:18px}
   .ntag{padding:5px 12px;font-size:12.5px}
 }
+
+
+/* Entrada de contenido: SOLO cuando se entra a una pantalla o se cambia de
+   pestaña (JS agrega .enter a propósito). Antes se disparaba sola cada vez
+   que el navegador movía o recreaba un elemento — por ejemplo al aparecer
+   una barra arriba de una lista — y todo parecía "recargarse". */
+.enter .del-card,.enter .sol-card,.enter .stat-card{animation:cardIn .4s cubic-bezier(.2,.8,.2,1) backwards}
+.enter .del-card:nth-child(2),.enter .sol-card:nth-child(2),.enter .stat-card:nth-child(2){animation-delay:.04s}
+.enter .del-card:nth-child(3),.enter .sol-card:nth-child(3),.enter .stat-card:nth-child(3){animation-delay:.08s}
+.enter .del-card:nth-child(4),.enter .sol-card:nth-child(4),.enter .stat-card:nth-child(4){animation-delay:.12s}
+.enter .del-card:nth-child(5),.enter .sol-card:nth-child(5),.enter .stat-card:nth-child(5){animation-delay:.16s}
+.enter .del-card:nth-child(6),.enter .sol-card:nth-child(6){animation-delay:.2s}
+.enter .del-card:nth-child(n+7),.enter .sol-card:nth-child(n+7){animation-delay:.24s}
+.enter .hbar-fill{animation:growX .75s cubic-bezier(.2,.8,.2,1) backwards}
+.enter .ev-line{animation:drawLine 1.1s ease-out backwards}
+.enter .ev-area{animation:fadeIn .9s ease .25s backwards}
+.enter .ev-dot{animation:dotIn .35s cubic-bezier(.2,1.2,.4,1) backwards}
+.enter .dn-anim{animation:donutIn .7s cubic-bezier(.2,.9,.25,1) backwards}
 
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -1385,7 +1388,7 @@ function renderWidgetFlotaHoy(){
   if(!listaRecorridos) return "";
 
   return `
-  <div class="card" style="margin-bottom:16px;padding:14px 18px">
+  <div id="flota-widget" class="card" style="margin-bottom:16px;padding:14px 18px">
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <span style="font-size:13px;font-weight:700;color:var(--muted)">🚚 RECORRIDOS DE HOY</span>
     </div>
@@ -2670,6 +2673,7 @@ function morphSeguro(el, html){
     onBeforeElUpdated: (fromEl, toEl) => {
       // Conservar la posición del indicador de pestañas para que se deslice
       // (si no, cada render lo borra y vuelve a empezar de cero)
+      if(fromEl.classList && fromEl.classList.contains("vt-content") && fromEl.classList.contains("enter")) toEl.classList.add("enter");
       if(fromEl.classList && fromEl.classList.contains("tabs")){
         ["--ind-x","--ind-y","--ind-w","--ind-h"].forEach(k=>{ const v=fromEl.style.getPropertyValue(k); if(v) toEl.style.setProperty(k,v); });
         if(fromEl.hasAttribute("data-ind")) toEl.setAttribute("data-ind","1");
@@ -2700,16 +2704,24 @@ function aplicarRenderDOM(){
   const reducir = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
   // Cambio de pantalla completa (Quejas, Devoluciones, Volver): desliza todo.
   if(modo==="page" && !reducir && typeof document.startViewTransition==="function"){
-    try{ document.startViewTransition(()=>aplicarRenderDOMInterno()); return; }catch(e){}
+    try{ document.startViewTransition(()=>{ aplicarRenderDOMInterno(); animarEntradaContenido(); }); return; }catch(e){}
   }
   aplicarRenderDOMInterno();
   // Cambio de pestaña: los botones de arriba y las pestañas quedan FIJOS;
   // solo el contenido de abajo entra con movimiento.
-  if(modo==="tab" && !reducir){
-    document.querySelectorAll(".vt-content").forEach(el=>{
-      el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
-    });
-  }
+  if(modo==="tab" && !reducir) animarEntradaContenido();
+}
+// Marca el contenido como "entrando": dispara las animaciones de entrada
+// (tarjetas escalonadas, barras que crecen, línea que se dibuja…) y la
+// quita sola al terminar. Se llama a propósito al entrar o cambiar de
+// pestaña — no por cada actualización de datos.
+function animarEntradaContenido(){
+  if(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  document.querySelectorAll(".vt-content").forEach(el=>{
+    clearTimeout(el._tEnter);
+    el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
+    el._tEnter = setTimeout(()=>el.classList.remove("enter"), 1800);
+  });
 }
 function aplicarRenderDOMInterno(){
   const elBg = $("app");
@@ -2949,7 +2961,7 @@ function renderPlanificacion(){
 
   return `
   <div style="animation:fadeUp .3s ease">
-    ${renderWidgetFlotaHoy()}
+    <div id="flota-slot">${renderWidgetFlotaHoy()}</div>
     ${pageHead(escH(u.area||"Planificación"),"",`
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
         ${areaN==="rrhh"?`<button class="btn btn-teal btn-md" onclick="openEnvioMasivoRRHH()">📨 Enviar a varias sucursales</button>`:""}
@@ -3391,8 +3403,8 @@ function renderMetricasDevoluciones(){
 
   const hayFiltros = !!(desde||hasta||q||sucSel||(!catFija&&cat));
   const chip=(txt,extra="")=>`<span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#4f9eff22;border:1px solid #4f9eff66;font-size:14px;font-weight:600;color:var(--text)">${txt}${extra}</span>`;
-  const barraSticky = hayFiltros ? `
-  <div style="position:sticky;top:var(--nav-h,56px);z-index:45;margin:-4px 0 18px;padding:10px 14px;border-radius:12px;background:#111827f5;border:1px solid #4f9eff55;box-shadow:0 8px 22px #000b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  const barraSticky = `
+  <div id="cal-sticky" style="${hayFiltros?"":"display:none;"}position:sticky;top:var(--nav-h,56px);z-index:45;margin:-4px 0 18px;padding:10px 14px;border-radius:12px;background:#111827f5;border:1px solid #4f9eff55;box-shadow:0 8px 22px #000b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="font-size:13px;color:#a9b8d0">Analizando:</span>
     ${q?chip(`🔎 ${escH(q)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadProducto='';render()">✕</button>`):chip("Todos los productos")}
     ${(desde||hasta)?chip(`📅 ${desde?fechaCortaISO(desde):"…"} → ${hasta?fechaCortaISO(hasta):"hoy"}`):""}
@@ -3400,7 +3412,7 @@ function renderMetricasDevoluciones(){
     ${sucSel?chip(`🏪 ${escH(sucSel)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadSucursal='';render()">✕</button>`):""}
     <span style="margin-left:auto;font-size:13px;color:#a9b8d0">${devs.length} devolución${devs.length!==1?"es":""} · ${items.length} línea${items.length!==1?"s":""}</span>
     <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadSucursal='';S.devMetCategoria='';S.calidadMotivoSel='';S.calidadDiaSel='';render()">✕ Limpiar</button>
-  </div>`:"";
+  </div>`;
 
   const topProd=rankingProd[0], topMotivo=datosMotivo[0];
   const cardStyle="padding:24px;margin-bottom:20px";
@@ -3475,7 +3487,7 @@ function renderMetricasDevoluciones(){
 
   const COLOR_CAT={Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"};
   return `
-  <div class="card" style="${cardStyle};margin-bottom:16px">
+  <div id="cal-filtros" class="card" style="${cardStyle};margin-bottom:16px">
     ${!catFija?`
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       <span style="font-size:13px;font-weight:700;color:#a9b8d0;text-transform:uppercase;letter-spacing:.07em;margin-right:6px">Categoría</span>
@@ -3510,16 +3522,16 @@ function renderMetricasDevoluciones(){
 
   ${barraSticky}
 
-  ${(topProd||topMotivo)?`
-  <div class="card" style="padding:12px 18px;margin-bottom:16px;border-left:4px solid var(--amber);display:flex;align-items:baseline;gap:10px 16px;flex-wrap:wrap">
+  <div id="cal-dest-slot">${(topProd||topMotivo)?`
+  <div id="cal-dest" class="card" style="padding:12px 18px;margin-bottom:16px;border-left:4px solid var(--amber);display:flex;align-items:baseline;gap:10px 16px;flex-wrap:wrap">
     <span style="font-size:13px;font-weight:700;color:#a9b8d0;text-transform:uppercase;letter-spacing:.07em">🔎 Destacado</span>
     <span style="font-size:16px;line-height:1.45;color:var(--text)">
       ${topProd&&!q?`Lo que más se devuelve: <strong style="color:var(--amber)">${escH(topProd[0])}</strong> (${topProd[1].veces} ${topProd[1].veces===1?"vez":"veces"}${topProd[1].kg?`, ${fmtNum(topProd[1].kg)} kg`:""}). `:""}
       ${topMotivo?`Motivo principal: <strong style="color:${topMotivo.color}">${escH(topMotivo.label)}</strong> (${pctTxt(topMotivo.valor,items.length)}).`:""}
     </span>
-  </div>`:""}
+  </div>`:""}</div>
 
-  <div class="card" style="${cardStyle}">
+  <div id="cal-evo" class="card" style="${cardStyle}">
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
       ${tituloGrafico("Evolución en el tiempo", unidadMetrica)}
       <div style="display:flex;gap:6px;flex-wrap:wrap">${pill("devs","Devoluciones")}${pill("kg","Kg")}${pill("unid","Unidades")}</div>
@@ -3528,9 +3540,9 @@ function renderMetricasDevoluciones(){
     ${!diaSel?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Pasá el mouse por un día para ver su valor, y tocalo para ver qué se devolvió ese día.</p>`:""}
   </div>
 
-  ${detalleDia}
+  <div id="cal-slot-dia">${detalleDia}</div>
 
-  <div class="card" style="${cardStyle}">
+  <div id="cal-motivo" class="card" style="${cardStyle}">
     ${tituloGrafico("¿Por qué se devuelve?", q?`Motivos de "${escH(q)}" · tocá una porción para ver de dónde sale`:"Reparto por motivo · tocá una porción para ver qué productos y sucursales lo explican")}
     ${datosMotivo.length?`
     <div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap;justify-content:center">
@@ -3539,19 +3551,19 @@ function renderMetricasDevoluciones(){
     </div>`:`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`}
   </div>
 
-  ${detalleMotivo}
+  <div id="cal-slot-motivo">${detalleMotivo}</div>
 
-  <div class="card" style="${cardStyle}">
+  <div id="cal-prod" class="card" style="${cardStyle}">
     ${tituloGrafico("Productos más devueltos", "Tocá un producto para ver solo ese: sus motivos y las sucursales que lo devuelven")}
     ${barrasHorizontales(filasProd,null,items.length)}
   </div>
 
-  <div class="card" style="${cardStyle}">
+  <div id="cal-suc" class="card" style="${cardStyle}">
     ${tituloGrafico("Devoluciones por sucursal", q?`Sucursales que devuelven "${escH(q)}"`:"Cantidad de devoluciones y kg por sucursal")}
     ${barrasHorizontales(filasSuc,"#4f9eff",devs.length)}
   </div>
 
-  <div class="card" style="${cardStyle}">
+  <div id="cal-detalle" class="card" style="${cardStyle}">
     ${tituloGrafico("Detalle: sucursal · producto · motivo", "Para detectar desviaciones puntuales — ordenado por cantidad devuelta")}
     ${!detalleOrd.length?`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos en este rango.</p>`:`
     <div class="table-wrap"><table style="font-size:15px">
@@ -3569,7 +3581,7 @@ function renderMetricasDevoluciones(){
     ${detalleOrd.length>100?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Mostrando los 100 cruces más relevantes de ${detalleOrd.length}.</p>`:""}`}
   </div>
 
-  <div class="stats-grid" style="margin-bottom:20px">
+  <div id="cal-kpis" class="stats-grid" style="margin-bottom:20px">
     ${statCard("📦","DEVOLUCIONES", devs.length, "var(--teal)")}
     ${statCard("⚖️","TOTAL KG", fmtNum(Math.round(totalKg*10)/10), "var(--amber)")}
     ${statCard("🔢","TOTAL UNIDADES", fmtNum(Math.round(totalUnid)), "var(--blue)")}
@@ -4335,7 +4347,7 @@ function solicitudCard(r, rutaHtml, accionesHtml, extraChips){
 }
 function solicitudesLista(items, clave, cardFn, vacioTxt){
   const lim = (S.solLimites && S.solLimites[clave]) || 30;
-  return `<div class="sol-grid vt-content">
+  return `<div id="sol-grid" class="sol-grid vt-content">
     ${!items.length?`<div class="sol-empty"><div class="ico">📭</div>${vacioTxt}</div>`:""}
     ${items.slice(0,lim).map(cardFn).join("")}
     ${items.length>lim?`<div class="sol-more"><button class="btn btn-ghost btn-md" onclick="S.solLimites=S.solLimites||{};S.solLimites['${clave}']=${lim+30};render()">Ver más (${items.length-lim})</button></div>`:""}
@@ -4397,7 +4409,7 @@ function renderSucursalArea(opts){
   };
   return `
   <div style="animation:fadeUp .3s ease">
-    ${renderWidgetFlotaHoy()}
+    <div id="flota-slot">${renderWidgetFlotaHoy()}</div>
     ${opts.embedded ? "" : pageHead("Mis solicitudes","",acciones)}
     <div class="toolbar">
       <div class="tabs">
@@ -4418,7 +4430,7 @@ function renderSucursalArea(opts){
 function renderLogistica(){
   return `
   <div style="animation:fadeUp .3s ease">
-    ${renderWidgetFlotaHoy()}
+    <div id="flota-slot">${renderWidgetFlotaHoy()}</div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div class="tabs" style="margin-bottom:0">
         <button class="tab ${S.tabLog==="solicitudes"?"active":""}" onclick="S.tabLog='solicitudes';render()">📋 Solicitudes</button>
@@ -4538,7 +4550,7 @@ function renderLogTabla(){
       ${S.modoSeleccion?"✕ Cancelar selección":"◯ Seleccionar"}
     </button>
   </div>
-  ${S.modoSeleccion && S.logSeleccion.size>0?(()=>{
+  <div id="log-bar-slot">${S.modoSeleccion && S.logSeleccion.size>0?(()=>{
     const seleccionadas = [...S.logSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
     const estadosUnicos = [...new Set(seleccionadas.map(r=>r.estado))];
     const recorridosUnicos = [...new Set(seleccionadas.map(r=>r.recorrido).filter(Boolean))];
@@ -4557,8 +4569,8 @@ function renderLogTabla(){
     </select>
     <button class="btn btn-success btn-sm" onclick="openCambioEstadoMasivo()">Aplicar a seleccionadas</button>
     <button class="btn btn-ghost btn-sm" onclick="S.logSeleccion=new Set();render()">✕ Deseleccionar todo</button>
-  </div>`; })():""}
-  <div class="card-flush">
+  </div>`; })():""}</div>
+  <div id="log-tabla" class="card-flush">
     <div class="table-wrap">
       <table>
         <thead><tr>
@@ -5736,7 +5748,7 @@ function renderMetricas(){
     ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';S.metEstadoSel='';S.metDiaSel='';render()">✕ Limpiar filtros</button>`:""}
   </div>
   <div class="metrics-grid">
-    <div class="card" style="${cardL}">
+    <div id="met-resumen" class="card" style="${cardL}">
       ${tituloGrafico("Resumen")}
       <div class="kpi-mini-grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--blue)">${reqs.length}</div><div class="kpi-mini-lbl">Total</div></div>
@@ -5752,7 +5764,7 @@ function renderMetricas(){
         <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">📅 Entregadas fuera de fecha</span><span class="mono" style="color:${fueraDeFecha.length?"var(--red)":"var(--green)"}">${fueraDeFecha.length} <span style="color:var(--faint);font-weight:400">(${pctFuera}% de las entregadas con fecha)</span></span></div>
       </div>
     </div>
-    <div class="card" style="${cardL}">
+    <div id="met-evo" class="card" style="${cardL}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         ${tituloGrafico("Evolución en el tiempo", serie==="creadas"?"solicitudes creadas por día":"solicitudes entregadas por día")}
         <div style="display:flex;gap:6px;flex-wrap:wrap">${pillL("creadas","Creadas")}${pillL("entregadas","Entregadas")}</div>
@@ -5761,9 +5773,9 @@ function renderMetricas(){
       ${!diaSelL?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Pasá el mouse por un día para ver su valor, y tocalo para ver qué solicitudes fueron.</p>`:""}
     </div>
 
-    ${detalleDiaL}
+    <div id="met-slot-dia" style="display:contents">${detalleDiaL}</div>
 
-    <div class="card" style="${cardL}">
+    <div id="met-estado" class="card" style="${cardL}">
       ${tituloGrafico("Estado de las solicitudes","Tocá una porción para ver de dónde sale ese porcentaje")}
       ${datosEstado.length?`
       <div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap;justify-content:center">
@@ -5772,9 +5784,9 @@ function renderMetricas(){
       </div>`:`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`}
     </div>
 
-    ${detalleEstado}
+    <div id="met-slot-estado" style="display:contents">${detalleEstado}</div>
 
-    <div class="card" style="${cardL}">
+    <div id="met-suc" class="card" style="${cardL}">
       ${tituloGrafico("Por sucursal / área","Solicitudes creadas por cada una")}
       ${barrasHorizontales(filasSucL,"#4f9eff",reqs.length)}
     </div>
@@ -5901,7 +5913,7 @@ function renderRepartidor(){
         ${S.modoSeleccionRep?"✕ Cancelar selección":"◯ Seleccionar"}
       </button>`:""}
     </div>
-    ${S.modoSeleccionRep && S.repSeleccion.size>0?`
+    <div id="rep-bar-slot">${S.modoSeleccionRep && S.repSeleccion.size>0?`
     <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
       ${(()=>{
@@ -5915,9 +5927,9 @@ function renderRepartidor(){
         ${entregables.length>0?`<button class="btn btn-success btn-sm" onclick="openEntregarVarias()">✅ Entregar (${entregables.length})</button>`:""}`;
       })()}
       <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
-    </div>`:""}
+    </div>`:""}</div>
     ${S.tabRep==="devoluciones"?`
-    <div class="del-grid vt-content">
+    <div id="rep-grid" class="del-grid vt-content">
       ${devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">No hay devoluciones pendientes.</div>`:""}
       ${devolucionesRep.map(d=>{
         const esParaTomar = d.estado==="Pendiente";
@@ -5955,7 +5967,7 @@ function renderRepartidor(){
       }).join("")}
     </div>
     `:`
-    <div class="del-grid vt-content">
+    <div id="rep-grid" class="del-grid vt-content">
       ${S.tabRep==="bolsines"?(()=>{
         const alBuzonN    = list.filter(r=>esDestinoBuzon(r.destino)).length;
         const desdeBuzonN = list.filter(r=>!esDestinoBuzon(r.destino)).length;
@@ -9458,6 +9470,8 @@ function finalizarEntradaApp(){
   if(["repartidor","recepcionista","tesoreria"].includes(S.user.rol)) cargarIdentidadRepartidor();
   reiniciarTimerInactividad();
   render(); // mostrar app ya
+
+  setTimeout(animarEntradaContenido, 120);
 
   // Cargar solicitudes, recorridos y destinos en background sin bloquear
   sheetsLoadDatos().then(()=>{ render(); });
