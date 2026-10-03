@@ -603,11 +603,13 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false},
+  devolucionForm: {tipo:"", items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false},
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
   devolucionFiltroProducto: "",
+  devolucionFiltroTipo: "",
+  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
@@ -945,6 +947,11 @@ async function sheetsLoadDatos(){
   }catch(e){console.warn("Supabase load datos:",e);}
   cargarNotificaciones(); // no bloquea — si falla (tabla no creada aún), no rompe nada
   cargarEstadoFlotaHoy(); // idem — cross-proyecto con Flota, nunca debe romper TransferApp
+  // Calidad aterriza directo en el dashboard de devoluciones — a
+  // diferencia de otros roles, que las cargan recién al abrir esa
+  // vista desde el ícono de arriba, acá hace falta tenerlas desde el
+  // arranque.
+  if(S.user?.rol==="calidad" && !S.devolucionesLoaded) cargarDevoluciones().then(()=>render());
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1593,8 +1600,20 @@ function esGestorDevolucion(){
   if(!u || u.rol==="recepcionista") return false;
   if(u.rol==="admin") return true;
   if(u.rol==="logistica") return true;
+  if(u.rol==="calidad") return true;
+  if(u.rol==="planificacion" && u.tipoReal==="DEPOSITO") return true;
   const area = normSinTildes(u.area);
   return ["planificacion","produccion","calidad"].includes(area);
+}
+// Calidad y Depósito tienen una sola categoría fija de devoluciones
+// que les corresponde ver — no es un filtro que puedan cambiar, es
+// su alcance. Logística y Admin ven todas, separadas por categoría
+// con un filtro normal.
+function categoriaDevolucionFija(){
+  const u = S.user;
+  if(u?.rol==="calidad") return "Fresco";
+  if(u?.rol==="planificacion" && u?.tipoReal==="DEPOSITO") return "Secos";
+  return null;
 }
 function puedeVerDevoluciones(){
   const u = S.user;
@@ -1605,7 +1624,18 @@ function puedeVerDevoluciones(){
 // catálogo de productos (búsqueda por nombre/código) — las devoluciones
 // que ya estaban cargadas siguen su curso normal (tomar, confirmar, etc).
 const DEVOLUCIONES_NUEVAS_HABILITADAS = true;
-const MOTIVOS_DEVOLUCION = ["Mal olor o color","Vencido","Roto"];
+// Las sucursales "Market" manejan los 3 tipos; las "Granja" solo
+// Fresco y Congelado (no reciben/devuelven Secos).
+const TIPOS_DEVOLUCION_MARKET = ["Fresco","Secos","Congelado"];
+const TIPOS_DEVOLUCION_GRANJA = ["Fresco","Congelado"];
+const MOTIVOS_POR_TIPO_DEVOLUCION = {
+  Fresco:    ["Mal estado","Pérdida de vacío","Vencido","Roto"],
+  Secos:     ["Roto","Roto con cambio","Vencido con cambio","Vencido sin cambio"],
+  Congelado: ["Vencido","Roto","Pérdida de frío"],
+};
+function tiposDevolucionDisponibles(sucursal){
+  return esSucursalMarket(sucursal) ? TIPOS_DEVOLUCION_MARKET : TIPOS_DEVOLUCION_GRANJA;
+}
 
 async function abrirDevoluciones(){
   S.vista = "devoluciones";
@@ -1673,6 +1703,7 @@ function enfocarBuscadorProducto(){
 
 async function submitDevolucion(){
   const items = S.devolucionForm.items;
+  if(!S.devolucionForm.tipo){ S.devolucionForm.err="Elegí el tipo de devolución (Fresco, Secos o Congelado)."; render(); return; }
   if(!items.length){ S.devolucionForm.err="Agregá al menos un producto."; render(); return; }
   for(let i=0;i<items.length;i++){
     const it = items[i];
@@ -1714,12 +1745,13 @@ async function submitDevolucion(){
     estado: "Pendiente",
     creadoPor: u.nombre||u.area||"",
     productosJson: JSON.stringify(productosJson),
+    tipoDevolucion: S.devolucionForm.tipo,
   });
   try{
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
+    S.devolucionForm = {tipo:"", items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -2082,6 +2114,12 @@ function renderDevoluciones(){
     lista = S.tabDevGestor==="historial"
       ? S.devoluciones.filter(d=>["Confirmada","No confirmada"].includes(d.estado))
       : S.devoluciones.filter(d=>!["Confirmada","No confirmada"].includes(d.estado));
+    // Calidad solo ve Fresco, Depósito solo ve Secos — es su alcance fijo,
+    // no un filtro que puedan sacar. Logística/Admin ven todo, con un
+    // filtro de categoría normal que sí pueden cambiar.
+    const catFija = categoriaDevolucionFija();
+    if(catFija) lista = lista.filter(d=>(d.tipoDevolucion||"Fresco")===catFija);
+    else if(S.devolucionFiltroTipo) lista = lista.filter(d=>(d.tipoDevolucion||"Fresco")===S.devolucionFiltroTipo);
     if(S.devolucionFiltroSucursal) lista = lista.filter(d=>d.sucursal===S.devolucionFiltroSucursal);
     if(S.devolucionFiltroEstado)   lista = lista.filter(d=>d.estado===S.devolucionFiltroEstado);
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
@@ -2112,7 +2150,14 @@ function renderDevoluciones(){
     ${!esGestor && !esRepartidor && DEVOLUCIONES_NUEVAS_HABILITADAS?`
     <div class="card" style="margin-bottom:20px">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:10px">Nueva devolución</h3>
-      <div class="field" style="position:relative">
+      <div class="field">
+        <label>Tipo de devolución <span class="req">*</span></label>
+        <select id="devol-tipo" class="inp" onchange="S.devolucionForm.tipo=this.value;render()">
+          <option value="">— Elegí un tipo —</option>
+          ${tiposDevolucionDisponibles(u.area).map(t=>`<option ${S.devolucionForm.tipo===t?"selected":""}>${t}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field" style="position:relative;margin-top:14px;${!S.devolucionForm.tipo?"opacity:.5;pointer-events:none":""}">
         <label>Buscar producto</label>
         <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
           value="${escH(S.devolucionForm.productoQuery||"")}"
@@ -2157,7 +2202,7 @@ function renderDevoluciones(){
             <label>Motivo <span class="req">*</span></label>
             <select id="devol-motivo-${i}" class="inp" onchange="S.devolucionForm.items[${i}].motivo=this.value;render()">
               <option value="">— Elegí un motivo —</option>
-              ${MOTIVOS_DEVOLUCION.map(m=>`<option ${it.motivo===m?"selected":""}>${m}</option>`).join("")}
+              ${(MOTIVOS_POR_TIPO_DEVOLUCION[S.devolucionForm.tipo]||[]).map(m=>`<option ${it.motivo===m?"selected":""}>${m}</option>`).join("")}
             </select>
           </div>
           ${it.motivo==="Otro"?`
@@ -2218,7 +2263,17 @@ function renderDevoluciones(){
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
       </select>
-      <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>`:""}
+      <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>
+      ${(()=>{
+        const catFija = categoriaDevolucionFija();
+        if(catFija) return `<span class="btn btn-ghost btn-md" style="pointer-events:none;opacity:.8" title="Tu alcance es fijo">🔒 ${catFija}</span>`;
+        return `<select class="inp" style="width:160px" onchange="S.devolucionFiltroTipo=this.value;render()">
+          <option value="">Todas las categorías</option>
+          <option ${S.devolucionFiltroTipo==="Fresco"?"selected":""}>Fresco</option>
+          <option ${S.devolucionFiltroTipo==="Secos"?"selected":""}>Secos</option>
+          <option ${S.devolucionFiltroTipo==="Congelado"?"selected":""}>Congelado</option>
+        </select>`;
+      })()}`:""}
     </div>`:""}
 
     <div style="display:flex;flex-direction:column;gap:10px">
@@ -2235,6 +2290,7 @@ function renderDevoluciones(){
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
+              ${d.tipoDevolucion?badge(d.tipoDevolucion, {Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"}[d.tipoDevolucion]||"var(--muted)"):""}
               ${badge(d.estado, colorEstado(d.estado))}
               ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
             </div>
@@ -2610,6 +2666,7 @@ function renderApp(){
     : u.rol==="planificacion"  ? renderPlanificacion()
     : u.rol==="recepcionista"  ? renderRecepcionista()
     : u.rol==="tesoreria"      ? renderTesoreria()
+    : u.rol==="calidad"        ? renderCalidad()
     : u.rol==="admin"          ? renderAdmin()
     : renderSucursalArea();
 
@@ -2802,6 +2859,139 @@ function renderPlanificacion(){
 }
 
 // ── TESORERÍA VIEW ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════
+//  CALIDAD — panel de métricas de devoluciones (hoy solo Fresco) +
+//  puede además cargar transferencias si lo necesita.
+// ══════════════════════════════════════════════════════════
+function renderCalidad(){
+  const tab = S.tabCalidad || "metricas";
+  return `
+  <div style="animation:fadeUp .3s ease">
+    <div style="margin-bottom:16px">
+      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">🔍 Calidad</h2>
+      <p style="color:var(--muted);font-size:13px">Devoluciones de Fresco · ${escH(S.user.nombre||"")}</p>
+    </div>
+    <div class="tabs" style="margin-bottom:20px">
+      <button class="tab ${tab==="metricas"?"active":""}" onclick="S.tabCalidad='metricas';render()">📊 Métricas</button>
+      <button class="tab ${tab==="transferencias"?"active":""}" onclick="S.tabCalidad='transferencias';render()">🚚 Transferencias</button>
+    </div>
+    ${tab==="metricas"?renderMetricasCalidad():renderSucursalArea()}
+  </div>`;
+}
+
+function renderMetricasCalidad(){
+  const desde = S.calidadDesde||"", hasta = S.calidadHasta||"";
+  let devs = S.devoluciones.filter(d=>(d.tipoDevolucion||"Fresco")==="Fresco");
+  if(desde) devs = devs.filter(d=>d.createdAt && d.createdAt.slice(0,10)>=desde);
+  if(hasta) devs = devs.filter(d=>d.createdAt && d.createdAt.slice(0,10)<=hasta);
+
+  // Aplanar a nivel de producto — cada devolución puede traer varios.
+  let items = [];
+  devs.forEach(d=>{
+    productosDeDevolucion(d).forEach(p=>{
+      items.push({...p, sucursal:d.sucursal||"—", fecha:d.createdAt?d.createdAt.slice(0,10):"?"});
+    });
+  });
+
+  const totalDevoluciones = devs.length;
+  const esKg = u => normNotif(u||"")==="kg";
+  const totalKg = items.filter(p=>esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
+  const totalUnidades = items.filter(p=>!esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
+
+  const porDia = {};
+  devs.forEach(d=>{ const f=d.createdAt?d.createdAt.slice(0,10):"?"; porDia[f]=(porDia[f]||0)+1; });
+  const diasOrdenados = Object.keys(porDia).filter(f=>f!=="?").sort();
+
+  const porSucursal = {};
+  devs.forEach(d=>{ const s=d.sucursal||"—"; porSucursal[s]=(porSucursal[s]||0)+1; });
+
+  const COLORES_MOTIVO = ["#f97316","#0ea5e9","#1fa86a","#a855f7","#ef4444","#eab308"];
+  const porMotivo = {};
+  items.forEach(p=>{
+    const m = (p.motivo||"Sin motivo").split(" — ")[0]||"Sin motivo";
+    porMotivo[m]=(porMotivo[m]||0)+1;
+  });
+
+  // Detalle sucursal × producto × motivo — el análisis que permite ver
+  // desviaciones puntuales (quién devuelve qué, y por qué).
+  const detalle = {};
+  items.forEach(p=>{
+    const motivoBase = (p.motivo||"Sin motivo").split(" — ")[0]||"Sin motivo";
+    const clave = p.sucursal+"|"+p.descripcion+"|"+motivoBase;
+    if(!detalle[clave]) detalle[clave] = {sucursal:p.sucursal, producto:p.descripcion, motivo:motivoBase, cantidad:0, unidad:p.unidad||"", veces:0};
+    detalle[clave].cantidad += (+p.cantidad||0);
+    detalle[clave].veces += 1;
+  });
+  const detalleOrdenado = Object.values(detalle).sort((a,b)=>b.cantidad-a.cantidad);
+
+  return `
+  <div class="card" style="margin-bottom:20px">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="field" style="margin-bottom:0">
+        <label>Desde</label>
+        <input type="date" class="inp" value="${escH(desde)}" onchange="S.calidadDesde=this.value;render()"/>
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Hasta</label>
+        <input type="date" class="inp" value="${escH(hasta)}" onchange="S.calidadHasta=this.value;render()"/>
+      </div>
+      ${(desde||hasta)?`<button class="btn btn-ghost btn-md" onclick="S.calidadDesde='';S.calidadHasta='';render()">✕ Limpiar rango</button>`:""}
+    </div>
+  </div>
+
+  <div class="stats-grid" style="margin-bottom:20px">
+    ${statCard("📦","DEVOLUCIONES", totalDevoluciones, "var(--teal)")}
+    ${statCard("⚖️","TOTAL KG", totalKg.toFixed(1), "var(--amber)")}
+    ${statCard("🔢","TOTAL UNIDADES", Math.round(totalUnidades), "var(--blue)")}
+    ${statCard("🏪","SUCURSALES", Object.keys(porSucursal).length, "var(--muted)")}
+  </div>
+
+  <div class="card" style="margin-bottom:20px">
+    <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">EVOLUCIÓN — DEVOLUCIONES POR DÍA</p>
+    ${diasOrdenados.length?barChart(diasOrdenados.slice(-20).map(f=>({label:f.slice(5),valor:porDia[f]})), "var(--teal)"):`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin datos en este rango.</p>`}
+  </div>
+
+  <div class="g2" style="margin-bottom:20px">
+    <div class="card">
+      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR MOTIVO</p>
+      ${Object.keys(porMotivo).length?`
+      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+        ${donutChart(Object.entries(porMotivo).map(([m,v],i)=>({label:m,valor:v,color:COLORES_MOTIVO[i%COLORES_MOTIVO.length]})), 130)}
+        <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px">
+          ${Object.entries(porMotivo).sort((a,b)=>b[1]-a[1]).map(([m,v],i)=>`
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+              <span style="width:9px;height:9px;border-radius:50%;background:${COLORES_MOTIVO[i%COLORES_MOTIVO.length]};flex-shrink:0"></span>
+              <span style="flex:1;color:var(--muted)">${escH(m)}</span>
+              <strong>${v}</strong>
+            </div>`).join("")}
+        </div>
+      </div>`:`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">Sin datos.</p>`}
+    </div>
+    <div class="card">
+      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR SUCURSAL</p>
+      ${Object.keys(porSucursal).length?barChart(Object.entries(porSucursal).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([s,v])=>({label:s,valor:v})), "var(--blue)"):`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">Sin datos.</p>`}
+    </div>
+  </div>
+
+  <div class="card">
+    <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">DETALLE — SUCURSAL · PRODUCTO · MOTIVO (para ver desviaciones)</p>
+    ${!detalleOrdenado.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin datos en este rango.</p>`:`
+    <div class="table-wrap"><table>
+      <thead><tr><th>Sucursal</th><th>Producto</th><th>Motivo</th><th>Cantidad</th><th>Veces</th></tr></thead>
+      <tbody>
+        ${detalleOrdenado.slice(0,80).map(r=>`<tr>
+          <td>${escH(r.sucursal)}</td>
+          <td>${escH(r.producto)}</td>
+          <td>${escH(r.motivo)}</td>
+          <td class="mono">${r.cantidad.toFixed(1)} ${escH(r.unidad)}</td>
+          <td class="mono">${r.veces}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table></div>
+    ${detalleOrdenado.length>80?`<p style="font-size:11px;color:var(--faint);margin-top:8px">Mostrando los 80 cruces más relevantes de ${detalleOrdenado.length}.</p>`:""}`}
+  </div>`;
+}
+
 function renderTesoreria(){
   const u = S.user;
   if(!bolsinesActivo()){
@@ -3186,7 +3376,7 @@ function abrirEditarUsuario(dniId){
   render();
 }
 
-const TIPOS_USUARIO = ["SUCURSAL","LOGISTICA","REPARTIDOR","AREA","PLANIFICACION","ADMINISTRACION","COMPRAS","TESORERIA","RECEPCIONISTA","ADMIN"];
+const TIPOS_USUARIO = ["SUCURSAL","LOGISTICA","REPARTIDOR","AREA","PLANIFICACION","ADMINISTRACION","COMPRAS","TESORERIA","CALIDAD","RECEPCIONISTA","ADMIN"];
 
 function renderUsuarioFormModal(){
   const f = S.usuarioForm;
@@ -8538,6 +8728,8 @@ async function doLogin(){
     S.user = {rol:"recepcionista", area:resultado.area||"Fábrica", nombre:resultado.nombre, dni:resultado.dni||""};
   } else if(tipo === "TESORERIA"){
     S.user = {rol:"tesoreria", area:"Tesorería", nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(tipo === "CALIDAD"){
+    S.user = {rol:"calidad", area:"Calidad", nombre:resultado.nombre, dni:resultado.dni||""};
   } else if(tipo === "ADMIN"){
     S.user = {rol:"admin", area:"Administrador", nombre:resultado.nombre, dni:resultado.dni||""};
   } else {
