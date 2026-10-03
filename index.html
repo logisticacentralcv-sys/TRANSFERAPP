@@ -951,7 +951,11 @@ async function sheetsLoadDatos(){
   // diferencia de otros roles, que las cargan recién al abrir esa
   // vista desde el ícono de arriba, acá hace falta tenerlas desde el
   // arranque.
-  if(S.user?.rol==="calidad" && !S.devolucionesLoaded) cargarDevoluciones().then(()=>render());
+  // Lo mismo para repartidor (su pestaña "Devoluciones" muestra un
+  // contador desde el arranque), Logística y Depósito.
+  const cargaDevolucionesAlEntrar = S.user?.rol==="calidad" || S.user?.rol==="repartidor" || S.user?.rol==="logistica"
+    || (S.user?.rol==="planificacion" && S.user?.tipoReal==="DEPOSITO");
+  if(cargaDevolucionesAlEntrar && !S.devolucionesLoaded) cargarDevoluciones().then(()=>render());
 }
 
 // ══════════════════════════════════════════════════════════
@@ -5254,7 +5258,10 @@ function renderRepartidor(){
             </div>
             <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;gap:8px">
               <div style="font-size:19px;font-weight:700">${escH(d.sucursal||"—")}</div>
-              ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
+              <div style="display:flex;gap:5px;flex-shrink:0">
+                ${d.tipoDevolucion?badge(d.tipoDevolucion, {Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"}[d.tipoDevolucion]||"var(--muted)"):""}
+                ${badge(d.estado, d.estado==="En camino"?"var(--blue)":"var(--amber)")}
+              </div>
             </div>
             <div style="margin-bottom:12px;display:flex;flex-direction:column;gap:3px">
               ${prods.length?prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--faint)">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}</div>`).join(""):`<div style="font-size:13px;color:var(--muted)">${escH(d.motivo)}</div>`}
