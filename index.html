@@ -770,7 +770,7 @@ let S = {
   devolucionFiltroFecha: "",
   devolucionFiltroProducto: "",
   devolucionFiltroTipo: "",
-  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "", calidadDiaSel: "", calidadSucursal: "",
+  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "", calidadDiaSel: "", calidadSucursal: "", devMetCategoria: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
@@ -1115,7 +1115,7 @@ async function sheetsLoadDatos(){
   // Lo mismo para repartidor (su pestaña "Devoluciones" muestra un
   // contador desde el arranque), Logística y Depósito.
   const cargaDevolucionesAlEntrar = S.user?.rol==="calidad" || S.user?.rol==="repartidor" || S.user?.rol==="logistica"
-    || (S.user?.rol==="planificacion" && S.user?.tipoReal==="DEPOSITO");
+    || (S.user?.rol==="planificacion" && S.user?.tipoReal==="DEPOSITO") || puedeVerMetricasDevoluciones();
   if(cargaDevolucionesAlEntrar && !S.devolucionesLoaded) cargarDevoluciones().then(()=>render());
 }
 
@@ -1774,6 +1774,18 @@ function esGestorDevolucion(){
 // que les corresponde ver — no es un filtro que puedan cambiar, es
 // su alcance. Logística y Admin ven todas, separadas por categoría
 // con un filtro normal.
+// Métricas de devoluciones (el panel que arrancó en Calidad): lo ven
+// Calidad (solo Fresco), Logística y Admin (todo), y Planificación y
+// Compras (todo, con filtro de categoría).
+function puedeVerMetricasDevoluciones(){
+  const u=S.user; if(!u) return false;
+  if(["calidad","logistica","admin"].includes(u.rol)) return true;
+  if(u.rol==="planificacion"){
+    const t=String(u.tipoReal||"").toUpperCase(), a=normSinTildes(u.area||"");
+    return ["PLANIFICACION","COMPRAS"].includes(t) || ["planificacion","compras"].includes(a);
+  }
+  return false;
+}
 function categoriaDevolucionFija(){
   const u = S.user;
   if(u?.rol==="calidad") return "Fresco";
@@ -2901,6 +2913,7 @@ function renderApp(){
 // ══════════════════════════════════════════════════════════
 // ── PLANIFICACIÓN VIEW ───────────────────────────────────
 function renderPlanificacion(){
+  const verMetDev = S.tabSuc==="devmet" && puedeVerMetricasDevoluciones();
   const u     = S.user;
   // Ignora mayúsculas/minúsculas y tildes al comparar áreas (ej. "Compras" == "COMPRAS")
   const norm2 = s=>(s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -2960,10 +2973,11 @@ function renderPlanificacion(){
       <div class="tabs">
         <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas<span class="tab-n">${open.length}</span></button>
         <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial<span class="tab-n">${hist.length}</span></button>
+        ${puedeVerMetricasDevoluciones()?`<button class="tab ${verMetDev?"active":""}" onclick="S.tabSuc='devmet';render()">📉 Métricas de devoluciones</button>`:""}
       </div>
-      ${datePill(S.fPlanFecha,"fPlanFecha")}
+      ${verMetDev?"":datePill(S.fPlanFecha,"fPlanFecha")}
     </div>
-    ${solicitudesLista(listF,"plan-"+(S.tabSuc||"abiertas"),r=>{
+    ${verMetDev ? `<div class="vt-content">${renderMetricasDevoluciones()}</div>` : solicitudesLista(listF,"plan-"+(S.tabSuc||"abiertas"),r=>{
       // Planificación/RRHH/etc puede confirmar recepción cuando destino es fábrica/depósito
       const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
       const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
@@ -3265,16 +3279,21 @@ function calidadSeleccionarMotivo(label){
   if(S.calidadMotivoSel) setTimeout(()=>{ document.getElementById("calidad-detalle-motivo")?.scrollIntoView({behavior:"smooth",block:"start"}); },80);
 }
 
-function renderMetricasCalidad(){
+function renderMetricasCalidad(){ return renderMetricasDevoluciones(); }
+function renderMetricasDevoluciones(){
   const desde=S.calidadDesde||"", hasta=S.calidadHasta||"";
   const q=(S.calidadProducto||"").trim();
   const metrica=S.calidadMetrica||"devs";
-  let devs=S.devoluciones.filter(d=>(d.tipoDevolucion||"Fresco")==="Fresco");
+  // Calidad tiene una categoría fija (Fresco); el resto elige: todas o una.
+  const catFija=categoriaDevolucionFija();
+  const cat=catFija || S.devMetCategoria || "";
+  const enCategoria=d=>!cat || (d.tipoDevolucion||"Fresco")===cat;
+  let devs=S.devoluciones.filter(enCategoria);
   if(desde) devs=devs.filter(d=>d.createdAt && d.createdAt.slice(0,10)>=desde);
   if(hasta) devs=devs.filter(d=>d.createdAt && d.createdAt.slice(0,10)<=hasta);
   // Sucursales para el filtro: todas las que alguna vez devolvieron Fresco
   // (no solo las del rango, para que la lista no cambie al mover fechas)
-  const sucursalesOpts=[...new Set(S.devoluciones.filter(d=>(d.tipoDevolucion||"Fresco")==="Fresco").map(d=>d.sucursal).filter(Boolean))].sort();
+  const sucursalesOpts=[...new Set(S.devoluciones.filter(enCategoria).map(d=>d.sucursal).filter(Boolean))].sort();
   const sucSel=S.calidadSucursal||"";
   if(sucSel) devs=devs.filter(d=>normNotif(d.sucursal)===normNotif(sucSel));
 
@@ -3370,16 +3389,17 @@ function renderMetricasCalidad(){
         </div>`).join("")}
     </div>`:"";
 
-  const hayFiltros = !!(desde||hasta||q||sucSel);
+  const hayFiltros = !!(desde||hasta||q||sucSel||(!catFija&&cat));
   const chip=(txt,extra="")=>`<span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#4f9eff22;border:1px solid #4f9eff66;font-size:14px;font-weight:600;color:var(--text)">${txt}${extra}</span>`;
   const barraSticky = hayFiltros ? `
   <div style="position:sticky;top:var(--nav-h,56px);z-index:45;margin:-4px 0 18px;padding:10px 14px;border-radius:12px;background:#111827f5;border:1px solid #4f9eff55;box-shadow:0 8px 22px #000b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <span style="font-size:13px;color:#a9b8d0">Analizando:</span>
     ${q?chip(`🔎 ${escH(q)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadProducto='';render()">✕</button>`):chip("Todos los productos")}
     ${(desde||hasta)?chip(`📅 ${desde?fechaCortaISO(desde):"…"} → ${hasta?fechaCortaISO(hasta):"hoy"}`):""}
+    ${(!catFija&&cat)?chip(`🏷️ ${cat}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.devMetCategoria='';S.calidadMotivoSel='';render()">✕</button>`):""}
     ${sucSel?chip(`🏪 ${escH(sucSel)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadSucursal='';render()">✕</button>`):""}
     <span style="margin-left:auto;font-size:13px;color:#a9b8d0">${devs.length} devolución${devs.length!==1?"es":""} · ${items.length} línea${items.length!==1?"s":""}</span>
-    <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadSucursal='';S.calidadMotivoSel='';S.calidadDiaSel='';render()">✕ Limpiar</button>
+    <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadSucursal='';S.devMetCategoria='';S.calidadMotivoSel='';S.calidadDiaSel='';render()">✕ Limpiar</button>
   </div>`:"";
 
   const topProd=rankingProd[0], topMotivo=datosMotivo[0];
@@ -3453,8 +3473,14 @@ function renderMetricasCalidad(){
     </div>`;
   }
 
+  const COLOR_CAT={Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"};
   return `
   <div class="card" style="${cardStyle};margin-bottom:16px">
+    ${!catFija?`
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <span style="font-size:13px;font-weight:700;color:#a9b8d0;text-transform:uppercase;letter-spacing:.07em;margin-right:6px">Categoría</span>
+      ${["","Fresco","Secos","Congelado"].map(k=>`<button class="btn ${cat===k?"btn-primary":"btn-ghost"} btn-sm" ${cat===k&&k?`style="border-color:${COLOR_CAT[k]}"`:""} onclick="S.devMetCategoria='${k}';S.calidadMotivoSel='';S.calidadProducto='';S.calidadSucursal='';S.calidadDiaSel='';render()">${k||"Todas"}</button>`).join("")}
+    </div>`:""}
     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="margin-bottom:0">
         <label>Desde</label>
@@ -3777,10 +3803,11 @@ function renderAdmin(){
       <div class="tabs">
         <button class="tab ${S.adminTab==="solicitudes"?"active":""}" onclick="S.adminTab='solicitudes';render()">📋 Solicitudes</button>
         <button class="tab ${S.adminTab==="usuarios"?"active":""}" onclick="S.adminTab='usuarios';render()">👤 Usuarios</button>
+        <button class="tab ${S.adminTab==="devmet"?"active":""}" onclick="S.adminTab='devmet';render()">📉 Métricas de devoluciones</button>
         <button class="tab ${S.adminTab==="config"?"active":""}" onclick="S.adminTab='config';render()">⚙️ Configuración</button>
       </div>
     </div>
-    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():renderAdminConfig()}</div>
+    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():S.adminTab==="devmet"?renderMetricasDevoluciones():renderAdminConfig()}</div>
   </div>`;
 }
 
@@ -4398,13 +4425,14 @@ function renderLogistica(){
         <button class="tab ${S.tabLog==="metricas"?"active":""}" onclick="S.tabLog='metricas';render()">📊 Métricas</button>
         <button class="tab ${S.tabLog==="recorridos"?"active":""}" onclick="S.tabLog='recorridos';render()">🗺️ Recorridos</button>
         <button class="tab ${S.tabLog==="flotaDash"?"active":""}" onclick="S.tabLog='flotaDash';if(!S.flotaDash)cargarDashboardFlota();render()">🚚 Dashboard</button>
+        <button class="tab ${S.tabLog==="devMetricas"?"active":""}" onclick="S.tabLog='devMetricas';render()">📉 Métricas de devoluciones</button>
       </div>
       <div class="actions-bar">
-        ${!["recorridos","flotaDash"].includes(S.tabLog)?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>`:""}
+        ${!["recorridos","flotaDash","devMetricas"].includes(S.tabLog)?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>`:""}
         ${accesosRapidosHtml()}
       </div>
     </div>
-    <div class="vt-content">${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderArmarRecorrido():renderDashboardFlota()}</div>
+    <div class="vt-content">${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderArmarRecorrido():S.tabLog==="devMetricas"?renderMetricasDevoluciones():renderDashboardFlota()}</div>
   </div>`;
 }
 
