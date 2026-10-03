@@ -270,6 +270,66 @@ tr[onclick]:active td{background:var(--s3)}
 ::view-transition-new(root){animation:vtIn .34s cubic-bezier(.2,.8,.2,1) both}
 ::view-transition-group(navbar){animation-duration:0s}
 
+
+/* ══ Interfaz moderna: barra superior, encabezados, pestañas y tarjetas ══ */
+.nav-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.nav-actions .btn,.nav-user{min-height:38px;border-radius:10px}
+.nav-actions .btn{padding:7px 14px;position:relative}
+.nav-lbl{display:none}
+@media(min-width:560px){.nav-lbl{display:inline}}
+.nbadge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:var(--red);color:#fff;font-size:11px;font-weight:800;font-family:var(--mono);animation:dotIn .35s cubic-bezier(.2,1.2,.4,1) backwards}
+.nav-user{display:inline-flex;align-items:center;gap:8px;padding:0 14px;background:var(--s2);border:1px solid var(--border);font-size:13px;color:var(--text);font-weight:600}
+
+.page-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:22px}
+.page-title{font-size:26px;font-weight:800;letter-spacing:-.01em;line-height:1.15}
+.page-sub{font-size:14px;color:#a9b8d0;margin-top:4px}
+.actions-bar{display:flex;gap:8px;flex-wrap:wrap}
+.actions-bar .btn{min-height:42px;border-radius:10px}
+
+.tab{padding:9px 16px}
+.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.toolbar .tabs{margin-bottom:0}
+.datepill{display:inline-flex;align-items:center;gap:8px;padding:0 12px;min-height:42px;border-radius:10px;background:var(--s2);border:1px solid var(--border);color:var(--muted);font-size:13px;font-weight:600;transition:border-color .15s,box-shadow .2s}
+.datepill:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px #4f9eff26}
+.datepill input{background:transparent;border:0;color:var(--text);font-family:var(--font);font-size:14px;outline:none;color-scheme:dark;min-width:130px}
+.datepill button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 4px;border-radius:6px;transition:color .15s,background .15s}
+.datepill button:hover{color:var(--text);background:var(--s3)}
+
+.sol-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:14px}
+.sol-card{display:flex;flex-direction:column;position:relative;background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:16px 18px 16px 22px;cursor:pointer;overflow:hidden;transition:transform .22s cubic-bezier(.2,.8,.2,1),box-shadow .25s,border-color .2s;animation:cardIn .4s cubic-bezier(.2,.8,.2,1) backwards}
+.sol-card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--c,var(--border2))}
+.sol-card:hover{transform:translateY(-3px);box-shadow:0 14px 30px rgba(0,0,0,.38);border-color:var(--border2)}
+.sol-card:active{transform:translateY(-1px) scale(.99)}
+.sol-grid>.sol-card:nth-child(2){animation-delay:.04s}
+.sol-grid>.sol-card:nth-child(3){animation-delay:.08s}
+.sol-grid>.sol-card:nth-child(4){animation-delay:.12s}
+.sol-grid>.sol-card:nth-child(5){animation-delay:.16s}
+.sol-grid>.sol-card:nth-child(6){animation-delay:.2s}
+.sol-grid>.sol-card:nth-child(n+7){animation-delay:.24s}
+.sol-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.sol-id{font-family:var(--mono);font-size:12px;color:#8ea2c4}
+.sol-route{font-size:19px;font-weight:700;line-height:1.25;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.sol-route small{font-size:12px;font-weight:700;color:#a9b8d0;text-transform:uppercase;letter-spacing:.07em}
+.sol-desc{margin-top:6px;font-size:14.5px;color:var(--text);opacity:.9;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.sol-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;background:var(--s2);border:1px solid var(--border);font-size:12.5px;color:#c3cfe2;font-weight:600}
+.sol-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--border)}
+.sol-meta{margin-bottom:14px}
+.sol-card>.sol-meta:last-child{margin-bottom:0}
+.sol-actions .btn{flex:1 1 auto;justify-content:center}
+.sol-empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:#a9b8d0;font-size:15px}
+.sol-empty .ico{font-size:34px;margin-bottom:8px;opacity:.8}
+.sol-more{grid-column:1/-1;display:flex;justify-content:center;margin-top:4px}
+@media(max-width:640px){
+  .page-title{font-size:22px}
+  .sol-grid{grid-template-columns:1fr}
+  .actions-bar{width:100%}
+  .actions-bar .btn{flex:1 1 auto;justify-content:center}
+  .toolbar .datepill{width:100%}
+  .navbar .nav-actions{width:100%}
+  .navbar .nav-actions .btn,.navbar .nav-user{flex:1 1 0;justify-content:center}
+}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -713,7 +773,7 @@ let S = {
   fRepNombre:"",
   fRepSoloBolsin:false,
   subTabBolsines:"buzon",
-  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"", metSerie:"creadas", metEstadoSel:"", metDiaSel:"",
+  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"", metSerie:"creadas", metEstadoSel:"", metDiaSel:"", solLimites:{},
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   miIdentidadFresco:null, // {dni,nombre} — idem para Recepción Fresco (login compartido)
   miIdentidadTesoreria:null, // {dni,nombre} — idem para Tesorería (confirmar recepciones sin pedir DNI cada vez)
@@ -1511,7 +1571,7 @@ async function submitQueja(){
     area:     u.rol!=="sucursal" ? u.area : "",
     texto, fotoUrl, areaDestino,
     estado: "Pendiente",
-    creadoPor: u.nombre||u.area||"",
+    creadoPor: quienFirmaSesion(),
   });
   try{
     const { data, error } = await sb.from("quejas").insert(payload).select().single();
@@ -1817,7 +1877,7 @@ async function submitDevolucion(){
     sucursal: u.area||"",
     motivo: motivoResumen, fotoUrl,
     estado: "Pendiente",
-    creadoPor: u.nombre||u.area||"",
+    creadoPor: quienFirmaSesion(),
     productosJson: JSON.stringify(productosJson),
     tipoDevolucion: S.devolucionForm.tipo,
   });
@@ -2360,7 +2420,7 @@ function renderDevoluciones(){
               ${esRepartidor && d.estado==="En camino"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccion.has(d.id)?"checked":""} onchange="toggleDevolSeleccion('${escH(d.id)}',this.checked)"/>`:""}
               <div>
                 <strong>${escH(d.sucursal||"—")}</strong>
-                <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)} · ${escH(d.creadoPor||"—")}</span>
+                <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)}${d.creadoPor && normNotif(d.creadoPor)!==normNotif(d.sucursal)?` · ${escH(d.creadoPor)}`:""}</span>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
@@ -2775,43 +2835,29 @@ function renderApp(){
       <span>🚚</span><span>TransferLog</span>
       <span class="ntag ${tagClass}">${tagLabel}</span>
     </div>
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <!-- Quejas -->
-      <button class="btn ${S.vista==="quejas"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirQuejas()">
-        💬 <span style="display:none" class="quejas-lbl">Quejas</span>${(()=>{const ag=areaGestionadaPorUsuario();const n=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;return n>0?` (${n})`:"";})()}
-      </button>
-      <style>@media(min-width:480px){.quejas-lbl{display:inline!important}}</style>
-      ${puedeVerDevoluciones() && S.user?.rol!=="repartidor"?`
-      <!-- Separador -->
-      <span style="color:var(--border);font-size:16px">|</span>
-      <!-- Devoluciones -->
-      <button class="btn ${S.vista==="devoluciones"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirDevoluciones()">
-        📦 <span style="display:none" class="devol-lbl">Devoluciones</span>${S.devoluciones.filter(d=>d.estado==="Pendiente").length>0 && esGestorDevolucion()?` (${S.devoluciones.filter(d=>d.estado==="Pendiente").length})`:""}
-      </button>
-      <style>@media(min-width:480px){.devol-lbl{display:inline!important}}</style>`:""}
+    <div class="nav-actions">
+      ${(()=>{
+        const ag=areaGestionadaPorUsuario();
+        const nq=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;
+        return `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirQuejas()" title="Quejas">
+          💬 <span class="nav-lbl">Quejas</span>${nq>0?`<span class="nbadge">${nq}</span>`:""}
+        </button>`;
+      })()}
+      ${puedeVerDevoluciones() && S.user?.rol!=="repartidor"?(()=>{
+        const nd=esGestorDevolucion()?S.devoluciones.filter(d=>d.estado==="Pendiente").length:0;
+        return `<button class="btn ${S.vista==="devoluciones"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirDevoluciones()" title="Devoluciones">
+          📦 <span class="nav-lbl">Devoluciones</span>${nd>0?`<span class="nbadge">${nd}</span>`:""}
+        </button>`;
+      })():""}
       ${S.user?.rol==="logistica"?`
-      <!-- Separador -->
-      <span style="color:var(--border);font-size:16px">|</span>
-      <!-- Flota -->
-      <a class="btn btn-ghost btn-sm" href="https://dashboard-wheat-pi-94.vercel.app/" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">
-        🚛 <span style="display:none" class="flota-lbl">&nbsp;Flota</span>
-      </a>
-      <style>@media(min-width:480px){.flota-lbl{display:inline!important}}</style>`:""}
-      <!-- Separador -->
-      <span style="color:var(--border);font-size:16px">|</span>
-      <!-- Notificaciones -->
+      <a class="btn btn-ghost btn-sm" href="https://dashboard-wheat-pi-94.vercel.app/" target="_blank" rel="noopener" style="text-decoration:none" title="Flota">
+        🚛 <span class="nav-lbl">Flota</span>
+      </a>`:""}
       <button class="btn btn-ghost btn-sm" onclick="abrirNotificaciones()" title="Notificaciones">
-        🔔${misNotificaciones().length>0?` (${misNotificaciones().length})`:""}
+        🔔${misNotificaciones().length>0?`<span class="nbadge">${misNotificaciones().length}</span>`:""}
       </button>
-      <!-- Separador -->
-      <span style="color:var(--border);font-size:16px">|</span>
-      <!-- Nombre usuario -->
-      <span style="font-size:13px;color:var(--muted);display:none" class="usr-name">${escH(u.nombre||u.area||"")}</span>
-      <style>@media(min-width:400px){.usr-name{display:inline!important}}</style>
-      <!-- Cerrar sesión -->
-      <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">
-        Salir
-      </button>
+      ${nombreSesionVisible()?`<span class="nav-user" title="Sesión identificada">👤 ${escH(nombreSesionVisible())}</span>`:""}
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">Salir</button>
     </div>
   </nav>
   <main>${mainContent}</main>
@@ -2864,16 +2910,9 @@ function renderPlanificacion(){
   return `
   <div style="animation:fadeUp .3s ease">
     ${renderWidgetFlotaHoy()}
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
-      <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">${escH(u.area||"Planificación")}</h2>
-        <p style="color:var(--muted);font-size:13px">Solicitudes entre cualquier origen y destino</p>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
+    ${pageHead(escH(u.area||"Planificación"),"",`
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
-        ${areaN==="rrhh"?`<button class="btn btn-teal btn-md" onclick="openEnvioMasivoRRHH()">📨 Enviar a varias sucursales</button>`:""}
-      </div>
-    </div>
+        ${areaN==="rrhh"?`<button class="btn btn-teal btn-md" onclick="openEnvioMasivoRRHH()">📨 Enviar a varias sucursales</button>`:""}`)}
     ${(()=>{
       const pendQuiebre = mine.filter(r=>r.tipoPedido==="quiebreStock" && !r.planificadoAt);
       if(!pendQuiebre.length) return "";
@@ -2889,47 +2928,23 @@ function renderPlanificacion(){
         </div>
       </div>`;
     })()}
-    <div class="tabs">
-      <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas (${open.length})</button>
-      <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${hist.length})</button>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
-        <input type="date" class="inp" style="width:150px" value="${S.fPlanFecha}" onchange="S.fPlanFecha=this.value;render()"/>
-        ${S.fPlanFecha?`<button class="btn btn-ghost btn-sm" onclick="S.fPlanFecha='';render()">✕</button>`:""}
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas · ${open.length}</button>
+        <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial · ${hist.length}</button>
       </div>
+      ${datePill(S.fPlanFecha,"fPlanFecha")}
     </div>
-    <div class="card-flush">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>N°</th><th>Fecha</th><th>Origen</th><th>Destino</th>
-            <th>Descripción</th><th>Cant.</th><th>Prioridad</th><th>Estado</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${listF.length===0?`<tr class="empty-row"><td colspan="9">${S.fPlanFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No hay solicitudes abiertas":"Sin historial"}</td></tr>`:""}
-            ${listF.map(r=>{
-              // Planificación/RRHH/etc puede confirmar recepción cuando destino es fábrica/depósito
-              const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
-              const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
-              return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
-              <td class="id-cell">${escH(r.id)}</td>
-              <td class="muted-cell">${fd(r.createdAt)}</td>
-              <td style="font-weight:500">${escH(origenLabel(r))}</td>
-              <td class="muted-cell">${escH(r.destino)}</td>
-              <td><div class="trunc">${escH(r.descripcion)}</div></td>
-              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}${r.tipoPedido==="quiebreStock"&&r.cantidadOriginal&&+r.cantidadOriginal!==+r.cantidad?` <span style="color:var(--faint);text-decoration:line-through;font-size:11px">${escH(String(r.cantidadOriginal))}</span>`:""}</td>
-              <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
-              <td>${estadoBadges(r)}</td>
-              <td style="white-space:nowrap" onclick="event.stopPropagation()">
-                <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-                ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" style="margin-left:4px" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
-                ${puedeRecibirFab?`<button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar en fábrica</button>`:""}
-                ${["Aprobada","Programada"].includes(r.estado)?`<button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">✅ Lista</button>`:""}
-              </td>
-            </tr>`;}).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    ${solicitudesLista(listF,"plan-"+(S.tabSuc||"abiertas"),r=>{
+      // Planificación/RRHH/etc puede confirmar recepción cuando destino es fábrica/depósito
+      const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
+      const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
+      const botones = `
+        ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
+        ${puedeRecibirFab?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar en fábrica</button>`:""}
+        ${["Aprobada","Programada"].includes(r.estado)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}`.trim();
+      return solicitudCard(r, `${escH(origenLabel(r))} <span style="color:var(--faint)">→</span> ${escH(r.destino)}`, botones);
+    }, S.fPlanFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No hay solicitudes abiertas":"Sin historial")}
   </div>`;
 }
 
@@ -2942,15 +2957,12 @@ function renderCalidad(){
   const tab = S.tabCalidad || "metricas";
   return `
   <div style="animation:fadeUp .3s ease">
-    <div style="margin-bottom:16px">
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">🔍 Calidad</h2>
-      <p style="color:var(--muted);font-size:13px">Devoluciones de Fresco · ${escH(S.user.nombre||"")}</p>
-    </div>
+    ${pageHead("🔍 Calidad","Devoluciones de Fresco")}
     <div class="tabs" style="margin-bottom:20px">
       <button class="tab ${tab==="metricas"?"active":""}" onclick="S.tabCalidad='metricas';render()">📊 Métricas</button>
       <button class="tab ${tab==="transferencias"?"active":""}" onclick="S.tabCalidad='transferencias';render()">🚚 Transferencias</button>
     </div>
-    ${tab==="metricas"?renderMetricasCalidad():renderSucursalArea()}
+    ${tab==="metricas"?renderMetricasCalidad():renderSucursalArea({embedded:true})}
   </div>`;
 }
 
@@ -4055,53 +4067,23 @@ function renderRecepcionista(){
 
   return `
   <div style="animation:fadeUp .3s ease">
-    <div style="margin-bottom:20px">
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Recepción — Fábrica / Depósito</h2>
-      <p style="color:var(--muted);font-size:13px">${escH(u.nombre)} · Gestión de transferencias en fábrica</p>
-    </div>
-    <div class="tabs">
-      <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes (${entActivas.length})</button>
-      <button class="tab ${tab==="salientes"?"active":""}" onclick="S.tabSuc='salientes';render()">📤 Salientes (${salActivas.length})</button>
-      <button class="tab ${tab==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${entHist.length+salHist.length})</button>
-    </div>
-    <div class="card-flush">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>N°</th><th>Origen</th><th>Destino</th><th>Descripción</th>
-            <th>Cant.</th><th>Solicitante</th><th>Estado</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${list.length===0?`<tr class="empty-row"><td colspan="8">Sin transferencias</td></tr>`:""}
-            ${list.map(r=>{
-              const esSaliente   = esOrigenSoloFabrica(r);
-              const puedeRecibir = !esSaliente && r.estado==="En tránsito";
-              const puedeLista   = esSaliente && ["Aprobada","Programada"].includes(r.estado);
-              return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
-                <td class="id-cell">${escH(r.id)}</td>
-                <td style="font-weight:500">${escH(origenLabel(r))}</td>
-                <td class="muted-cell">${escH(r.destino)}</td>
-                <td><div class="trunc">${escH(r.descripcion)}</div></td>
-                <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
-                <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
-                <td>${estadoBadges(r)}</td>
-                <td style="white-space:nowrap" onclick="event.stopPropagation()">
-                  <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-                  ${puedeRecibir?`
-                  <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">
-                    🔑 Confirmar llegada
-                  </button>`:""}
-                  ${puedeLista?`
-                  <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">
-                    ✅ Lista para salir
-                  </button>`:""}
-                </td>
-              </tr>`;
-            }).join("")}
-          </tbody>
-        </table>
+    ${pageHead("Recepción","Gestión de transferencias en fábrica")}
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes · ${entActivas.length}</button>
+        <button class="tab ${tab==="salientes"?"active":""}" onclick="S.tabSuc='salientes';render()">📤 Salientes · ${salActivas.length}</button>
+        <button class="tab ${tab==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial · ${entHist.length+salHist.length}</button>
       </div>
     </div>
+    ${solicitudesLista(list,"rec-"+tab,r=>{
+      const esSaliente   = esOrigenSoloFabrica(r);
+      const puedeRecibir = !esSaliente && r.estado==="En tránsito";
+      const puedeLista   = esSaliente && ["Aprobada","Programada"].includes(r.estado);
+      const botones = `
+        ${puedeRecibir?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar llegada</button>`:""}
+        ${puedeLista?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Lista para salir</button>`:""}`.trim();
+      return solicitudCard(r, `${escH(origenLabel(r))} <span style="color:var(--faint)">→</span> ${escH(r.destino)}`, botones, `<span class="chip">👤 ${escH(solicitanteLabel(r))}</span>`);
+    },"Sin transferencias")}
     <div style="margin-top:16px;padding:12px 16px;background:var(--s2);border-radius:8px;font-size:13px;color:var(--muted);border-left:3px solid var(--teal)">
       📥 <strong>Entrantes:</strong> tocá <strong>Confirmar llegada</strong> cuando llega un repartidor — ingresás tu DNI y aparece la palabra para darle.<br/>
       📤 <strong>Salientes:</strong> tocá <strong>Lista para salir</strong> cuando tenés lista la mercadería para que retire el repartidor.
@@ -4153,8 +4135,8 @@ function renderRecepcionFresco(){
   return `
   <div style="animation:fadeUp .3s ease">
     <div style="margin-bottom:20px">
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">🥬 Recepción Fresco</h2>
-      <p style="color:var(--muted);font-size:13px">${escH(u.nombre)} · Preparación de pedidos de Planificación / Planificador Fresco</p>
+      <div class="page-title">🥬 Recepción Fresco</div>
+      <div class="page-sub">Preparación de pedidos de Planificación / Planificador Fresco</div>
     </div>
     ${S.miIdentidadFresco?`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--muted)">
@@ -4192,7 +4174,74 @@ function renderRecepcionFresco(){
   </div>`;
 }
 
-function renderSucursalArea(){
+
+// ── Identidad en pantalla ──────────────────────────────────────────
+// En sucursales y áreas hay varias personas por cuenta: al entrar NO se
+// muestra ningún nombre (el de la fila que justo se leyó no es de quien
+// está usando la app). El nombre aparece recién cuando alguien firma con
+// su DNI. Solo Logística (que se identifica con DNI al entrar) y Admin
+// muestran quién es la sesión.
+function nombreSesionVisible(){
+  const r=S.user?.rol;
+  return (r==="logistica"||r==="admin") ? (S.user.nombre||"") : "";
+}
+// A nombre de quién queda lo que se crea sin firma (quejas, devoluciones)
+function quienFirmaSesion(){
+  return nombreSesionVisible() || S.user?.area || S.user?.nombre || "";
+}
+
+// ── Piezas de interfaz compartidas ─────────────────────────────────
+function pageHead(titulo, subtitulo, accionesHtml){
+  return `<div class="page-head">
+    <div>
+      <div class="page-title">${titulo}</div>
+      ${subtitulo?`<div class="page-sub">${subtitulo}</div>`:""}
+    </div>
+    ${accionesHtml?`<div class="actions-bar">${accionesHtml}</div>`:""}
+  </div>`;
+}
+function datePill(val, stateKey){
+  return `<div class="datepill">📅
+    <input type="date" value="${escH(val||"")}" onchange="S.${stateKey}=this.value;render()"/>
+    ${val?`<button onclick="S.${stateKey}='';render()" title="Quitar fecha">✕</button>`:""}
+  </div>`;
+}
+// Tarjeta de solicitud: reemplaza las filas de tabla de 9-10 columnas.
+// Muestra solo lo que importa y deja afuera lo que se repite o es ruido
+// (prioridad "Media", botón "Ver" — la tarjeta entera se toca).
+function solicitudCard(r, rutaHtml, accionesHtml, extraChips){
+  const color = S_COLOR[r.estado] || "var(--border2)";
+  const prioMarcada = r.prioridad && r.prioridad!=="Media" && r.prioridad!=="Baja";
+  const cantOrig = r.tipoPedido==="quiebreStock" && r.cantidadOriginal && +r.cantidadOriginal!==+r.cantidad
+    ? ` <span style="color:var(--faint);text-decoration:line-through;font-size:11px">${escH(String(r.cantidadOriginal))}</span>` : "";
+  return `
+  <div class="sol-card" style="--c:${color}" onclick="openDetalle('${escH(r.id)}')">
+    <div class="sol-top">
+      <span class="sol-id">N° ${escH(r.id)} · ${fd(r.createdAt)}</span>
+      <span style="display:flex;gap:5px;flex-wrap:wrap">${prioMarcada?badge(r.prioridad,P_COLOR[r.prioridad]):""}${estadoBadges(r)}</span>
+    </div>
+    <div class="sol-route">${rutaHtml}</div>
+    <div class="sol-desc">${escH(r.descripcion||"")}</div>
+    <div class="sol-meta">
+      <span class="chip">📦 ${escH(String(r.cantidad))} ${escH(r.unidad||"")}${cantOrig}</span>
+      ${r.recorrido?`<span class="chip">🗺️ ${escH(r.recorrido)}</span>`:""}
+      ${r.fechaRequerida?`<span class="chip" title="Fecha pedida">📅 para ${fd(r.fechaRequerida)}</span>`:""}
+      ${extraChips||""}
+    </div>
+    ${accionesHtml?`<div class="sol-actions" onclick="event.stopPropagation()">${accionesHtml}</div>`:""}
+  </div>`;
+}
+function solicitudesLista(items, clave, cardFn, vacioTxt){
+  const lim = (S.solLimites && S.solLimites[clave]) || 30;
+  return `<div class="sol-grid">
+    ${!items.length?`<div class="sol-empty"><div class="ico">📭</div>${vacioTxt}</div>`:""}
+    ${items.slice(0,lim).map(cardFn).join("")}
+    ${items.length>lim?`<div class="sol-more"><button class="btn btn-ghost btn-md" onclick="S.solLimites=S.solLimites||{};S.solLimites['${clave}']=${lim+30};render()">Ver más (${items.length-lim})</button></div>`:""}
+  </div>`;
+}
+
+function renderSucursalArea(opts){
+  opts=opts||{};
   const u=S.user;
   // Incluir solicitudes donde la sucursal es ORIGEN o DESTINO
   // La sucursal que recibe también puede ver el estado de lo que le viene
@@ -4230,74 +4279,33 @@ function renderSucursalArea(){
              : [...hist, ...lleganHistorial];
   const listF = S.fSucFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fSucFecha)) : list;
 
+  const acciones = `
+        <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
+        ${u.rol==="sucursal"?`<button class="btn btn-danger btn-md" onclick="openQuiebreStock()">🚨 Quiebre de stock</button>`:""}
+        ${bolsinesActivo() && u.rol!=="calidad"?`<button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>`:""}`;
+  const cardSuc = r=>{
+    const esOrigen = matchArea(r.sucursal)||matchArea(r.area);
+    const ruta = esOrigen ? `<small>Para</small> ${escH(r.destino)}` : `<small>De</small> ${escH(origenLabel(r))}`;
+    const botones = `
+      ${esOrigen && ["Aprobada","Programada"].includes(r.estado)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}
+      ${!esOrigen && r.estado==="En tránsito" && !esOtraDireccion(r.destino)?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Recibir</button>`:""}
+      ${!esOrigen && r.estado==="Entregada (sin confirmar)" && !(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino))?`<button class="btn btn-success btn-sm" onclick="openConfirmarCerrado('${escH(r.id)}')">✅ Confirmar transferencia</button>`:""}`.trim();
+    return solicitudCard(r, ruta, botones);
+  };
   return `
   <div style="animation:fadeUp .3s ease">
     ${renderWidgetFlotaHoy()}
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
-      <div>
-        <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Mis Solicitudes</h2>
-        <p style="color:var(--muted);font-size:13px">${escH(u.area)} · ${escH(u.nombre)}</p>
+    ${opts.embedded ? "" : pageHead("Mis solicitudes","",acciones)}
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas · ${open.length}</button>
+        <button class="tab ${S.tabSuc==="destino"?"active":""}" onclick="S.tabSuc='destino';render()">📥 Me llegan · ${lleganActivas.length}</button>
+        <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial · ${hist.length}</button>
       </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
-        ${u.rol==="sucursal"?`<button class="btn btn-danger btn-md" onclick="openQuiebreStock()">🚨 Quiebre de stock</button>`:""}
-        ${bolsinesActivo() && u.rol!=="calidad"?`
-        <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>`:""}
-      </div>
+      <div class="actions-bar">${datePill(S.fSucFecha,"fSucFecha")}${opts.embedded?acciones:""}</div>
     </div>
-    <div class="tabs">
-      <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas (${open.length})</button>
-      <button class="tab ${S.tabSuc==="destino"?"active":""}" onclick="S.tabSuc='destino';render()">📥 Me llegan (${lleganActivas.length})</button>
-      <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${hist.length})</button>
-      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
-        <input type="date" class="inp" style="width:150px" value="${S.fSucFecha}" onchange="S.fSucFecha=this.value;render()"/>
-        ${S.fSucFecha?`<button class="btn btn-ghost btn-sm" onclick="S.fSucFecha='';render()">✕</button>`:""}
-      </div>
-    </div>
-    <div class="card-flush">
-      <div class="table-wrap">
-        <table>
-          <thead><tr>
-            <th>N°</th><th>Fecha</th><th>Rol</th><th>Descripción</th><th>Cant.</th>
-            <th>Origen/Destino</th><th>Prioridad</th><th>Estado</th><th>Recorrido</th><th></th>
-          </tr></thead>
-          <tbody>
-            ${listF.length===0?`<tr class="empty-row"><td colspan="10">${S.fSucFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No tenés solicitudes abiertas":S.tabSuc==="destino"?"No hay transferencias entrantes":"Sin historial aún"}</td></tr>`:""}
-            ${listF.map(r=>{
-              const esOrigen = matchArea(r.sucursal)||matchArea(r.area);
-              const rolBadge = esOrigen
-                ? `<span style="font-size:11px;color:var(--muted)">📤 Origen</span>`
-                : `<span style="font-size:11px;color:var(--teal)">📥 Destino</span>`;
-              return `<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
-              <td class="id-cell">${escH(r.id)}</td>
-              <td class="muted-cell">${fd(r.createdAt)}</td>
-              <td>${rolBadge}</td>
-              <td><div class="trunc">${escH(r.descripcion)}</div></td>
-              <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
-              <td class="muted-cell">${esOrigen?escH(r.destino):escH(origenLabel(r))}</td>
-              <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
-              <td>${estadoBadges(r)}</td>
-              <td class="muted-cell">${escH(r.recorrido||"—")}</td>
-              <td style="white-space:nowrap" onclick="event.stopPropagation()">
-                <button class="btn btn-ghost btn-sm" onclick="openDetalle('${escH(r.id)}')">Ver</button>
-                ${esOrigen && ["Aprobada","Programada"].includes(r.estado)?`
-                <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openListo('${escH(r.id)}')">
-                  ✅ Lista
-                </button>`:""}
-                ${!esOrigen && r.estado==="En tránsito" && !esOtraDireccion(r.destino)?`
-                <button class="btn btn-teal btn-sm" style="margin-left:4px" onclick="openCodigoEntrega('${escH(r.id)}')">
-                  🔑 Recibir
-                </button>`:""}
-                ${!esOrigen && r.estado==="Entregada (sin confirmar)" && !(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino))?`
-                <button class="btn btn-success btn-sm" style="margin-left:4px" onclick="openConfirmarCerrado('${escH(r.id)}')">
-                  ✅ Confirmar transferencia
-                </button>`:""}
-              </td>
-            </tr>`;}).join("")}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    ${solicitudesLista(listF,"suc-"+(S.tabSuc||"abiertas"),cardSuc,
+        S.fSucFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No tenés solicitudes abiertas":S.tabSuc==="destino"?"No hay transferencias entrantes":"Sin historial aún")}
   </div>`;
 }
 
@@ -5747,9 +5755,8 @@ function renderRepartidor(){
   return `
   <div style="animation:fadeUp .3s ease">
     <div style="margin-bottom:20px">
-      <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Panel de Reparto</h2>
-      <p style="color:var(--muted);font-size:13px">Hola <strong style="color:var(--text)">${escH(u.nombre)}</strong>
-        ${u.recorrido?`· Recorrido: ${badge(u.recorrido,"var(--teal)")}`:""}</p>
+      <div class="page-title">Panel de reparto</div>
+      ${u.recorrido?`<div class="page-sub">Recorrido: ${badge(u.recorrido,"var(--teal)")}</div>`:""}
     </div>
     ${S.miIdentidadRep?`
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--muted)">
