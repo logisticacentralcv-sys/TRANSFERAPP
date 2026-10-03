@@ -363,6 +363,30 @@ tr[onclick]:active td{background:var(--s3)}
   .toolbar .tabs .tab-n{font-size:12px;min-width:20px}
 }
 
+
+/* ── Marca de la barra superior, a tono con el resto ── */
+.navbar{padding:10px 24px;min-height:66px;background:rgba(17,24,39,.84);backdrop-filter:blur(14px) saturate(1.4);-webkit-backdrop-filter:blur(14px) saturate(1.4);border-bottom:1px solid var(--border);box-shadow:0 10px 30px rgba(0,0,0,.22)}
+.navbar-brand{gap:14px;font-size:inherit;font-weight:inherit}
+.brand-main{display:inline-flex;align-items:center;gap:12px}
+.brand-logo{width:40px;height:40px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;font-size:21px;
+  background:linear-gradient(135deg,#4f9eff33,#2de0c433);border:1px solid #4f9eff55;box-shadow:0 6px 18px #4f9eff2b,inset 0 1px 0 #ffffff14;
+  transition:transform .25s cubic-bezier(.2,.9,.25,1.2)}
+.navbar-brand:hover .brand-logo{transform:rotate(-8deg) scale(1.06)}
+.brand-name{font-size:20px;font-weight:800;letter-spacing:-.025em;color:var(--text)}
+.brand-accent{background:linear-gradient(90deg,#4f9eff,#2de0c4);-webkit-background-clip:text;background-clip:text;color:transparent;-webkit-text-fill-color:transparent}
+.ntag{display:inline-flex;align-items:center;padding:6px 14px;border-radius:999px;font-size:13px;font-weight:700;letter-spacing:.03em;font-family:var(--font)}
+.ntag::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:9px;box-shadow:0 0 9px currentColor}
+.ntag-teal{background:#2de0c418;color:var(--teal);border-color:#2de0c430}
+.nav-actions .btn,.nav-user{min-height:40px}
+.login-brand .ico{width:68px;height:68px;margin:0 auto 14px;border-radius:20px;display:flex;align-items:center;justify-content:center;font-size:34px;
+  background:linear-gradient(135deg,#4f9eff33,#2de0c433);border:1px solid #4f9eff55;box-shadow:0 10px 30px #4f9eff2b,inset 0 1px 0 #ffffff14}
+@media(max-width:600px){
+  .navbar{padding:10px 14px}
+  .brand-logo{width:36px;height:36px;font-size:19px}
+  .brand-name{font-size:18px}
+  .ntag{padding:5px 12px;font-size:12.5px}
+}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -2847,7 +2871,7 @@ function checkIfSucursal(){
 // ══════════════════════════════════════════════════════════
 function renderApp(){
   const u=S.user;
-  const tagClass = {logistica:"ntag-log",sucursal:"ntag-suc",area:"ntag-adm",repartidor:"ntag-rep",planificacion:"ntag-adm",recepcionista:"ntag-teal",tesoreria:"ntag-teal"}[u.rol]||"ntag-suc";
+  const tagClass = {logistica:"ntag-log",sucursal:"ntag-suc",area:"ntag-adm",repartidor:"ntag-rep",planificacion:"ntag-adm",recepcionista:"ntag-teal",tesoreria:"ntag-teal",calidad:"ntag-adm"}[u.rol]||"ntag-suc";
   const tagLabel = {
     logistica:     "LOGÍSTICA",
     sucursal:      u.area||"SUCURSAL",
@@ -2879,7 +2903,10 @@ function renderApp(){
   return `
   <nav class="navbar">
     <div class="navbar-brand">
-      <span>🚚</span><span>TransferLog</span>
+      <span class="brand-main">
+        <span class="brand-logo">🚚</span>
+        <span class="brand-name">Transfer<span class="brand-accent">Log</span></span>
+      </span>
       <span class="ntag ${tagClass}">${tagLabel}</span>
     </div>
     <div class="nav-actions">
@@ -2936,8 +2963,8 @@ function renderPlanificacion(){
     }
     return false;
   });
-  const open  = mine.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const hist  = mine.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
+  const open  = mine.filter(r=>!estaCerradaParaSucursal(r));
+  const hist  = mine.filter(r=>estaCerradaParaSucursal(r));
   const list  = S.tabSuc==="historial" ? hist : open;
   const listF = S.fPlanFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fPlanFecha)) : list;
 
@@ -4334,11 +4361,11 @@ function renderSucursalArea(opts){
 
   const miosPedidos    = mine.filter(r => matchArea(r.sucursal)||matchArea(r.area));
   const miDestinoQ     = mine.filter(r => matchArea(r.destino) && !matchArea(r.sucursal) && !matchArea(r.area));
-  const lleganActivas  = miDestinoQ.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const lleganHistorial= miDestinoQ.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const open=mine.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const hist=mine.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado));
-  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"].includes(r.estado))
+  const lleganActivas  = miDestinoQ.filter(r=>!estaCerradaParaSucursal(r));
+  const lleganHistorial= miDestinoQ.filter(r=>estaCerradaParaSucursal(r));
+  const open=mine.filter(r=>!estaCerradaParaSucursal(r));
+  const hist=mine.filter(r=>estaCerradaParaSucursal(r));
+  const list = S.tabSuc==="abiertas" ? miosPedidos.filter(r=>!estaCerradaParaSucursal(r))
              : S.tabSuc==="destino"  ? lleganActivas
              : [...hist, ...lleganHistorial];
   const listF = S.fSucFecha ? list.filter(r=>r.createdAt && r.createdAt.startsWith(S.fSucFecha)) : list;
@@ -9238,6 +9265,18 @@ async function submitNoEntrega(){
 // Fábrica y Tesorería son, a estos fines, "el mismo buzón" — un bolsín
 // con cualquiera de esos dos como destino final SIEMPRE pasa por el
 // buzón antes de poder confirmarse como entregado.
+// Un bolsín que ya está en el buzón — sea con el estado nuevo "En el buzón" o
+// con el viejo "Entregada (sin confirmar)" de los que todavía no se
+// migraron — ya no es un pendiente de la sucursal que lo mandó: pasa a
+// Historial y no cuenta como "Abierta".
+const ESTADOS_CERRADOS_SUCURSAL = ["Entregada","Rechazada","Cancelada","No entregada","No levantada","En el buzón"];
+function esBolsinEnBuzon(r){
+  return r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino) && ["En el buzón","Entregada (sin confirmar)"].includes(r.estado);
+}
+function estaCerradaParaSucursal(r){
+  return ESTADOS_CERRADOS_SUCURSAL.includes(r.estado) || esBolsinEnBuzon(r);
+}
+
 function esDestinoBuzon(destino){
   const n = normNotif(destino);
   return n==="tesoreria" || n==="fabrica";
