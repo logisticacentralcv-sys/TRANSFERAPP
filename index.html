@@ -609,7 +609,7 @@ let S = {
   devolucionFiltroFecha: "",
   devolucionFiltroProducto: "",
   devolucionFiltroTipo: "",
-  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "",
+  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "", calidadDiaSel: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
@@ -643,7 +643,7 @@ let S = {
   fRepNombre:"",
   fRepSoloBolsin:false,
   subTabBolsines:"buzon",
-  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"", metSerie:"creadas", metEstadoSel:"",
+  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"", metSerie:"creadas", metEstadoSel:"", metDiaSel:"",
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   miIdentidadFresco:null, // {dni,nombre} — idem para Recepción Fresco (login compartido)
   miIdentidadTesoreria:null, // {dni,nombre} — idem para Tesorería (confirmar recepciones sin pedir DNI cada vez)
@@ -2993,8 +2993,19 @@ function barrasHorizontales(filas, color, total){
   }).join("")}</div>`;
 }
 
-// Línea de evolución con área, grilla y valores sobre cada punto
-function graficoEvolucion(puntos, color, id){
+// Línea de evolución con área, grilla y valores sobre cada punto.
+// Interactiva: pasar el mouse por una columna marca ese día (línea
+// vertical, punto resaltado y un cartel con la fecha y el valor); tocar
+// dispara onClickFn(key) para bajar al detalle de ese día.
+const _evReg = {};
+function diaLargo(key){
+  const d=new Date(String(key)+"T12:00:00");
+  if(isNaN(d)) return String(key);
+  const dias=["Domingo","Lunes","Martes","Miércoles","Jueves","Viernes","Sábado"];
+  return `${dias[d.getDay()]} ${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+}
+function graficoEvolucion(puntos, color, id, opts){
+  opts=opts||{};
   if(!puntos.length) return `<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:30px">Sin datos en este rango.</p>`;
   const n=puntos.length, W=Math.min(Math.max(720,n*52),1000), H=300, pL=54, pR=24, pT=34, pB=50;
   const maxV=Math.max(...puntos.map(p=>p.valor),0.0001);
@@ -3003,24 +3014,82 @@ function graficoEvolucion(puntos, color, id){
   const top=Math.ceil(maxV/paso)*paso||1;
   const X=i=> n===1 ? W/2 : pL+i*(W-pL-pR)/(n-1);
   const Y=v=> pT+(H-pT-pB)*(1-v/top);
+  const Xs=puntos.map((_,i)=>X(i)), Ys=puntos.map(p=>Y(p.valor));
+  _evReg[id]={puntos, X:Xs, Y:Ys, W, color, unidadTxt:opts.unidadTxt||"", onClickFn:opts.onClickFn||""};
+  const selI = opts.sel ? puntos.findIndex(p=>p.key===opts.sel) : -1;
   let grid="";
   for(let t=0;t<=top+paso/2;t+=paso){
     grid += `<line x1="${pL}" x2="${W-pR}" y1="${Y(t)}" y2="${Y(t)}" stroke="#263348" stroke-width="1"/>
       <text x="${pL-10}" y="${Y(t)+5}" text-anchor="end" style="font-size:13px;fill:#a9b8d0">${fmtNum(Math.round(t*100)/100)}</text>`;
   }
-  const linea=puntos.map((p,i)=>`${i?"L":"M"}${X(i)},${Y(p.valor)}`).join(" ");
-  const area=`${linea} L${X(n-1)},${Y(0)} L${X(0)},${Y(0)} Z`;
+  const linea=puntos.map((p,i)=>`${i?"L":"M"}${Xs[i]},${Ys[i]}`).join(" ");
+  const area=`${linea} L${Xs[n-1]},${Y(0)} L${Xs[0]},${Y(0)} Z`;
   const pasoX=Math.ceil(n/12);
-  const ejeX=puntos.map((p,i)=> i%pasoX===0 ? `<text x="${X(i)}" y="${H-18}" text-anchor="middle" style="font-size:13px;fill:#a9b8d0">${escH(p.label)}</text>`:"").join("");
-  const dots=puntos.map((p,i)=>`<circle cx="${X(i)}" cy="${Y(p.valor)}" r="5" fill="${color}" stroke="#111827" stroke-width="2"/>
-    ${n<=18?`<text x="${X(i)}" y="${Y(p.valor)-12}" text-anchor="middle" style="font-size:13.5px;font-weight:700;fill:#e2e8f4">${fmtNum(Math.round(p.valor*10)/10)}</text>`:""}`).join("");
-  return `<div style="overflow-x:auto"><svg viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${W}px;max-height:440px;height:auto;display:block">
-    <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".38"/><stop offset="100%" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs>
+  const ejeX=puntos.map((p,i)=> i%pasoX===0 ? `<text x="${Xs[i]}" y="${H-18}" text-anchor="middle" style="font-size:13px;fill:#a9b8d0">${escH(p.label)}</text>`:"").join("");
+  const dots=puntos.map((p,i)=>`<circle cx="${Xs[i]}" cy="${Ys[i]}" r="${i===selI?7:5}" fill="${color}" stroke="#111827" stroke-width="2"/>
+    ${n<=18?`<text x="${Xs[i]}" y="${Ys[i]-(i===selI?15:12)}" text-anchor="middle" style="font-size:${i===selI?15:13.5}px;font-weight:700;fill:#e2e8f4">${fmtNum(Math.round(p.valor*10)/10)}</text>`:""}`).join("");
+  const selMarca = selI>=0 ? `
+    <line x1="${Xs[selI]}" x2="${Xs[selI]}" y1="${pT-8}" y2="${Y(0)}" stroke="${color}" stroke-width="2" stroke-dasharray="5 4" opacity=".9"/>
+    <circle cx="${Xs[selI]}" cy="${Ys[selI]}" r="12" fill="none" stroke="${color}" stroke-width="2.5"/>` : "";
+  const ancho = n===1 ? W-pL-pR : (W-pL-pR)/(n-1);
+  const bandas=puntos.map((p,i)=>`<rect x="${Xs[i]-ancho/2}" y="${pT-10}" width="${ancho}" height="${H-pT-pB+10}" fill="transparent" style="cursor:pointer"
+    onmouseenter="evResaltar('${id}',${i})" onmouseleave="evRestaurar('${id}')" onclick="evClick('${id}',${i})"/>`).join("");
+  return `<div style="overflow-x:auto"><svg id="ev-${id}" viewBox="0 0 ${W} ${H}" style="width:100%;min-width:${W}px;max-height:440px;height:auto;display:block">
+    <defs><linearGradient id="grad-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".38"/><stop offset="100%" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs>
     ${grid}
-    <path d="${area}" fill="url(#${id})"/>
+    <path d="${area}" fill="url(#grad-${id})"/>
     <path d="${linea}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
-    ${dots}${ejeX}
+    ${selMarca}${dots}${ejeX}
+    <line class="ev-vl" x1="0" x2="0" y1="${pT-8}" y2="${Y(0)}" stroke="#e2e8f4" stroke-width="1.5" stroke-dasharray="4 4" opacity=".55" style="visibility:hidden;pointer-events:none"/>
+    <circle class="ev-ring" cx="0" cy="0" r="11" fill="none" stroke="#e2e8f4" stroke-width="2.5" style="visibility:hidden;pointer-events:none"/>
+    <g class="ev-tip" style="visibility:hidden;pointer-events:none">
+      <rect class="ev-tr" rx="9" ry="9" fill="#0b1120" stroke="${color}" stroke-width="1.5"/>
+      <text class="ev-t1" style="font-size:14px;font-weight:700;fill:#e2e8f4"></text>
+      <text class="ev-t2" style="font-size:16px;font-weight:800;fill:${color}"></text>
+      <text class="ev-t3" style="font-size:12px;fill:#a9b8d0"></text>
+    </g>
+    ${bandas}
   </svg></div>`;
+}
+function evResaltar(id,i){
+  const svg=document.getElementById("ev-"+id), reg=_evReg[id]; if(!svg||!reg) return;
+  const p=reg.puntos[i], x=reg.X[i], y=reg.Y[i];
+  const vl=svg.querySelector(".ev-vl"); vl.setAttribute("x1",x); vl.setAttribute("x2",x); vl.style.visibility="visible";
+  const ring=svg.querySelector(".ev-ring"); ring.setAttribute("cx",x); ring.setAttribute("cy",y); ring.style.visibility="visible";
+  const g=svg.querySelector(".ev-tip"), r=g.querySelector(".ev-tr");
+  const t1=g.querySelector(".ev-t1"), t2=g.querySelector(".ev-t2"), t3=g.querySelector(".ev-t3");
+  t1.textContent=diaLargo(p.key||p.label);
+  t2.textContent=`${fmtNum(Math.round(p.valor*10)/10)} ${reg.unidadTxt}`.trim();
+  t3.textContent=reg.onClickFn?"Tocá para ver el detalle":"";
+  g.style.visibility="visible";
+  const w=Math.max(t1.getComputedTextLength(),t2.getComputedTextLength(),t3.getComputedTextLength())+28, h=reg.onClickFn?70:52;
+  let tx=x+16; if(tx+w>reg.W-4) tx=x-16-w; if(tx<4) tx=4;
+  let ty=y-h-12; if(ty<4) ty=y+16;
+  r.setAttribute("x",tx); r.setAttribute("y",ty); r.setAttribute("width",w); r.setAttribute("height",h);
+  t1.setAttribute("x",tx+14); t1.setAttribute("y",ty+22);
+  t2.setAttribute("x",tx+14); t2.setAttribute("y",ty+44);
+  t3.setAttribute("x",tx+14); t3.setAttribute("y",ty+62);
+}
+function evRestaurar(id){
+  const svg=document.getElementById("ev-"+id); if(!svg) return;
+  svg.querySelector(".ev-vl").style.visibility="hidden";
+  svg.querySelector(".ev-ring").style.visibility="hidden";
+  svg.querySelector(".ev-tip").style.visibility="hidden";
+}
+function evClick(id,i){
+  const reg=_evReg[id]; if(!reg||!reg.onClickFn) return;
+  const fn=window[reg.onClickFn]; if(fn) fn(reg.puntos[i].key);
+}
+
+function calidadSeleccionarDia(key){
+  S.calidadDiaSel = (S.calidadDiaSel===key) ? "" : key;
+  render();
+  if(S.calidadDiaSel) setTimeout(()=>{ document.getElementById("calidad-detalle-dia")?.scrollIntoView({behavior:"smooth",block:"start"}); },80);
+}
+function metSeleccionarDia(key){
+  S.metDiaSel = (S.metDiaSel===key) ? "" : key;
+  render();
+  if(S.metDiaSel) setTimeout(()=>{ document.getElementById("met-detalle-dia")?.scrollIntoView({behavior:"smooth",block:"start"}); },80);
 }
 
 function metSeleccionarEstado(label){
@@ -3092,7 +3161,7 @@ function renderMetricasCalidad(){
     porDia[p.fecha]=(porDia[p.fecha]||0)+suma;
   });
   const dias=Object.keys(porDia).sort().slice(-45);
-  const puntos=dias.map(f=>({label:`${f.slice(8,10)}/${f.slice(5,7)}`, valor:porDia[f]}));
+  const puntos=dias.map(f=>({key:f, label:`${f.slice(8,10)}/${f.slice(5,7)}`, valor:porDia[f]}));
   const colorMetrica = metrica==="devs"?"#2de0c4":metrica==="kg"?"#f5a623":"#4f9eff";
   const unidadMetrica = metrica==="devs"?"devoluciones por día":metrica==="kg"?"kg devueltos por día":"unidades devueltas por día";
 
@@ -3156,12 +3225,47 @@ function renderMetricasCalidad(){
     ${q?chip(`🔎 ${escH(q)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadProducto='';render()">✕</button>`):chip("Todos los productos")}
     ${(desde||hasta)?chip(`📅 ${desde?fechaCortaISO(desde):"…"} → ${hasta?fechaCortaISO(hasta):"hoy"}`):""}
     <span style="margin-left:auto;font-size:13px;color:#a9b8d0">${devs.length} devolución${devs.length!==1?"es":""} · ${items.length} línea${items.length!==1?"s":""}</span>
-    <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadMotivoSel='';render()">✕ Limpiar</button>
+    <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadMotivoSel='';S.calidadDiaSel='';render()">✕ Limpiar</button>
   </div>`:"";
 
   const topProd=rankingProd[0], topMotivo=datosMotivo[0];
   const cardStyle="padding:24px;margin-bottom:20px";
   const pill=(val,txt)=>`<button class="btn ${metrica===val?"btn-primary":"btn-ghost"} btn-sm" onclick="S.calidadMetrica='${val}';render()">${txt}</button>`;
+
+  // ── Detalle del día elegido en el gráfico de evolución ──
+  const diaSel = (S.calidadDiaSel && dias.includes(S.calidadDiaSel)) ? S.calidadDiaSel : "";
+  let detalleDia="";
+  if(diaSel){
+    const itsD=items.filter(p=>p.fecha===diaSel);
+    const devsD=devs.filter(d=>d.createdAt && d.createdAt.slice(0,10)===diaSel);
+    const kgD=itsD.filter(p=>esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
+    const unD=itsD.filter(p=>!esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
+    const agr=fn=>{ const m={}; itsD.forEach(p=>{ const k=fn(p)||"—"; const o=m[k]=m[k]||{n:0,kg:0}; o.n++; if(esKg(p.unidad)) o.kg+=(+p.cantidad||0); }); return Object.entries(m).sort((a,b)=>b[1].n-a[1].n||b[1].kg-a[1].kg); };
+    const fMot=agr(motivoBase).map(([k,v],i)=>({label:k,valor:v.n,color:colorMotivoCalidad(k,i),extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
+    const fProd=agr(p=>p.descripcion).slice(0,10).map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:"",onclickAttr:attrFiltrar(k)}));
+    const fSuc=agr(p=>p.sucursal).slice(0,10).map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
+    detalleDia=`
+    <div id="calidad-detalle-dia" class="card" style="${cardStyle};border-left:5px solid ${colorMetrica};scroll-margin-top:130px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        ${tituloGrafico(escH(diaLargo(diaSel)), `${devsD.length} devolución${devsD.length!==1?"es":""} · ${itsD.length} producto${itsD.length!==1?"s":""}${kgD?` · ${fmtNum(Math.round(kgD*10)/10)} kg`:""}${unD?` · ${fmtNum(Math.round(unD))} unidades`:""}${q?` · solo "${escH(q)}"`:""}`)}
+        <button class="btn btn-ghost btn-sm" onclick="calidadSeleccionarDia('${diaSel}')">✕ Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px;margin-bottom:24px">
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Motivos</div>${barrasHorizontales(fMot,null,itsD.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Productos</div>${barrasHorizontales(fProd,colorMetrica,itsD.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Sucursales</div>${barrasHorizontales(fSuc,"#4f9eff",itsD.length)}</div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px">Todo lo devuelto ese día</div>
+      <div class="table-wrap"><table style="font-size:15px">
+        <thead><tr><th style="font-size:13px;color:#a9b8d0">Sucursal</th><th style="font-size:13px;color:#a9b8d0">Producto</th><th style="font-size:13px;color:#a9b8d0">Cantidad</th><th style="font-size:13px;color:#a9b8d0">Motivo</th></tr></thead>
+        <tbody>${itsD.slice(0,60).map(p=>`<tr>
+          <td style="font-weight:600">${escH(p.sucursal)}</td><td>${escH(p.descripcion||"")}</td>
+          <td class="mono" style="font-weight:700">${fmtNum(+p.cantidad||0)} ${escH(p.unidad||"")}</td>
+          <td><span style="color:${colorMotivoCalidad(motivoBase(p),0)};font-weight:700">${escH(motivoBase(p))}</span></td>
+        </tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
+  }
 
   // ── Detalle de la porción elegida en la dona ──
   let detalleMotivo="";
@@ -3233,8 +3337,11 @@ function renderMetricasCalidad(){
       ${tituloGrafico("Evolución en el tiempo", unidadMetrica)}
       <div style="display:flex;gap:6px;flex-wrap:wrap">${pill("devs","Devoluciones")}${pill("kg","Kg")}${pill("unid","Unidades")}</div>
     </div>
-    ${graficoEvolucion(puntos,colorMetrica,"gradEvo")}
+    ${graficoEvolucion(puntos,colorMetrica,"calidad",{sel:diaSel,onClickFn:"calidadSeleccionarDia",unidadTxt:metrica==="devs"?"devoluciones":metrica==="kg"?"kg":"unidades"})}
+    ${!diaSel?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Pasá el mouse por un día para ver su valor, y tocalo para ver qué se devolvió ese día.</p>`:""}
   </div>
+
+  ${detalleDia}
 
   <div class="card" style="${cardStyle}">
     ${tituloGrafico("¿Por qué se devuelve?", q?`Motivos de "${escH(q)}" · tocá una porción para ver de dónde sale`:"Reparto por motivo · tocá una porción para ver qué productos y sucursales lo explican")}
@@ -5320,14 +5427,47 @@ function renderMetricas(){
   if(serie==="creadas") reqs.forEach(r=>{ const f=r.createdAt?r.createdAt.slice(0,10):null; if(f) porDiaL[f]=(porDiaL[f]||0)+1; });
   else reqs.filter(r=>r.estado==="Entregada"&&r.deliveredAt).forEach(r=>{ const f=fechaLocalDeTimestamp(r.deliveredAt); if(f) porDiaL[f]=(porDiaL[f]||0)+1; });
   const diasL = Object.keys(porDiaL).sort().slice(-45);
-  const puntosL = diasL.map(f=>({label:`${f.slice(8,10)}/${f.slice(5,7)}`, valor:porDiaL[f]}));
+  const puntosL = diasL.map(f=>({key:f, label:`${f.slice(8,10)}/${f.slice(5,7)}`, valor:porDiaL[f]}));
   const pillL = (val,txt)=>`<button class="btn ${serie===val?"btn-primary":"btn-ghost"} btn-sm" onclick="S.metSerie='${val}';render()">${txt}</button>`;
+
+  const cardL = "padding:24px;grid-column:1/-1";
+  // ── Detalle del día elegido en la línea de evolución ──
+  const diaSelL = (S.metDiaSel && diasL.includes(S.metDiaSel)) ? S.metDiaSel : "";
+  let detalleDiaL = "";
+  if(diaSelL){
+    const colL = serie==="creadas"?"#4f9eff":"#2de0c4";
+    const itsL = serie==="creadas"
+      ? reqs.filter(r=>r.createdAt && r.createdAt.slice(0,10)===diaSelL)
+      : reqs.filter(r=>r.estado==="Entregada" && r.deliveredAt && fechaLocalDeTimestamp(r.deliveredAt)===diaSelL);
+    const grpL = (fn,colorFn)=>{ const m={}; itsL.forEach(r=>{ const k=fn(r)||"—"; m[k]=(m[k]||0)+1; }); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>({label:k,valor:v,color:colorFn?colorFn(k):undefined})); };
+    detalleDiaL = `
+    <div id="met-detalle-dia" class="card" style="${cardL};border-left:5px solid ${colL};scroll-margin-top:130px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        ${tituloGrafico(escH(diaLargo(diaSelL)), `${itsL.length} solicitud${itsL.length!==1?"es":""} ${serie==="creadas"?"creadas":"entregadas"} ese día`)}
+        <button class="btn btn-ghost btn-sm" onclick="metSeleccionarDia('${diaSelL}')">✕ Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:32px;margin-bottom:24px">
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Estado</div>${barrasHorizontales(grpL(r=>r.estado,k=>colorHex(S_COLOR[k])),null,itsL.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Origen</div>${barrasHorizontales(grpL(r=>r.sucursal||r.area),colL,itsL.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Destino</div>${barrasHorizontales(grpL(r=>r.destino),colL,itsL.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Recorrido</div>${barrasHorizontales(grpL(r=>r.recorrido||"Sin recorrido"),colL,itsL.length)}</div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px">Solicitudes de ese día</div>
+      <div class="table-wrap"><table style="font-size:14px">
+        <thead><tr><th>N°</th><th>Origen</th><th>Destino</th><th>Descripción</th><th>Estado</th></tr></thead>
+        <tbody>${itsL.slice(0,60).map(r=>`
+          <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+            <td class="id-cell">${escH(r.id)}</td><td>${escH(r.sucursal||r.area||"—")}</td><td>${escH(r.destino||"—")}</td>
+            <td><div class="trunc">${escH(r.descripcion||"")}</div></td><td>${estadoBadges(r)}</td>
+          </tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
+  }
 
   // ── Dona por estado (interactiva) y su detalle ──
   const datosEstado = ESTADOS.filter(e=>byE[e]>0).map(e=>({label:e, valor:byE[e], color:S_COLOR[e]})).sort((a,b)=>b.valor-a.valor);
   const totalEstados = datosEstado.reduce((a,d)=>a+d.valor,0);
   const estSel = S.metEstadoSel ? datosEstado.find(d=>d.label===S.metEstadoSel) : null;
-  const cardL = "padding:24px;grid-column:1/-1";
   let detalleEstado = "";
   if(estSel){
     const its = reqs.filter(r=>r.estado===estSel.label);
@@ -5375,7 +5515,7 @@ function renderMetricas(){
         ${recorridosOpts.map(r=>`<option ${S.metRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
       </select>
     </div>
-    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';S.metEstadoSel='';render()">✕ Limpiar filtros</button>`:""}
+    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';S.metEstadoSel='';S.metDiaSel='';render()">✕ Limpiar filtros</button>`:""}
   </div>
   <div class="metrics-grid">
     <div class="card" style="${cardL}">
@@ -5399,8 +5539,11 @@ function renderMetricas(){
         ${tituloGrafico("Evolución en el tiempo", serie==="creadas"?"solicitudes creadas por día":"solicitudes entregadas por día")}
         <div style="display:flex;gap:6px;flex-wrap:wrap">${pillL("creadas","Creadas")}${pillL("entregadas","Entregadas")}</div>
       </div>
-      ${graficoEvolucion(puntosL, serie==="creadas"?"#4f9eff":"#2de0c4", "gradEvoLog")}
+      ${graficoEvolucion(puntosL, serie==="creadas"?"#4f9eff":"#2de0c4", "logistica", {sel:diaSelL, onClickFn:"metSeleccionarDia", unidadTxt:serie==="creadas"?"solicitudes creadas":"solicitudes entregadas"})}
+      ${!diaSelL?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Pasá el mouse por un día para ver su valor, y tocalo para ver qué solicitudes fueron.</p>`:""}
     </div>
+
+    ${detalleDiaL}
 
     <div class="card" style="${cardL}">
       ${tituloGrafico("Estado de las solicitudes","Tocá una porción para ver de dónde sale ese porcentaje")}
