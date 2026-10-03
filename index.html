@@ -316,7 +316,7 @@ tr[onclick]:active td{background:var(--s3)}
 .sol-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid var(--border)}
 .sol-meta{margin-bottom:14px}
 .sol-card>.sol-meta:last-child{margin-bottom:0}
-.sol-actions .btn{flex:1 1 auto;justify-content:center}
+.sol-actions .btn{flex:1 1 auto;justify-content:center;font-size:14px;min-height:40px}
 .sol-empty{grid-column:1/-1;text-align:center;padding:60px 20px;color:#a9b8d0;font-size:15px}
 .sol-empty .ico{font-size:34px;margin-bottom:8px;opacity:.8}
 .sol-more{grid-column:1/-1;display:flex;justify-content:center;margin-top:4px}
@@ -345,6 +345,23 @@ tr[onclick]:active td{background:var(--s3)}
 .tab-n{display:inline-block;margin-left:8px;min-width:22px;padding:1px 7px;border-radius:999px;background:var(--s3);color:var(--muted);font-size:11.5px;font-weight:700;font-family:var(--mono);text-align:center;transition:background-color .25s,color .25s,transform .25s}
 .tab:hover .tab-n{transform:scale(1.08)}
 .tab.active .tab-n{background:#4f9eff2e;color:var(--blue)}
+
+
+/* ── Carteles legibles ── */
+.badge{font-size:13px;padding:5px 12px}
+.sol-card .badge{font-size:14px;padding:6px 13px}
+.sol-id{font-size:13.5px;color:#a9b8d0}
+.chip{font-size:14px;padding:6px 12px}
+.sol-desc{font-size:15.5px}
+.sol-route{font-size:20px}
+.sol-route small{font-size:13px}
+.tab{font-size:14px}
+.tab-n{font-size:13px;min-width:24px;padding:2px 8px}
+.vt-content.enter{animation:vtIn .36s cubic-bezier(.2,.8,.2,1)}
+@media(max-width:640px){
+  .toolbar .tabs .tab{font-size:13px}
+  .toolbar .tabs .tab-n{font-size:12px;min-width:20px}
+}
 
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -2426,7 +2443,7 @@ function renderDevoluciones(){
       })()}`:""}
     </div>`:""}
 
-    <div style="display:flex;flex-direction:column;gap:10px">
+    <div class="vt-content" style="display:flex;flex-direction:column;gap:10px">
       ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay devoluciones${S.devolucionFiltroSucursal||S.devolucionFiltroEstado||S.devolucionFiltroProducto?" con ese filtro":""}.</p>`:""}
       ${lista.map(d=>`
         <div class="card" style="padding:14px 16px">
@@ -2661,20 +2678,28 @@ function morphSeguro(el, html){
 // Transitions API; si el navegador no la soporta, cambia directo como
 // antes). Solo se activa en navegación, no en cada actualización de datos
 // ni en los botones que solo cambian un gráfico.
-let _navAnim = false;
+let _navAnim = false;   // false | "tab" | "page"
 document.addEventListener("click", e=>{
   const el = e.target.closest("[onclick]"); if(!el) return;
   const oc = el.getAttribute("onclick")||"";
-  if(/S\.(tab\w*|subTab\w*|vista)\s*=|abrir(Quejas|Devoluciones)\(/.test(oc)) _navAnim = true;
+  if(/S\.vista\s*=|abrir(Quejas|Devoluciones)\(/.test(oc)) _navAnim = "page";
+  else if(/S\.(tab\w*|subTab\w*|adminTab)\s*=/.test(oc)) _navAnim = "tab";
 }, true);
 function aplicarRenderDOM(){
-  const usarVT = _navAnim && typeof document.startViewTransition==="function"
-    && !(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
-  _navAnim = false;
-  if(usarVT){
+  const modo = _navAnim; _navAnim = false;
+  const reducir = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  // Cambio de pantalla completa (Quejas, Devoluciones, Volver): desliza todo.
+  if(modo==="page" && !reducir && typeof document.startViewTransition==="function"){
     try{ document.startViewTransition(()=>aplicarRenderDOMInterno()); return; }catch(e){}
   }
   aplicarRenderDOMInterno();
+  // Cambio de pestaña: los botones de arriba y las pestañas quedan FIJOS;
+  // solo el contenido de abajo entra con movimiento.
+  if(modo==="tab" && !reducir){
+    document.querySelectorAll(".vt-content").forEach(el=>{
+      el.classList.remove("enter"); void el.offsetWidth; el.classList.add("enter");
+    });
+  }
 }
 function aplicarRenderDOMInterno(){
   const elBg = $("app");
@@ -2972,7 +2997,7 @@ function renderCalidad(){
       <button class="tab ${tab==="metricas"?"active":""}" onclick="S.tabCalidad='metricas';render()">📊 Métricas</button>
       <button class="tab ${tab==="transferencias"?"active":""}" onclick="S.tabCalidad='transferencias';render()">🚚 Transferencias</button>
     </div>
-    ${tab==="metricas"?renderMetricasCalidad():renderSucursalArea({embedded:true})}
+    <div class="vt-content">${tab==="metricas"?renderMetricasCalidad():renderSucursalArea({embedded:true})}</div>
   </div>`;
 }
 
@@ -3744,7 +3769,7 @@ function renderAdmin(){
         <button class="tab ${S.adminTab==="config"?"active":""}" onclick="S.adminTab='config';render()">⚙️ Configuración</button>
       </div>
     </div>
-    ${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():renderAdminConfig()}
+    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():renderAdminConfig()}</div>
   </div>`;
 }
 
@@ -4272,7 +4297,7 @@ function solicitudCard(r, rutaHtml, accionesHtml, extraChips){
 }
 function solicitudesLista(items, clave, cardFn, vacioTxt){
   const lim = (S.solLimites && S.solLimites[clave]) || 30;
-  return `<div class="sol-grid">
+  return `<div class="sol-grid vt-content">
     ${!items.length?`<div class="sol-empty"><div class="ico">📭</div>${vacioTxt}</div>`:""}
     ${items.slice(0,lim).map(cardFn).join("")}
     ${items.length>lim?`<div class="sol-more"><button class="btn btn-ghost btn-md" onclick="S.solLimites=S.solLimites||{};S.solLimites['${clave}']=${lim+30};render()">Ver más (${items.length-lim})</button></div>`:""}
@@ -4368,7 +4393,7 @@ function renderLogistica(){
         ${accesosRapidosHtml()}
       </div>
     </div>
-    ${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderArmarRecorrido():renderDashboardFlota()}
+    <div class="vt-content">${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderArmarRecorrido():renderDashboardFlota()}</div>
   </div>`;
 }
 
@@ -5853,7 +5878,7 @@ function renderRepartidor(){
       <button class="btn btn-ghost btn-sm" onclick="S.repSeleccion=new Set();render()">✕ Deseleccionar todo</button>
     </div>`:""}
     ${S.tabRep==="devoluciones"?`
-    <div class="del-grid">
+    <div class="del-grid vt-content">
       ${devolucionesRep.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">No hay devoluciones pendientes.</div>`:""}
       ${devolucionesRep.map(d=>{
         const esParaTomar = d.estado==="Pendiente";
@@ -5891,7 +5916,7 @@ function renderRepartidor(){
       }).join("")}
     </div>
     `:`
-    <div class="del-grid">
+    <div class="del-grid vt-content">
       ${S.tabRep==="bolsines"?(()=>{
         const alBuzonN    = list.filter(r=>esDestinoBuzon(r.destino)).length;
         const desdeBuzonN = list.filter(r=>!esDestinoBuzon(r.destino)).length;
