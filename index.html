@@ -609,7 +609,7 @@ let S = {
   devolucionFiltroFecha: "",
   devolucionFiltroProducto: "",
   devolucionFiltroTipo: "",
-  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs",
+  tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
   devolucionAccionTipo: "", // "confirmar" | "noConfirmar"
@@ -2515,6 +2515,7 @@ function aplicarRenderDOM(){
     morphSeguro(elBg, `<div id="app">${htmlBg}</div>`);
   }
 
+  const _nb=document.querySelector(".navbar"); if(_nb) document.documentElement.style.setProperty("--nav-h", _nb.offsetHeight+"px");
   const htmlModal = (S.view==="login" && S.modal!=="identificarLogistica") ? "" : (renderModals() + renderLightbox());
   if(htmlModal !== _ultimoHTMLModal){
     _ultimoHTMLModal = htmlModal;
@@ -2685,20 +2686,6 @@ function renderApp(){
       <span class="ntag ${tagClass}">${tagLabel}</span>
     </div>
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-      <!-- Hora última actualización — solo visible en desktop -->
-      <span style="font-size:11px;color:var(--faint);display:none" class="upd-time">${lastUpd}</span>
-      <style>.upd-time{display:none!important}@media(min-width:520px){.upd-time{display:inline!important}}</style>
-      <!-- Botón actualizar -->
-      <button class="btn btn-ghost btn-sm" onclick="doRefresh()"
-        title="Actualizar datos sin cerrar sesión"
-        style="display:inline-flex;align-items:center;gap:5px"
-        ${S.refreshing?"disabled":""}>
-        <span style="${S.refreshing?"animation:spin .7s linear infinite;display:inline-block":""}">🔄</span>
-        <span style="display:none" class="ref-lbl">Actualizar</span>
-        <style>@media(min-width:480px){.ref-lbl{display:inline!important}}</style>
-      </button>
-      <!-- Separador -->
-      <span style="color:var(--border);font-size:16px">|</span>
       <!-- Quejas -->
       <button class="btn ${S.vista==="quejas"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirQuejas()">
         💬 <span style="display:none" class="quejas-lbl">Quejas</span>${(()=>{const ag=areaGestionadaPorUsuario();const n=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;return n>0?` (${n})`:"";})()}
@@ -2812,12 +2799,6 @@ function renderPlanificacion(){
         </div>
       </div>`;
     })()}
-    <div class="stats-grid">
-      ${statCard("📤","MIS PEDIDOS",mine.length,"var(--blue)")}
-      ${statCard("✅","APROBADAS",mine.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
-      ${statCard("🚚","EN CAMINO",mine.filter(r=>["En tránsito","En fábrica"].includes(r.estado)).length,"var(--amber)")}
-      ${statCard("📦","ENTREGADAS",mine.filter(r=>r.estado==="Entregada").length,"#1fa86a")}
-    </div>
     <div class="tabs">
       <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas (${open.length})</button>
       <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial (${hist.length})</button>
@@ -2892,6 +2873,7 @@ const COLOR_MOTIVO_CALIDAD = {
 function colorMotivoCalidad(m,i){ return COLOR_MOTIVO_CALIDAD[m] || PALETA_CALIDAD[i%PALETA_CALIDAD.length]; }
 function pctTxt(v,total){ if(!total) return "0%"; const p=v/total*100; return (p>=10?Math.round(p):p.toFixed(1))+"%"; }
 function fmtNum(v){ return Number.isInteger(v)?String(v):(Math.round(v*10)/10).toString(); }
+function fechaCortaISO(iso){ const [y,m,d]=String(iso||"").split("-"); return d?`${d}/${m}/${y}`:""; }
 
 function tituloGrafico(titulo, sub){
   return `<div style="margin-bottom:18px">
@@ -2900,34 +2882,75 @@ function tituloGrafico(titulo, sub){
   </div>`;
 }
 
-// Dona grande, con el % escrito sobre cada porción
-function donutPorcentajes(datos, size=270, centroTxt="total"){
+// ── Dona interactiva ──
+// Pasar el mouse sobre una porción la resalta (y muestra su % en el
+// centro); tocarla dispara onClickFn(label) para bajar al detalle de
+// dónde sale ese porcentaje. Los resaltados se hacen tocando el DOM
+// directo (sin re-render) para que sea instantáneo y no parpadee.
+const _donutReg = {};
+function donutPorcentajes(id, datos, size, centroTxt, sel, onClickFn){
   const total = datos.reduce((a,d)=>a+d.valor,0);
   if(!total) return "";
-  const grosor=48, cx=size/2, cy=size/2, r=size/2-grosor/2-4, circ=2*Math.PI*r;
+  _donutReg[id] = {datos, total, centroTxt, onClickFn};
+  const grosor=48, cx=size/2, cy=size/2, r=size/2-grosor/2-12, circ=2*Math.PI*r;
+  const haySel = !!sel;
   let acum=0, segs="", labs="";
-  datos.forEach(d=>{
+  datos.forEach((d,i)=>{
     const frac=d.valor/total, largo=frac*circ, gap=datos.length>1?2.5:0;
-    segs += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${d.color}" stroke-width="${grosor}"
-      stroke-dasharray="${Math.max(largo-gap,0.5)} ${circ}" stroke-dashoffset="${-acum*circ}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    const esSel = haySel && d.label===sel;
+    segs += `<circle class="dn-seg" data-i="${i}" data-w="${grosor}" data-sel="${esSel?1:""}" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${d.color}"
+      stroke-width="${grosor+(esSel?10:0)}" stroke-dasharray="${Math.max(largo-gap,0.5)} ${circ}" stroke-dashoffset="${-acum*circ}" transform="rotate(-90 ${cx} ${cy})"
+      style="cursor:pointer;transition:stroke-width .15s,opacity .15s;opacity:${haySel?(esSel?1:.45):1}"
+      onmouseenter="donutResaltar('${id}',${i})" onmouseleave="donutRestaurar('${id}')" onclick="donutClick('${id}',${i})"/>`;
     if(frac>=0.05){
       const ang=-Math.PI/2+2*Math.PI*(acum+frac/2);
       labs += `<text x="${cx+r*Math.cos(ang)}" y="${cy+r*Math.sin(ang)}" text-anchor="middle" dominant-baseline="central"
-        style="font-size:${frac>=0.1?16:13}px;font-weight:800;fill:#0b1120">${Math.round(frac*100)}%</text>`;
+        style="pointer-events:none;font-size:${frac>=0.1?16:13}px;font-weight:800;fill:#0b1120">${Math.round(frac*100)}%</text>`;
     }
     acum+=frac;
   });
-  return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;max-width:100%">
+  return `<svg id="dn-${id}" data-sel="${haySel?1:""}" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;max-width:100%">
     ${segs}${labs}
-    <text x="${cx}" y="${cy-2}" text-anchor="middle" style="font-size:42px;font-weight:800;fill:#e2e8f4">${fmtNum(total)}</text>
-    <text x="${cx}" y="${cy+24}" text-anchor="middle" style="font-size:14px;fill:#a9b8d0">${centroTxt}</text>
+    <text class="dn-c1" x="${cx}" y="${cy-2}" text-anchor="middle" style="pointer-events:none;font-size:42px;font-weight:800;fill:#e2e8f4">${fmtNum(total)}</text>
+    <text class="dn-c2" x="${cx}" y="${cy+24}" text-anchor="middle" style="pointer-events:none;font-size:14px;fill:#a9b8d0">${escH(centroTxt)}</text>
   </svg>`;
 }
-function leyendaPorcentajes(datos){
+function donutResaltar(id,i){
+  const svg=document.getElementById("dn-"+id), reg=_donutReg[id]; if(!svg||!reg) return;
+  svg.querySelectorAll(".dn-seg").forEach(el=>{
+    const on=+el.dataset.i===i;
+    el.setAttribute("stroke-width", +el.dataset.w+(on?14:0));
+    el.style.opacity = on?1:.3;
+  });
+  const d=reg.datos[i]; if(!d) return;
+  svg.querySelector(".dn-c1").textContent=pctTxt(d.valor,reg.total);
+  const c2=svg.querySelector(".dn-c2");
+  c2.textContent=d.label.length>18?d.label.slice(0,17)+"…":d.label;
+  c2.style.fill=d.color; c2.style.fontWeight="700";
+}
+function donutRestaurar(id){
+  const svg=document.getElementById("dn-"+id), reg=_donutReg[id]; if(!svg||!reg) return;
+  const any=svg.dataset.sel==="1";
+  svg.querySelectorAll(".dn-seg").forEach(el=>{
+    const sel=el.dataset.sel==="1";
+    el.setAttribute("stroke-width", +el.dataset.w+(sel?10:0));
+    el.style.opacity = any?(sel?1:.45):1;
+  });
+  svg.querySelector(".dn-c1").textContent=fmtNum(reg.total);
+  const c2=svg.querySelector(".dn-c2");
+  c2.textContent=reg.centroTxt; c2.style.fill="#a9b8d0"; c2.style.fontWeight="400";
+}
+function donutClick(id,i){
+  const reg=_donutReg[id]; if(!reg) return;
+  const fn=window[reg.onClickFn]; if(fn) fn(reg.datos[i].label);
+}
+function leyendaPorcentajes(id, datos, sel){
   const total = datos.reduce((a,d)=>a+d.valor,0);
-  return `<div style="flex:1;min-width:220px;display:flex;flex-direction:column;gap:12px">
-    ${[...datos].sort((a,b)=>b.valor-a.valor).map(d=>`
-      <div style="display:flex;align-items:center;gap:12px">
+  return `<div style="flex:1;min-width:230px;display:flex;flex-direction:column;gap:6px">
+    ${datos.map((d,i)=>`
+      <div onmouseenter="donutResaltar('${id}',${i})" onmouseleave="donutRestaurar('${id}')" onclick="donutClick('${id}',${i})"
+        style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;cursor:pointer;border:1px solid ${sel===d.label?d.color:"transparent"};background:${sel===d.label?"var(--s3)":"transparent"};transition:background .12s"
+        onmouseover="this.style.background='var(--s3)'" onmouseout="this.style.background='${sel===d.label?"var(--s3)":"transparent"}'">
         <span style="width:16px;height:16px;border-radius:5px;background:${d.color};flex-shrink:0"></span>
         <div style="flex:1;min-width:0">
           <div style="font-size:16px;font-weight:600;color:var(--text)">${escH(d.label)}</div>
@@ -2945,7 +2968,7 @@ function leyendaPorcentajes(datos){
 function barrasHorizontales(filas, color, total){
   if(!filas.length) return `<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`;
   const max=Math.max(...filas.map(f=>f.valor),1);
-  return `<div style="display:flex;flex-direction:column;gap:14px">${filas.map((f,i)=>{
+  return `<div style="display:flex;flex-direction:column;gap:14px">${filas.map(f=>{
     const w=Math.max(f.valor/max*100,2);
     const c=f.color||color||PALETA_CALIDAD[0];
     return `<div ${f.onclickAttr||""} style="${f.onclickAttr?"cursor:pointer":""}">
@@ -2992,8 +3015,21 @@ function graficoEvolucion(puntos, color, id){
 
 function calidadFiltrarProducto(nombre){
   S.calidadProducto = nombre;
+  S.calidadProdAbierto = false;
   render();
   window.scrollTo({top:0,behavior:"smooth"});
+}
+function calidadElegirProducto(nombre){
+  S.calidadProducto = nombre;
+  S.calidadProdAbierto = false;
+  render();
+}
+// Tocar una porción de la dona: se marca y se baja al detalle de
+// dónde sale ese porcentaje. Tocarla de nuevo la desmarca.
+function calidadSeleccionarMotivo(label){
+  S.calidadMotivoSel = (S.calidadMotivoSel===label) ? "" : label;
+  render();
+  if(S.calidadMotivoSel) setTimeout(()=>{ document.getElementById("calidad-detalle-motivo")?.scrollIntoView({behavior:"smooth",block:"start"}); },80);
 }
 
 function renderMetricasCalidad(){
@@ -3010,7 +3046,16 @@ function renderMetricasCalidad(){
       items.push({...p, devId:d.id, sucursal:d.sucursal||"—", fecha:d.createdAt?d.createdAt.slice(0,10):"?"});
     });
   });
-  const todosProductos=[...new Set(items.map(p=>p.descripcion).filter(Boolean))].sort();
+  const esKg=u=>normNotif(u||"")==="kg";
+
+  // Productos que realmente se devolvieron (para el desplegable) —
+  // con cuántas veces y cuántos kg, antes de aplicar el filtro de producto.
+  const catalogo={};
+  items.forEach(p=>{
+    const k=p.descripcion; if(!k) return;
+    const o=catalogo[k]=catalogo[k]||{veces:0,kg:0};
+    o.veces++; if(esKg(p.unidad)) o.kg+=(+p.cantidad||0);
+  });
 
   if(q){
     const nq=normNotif(q);
@@ -3019,12 +3064,10 @@ function renderMetricasCalidad(){
     devs=devs.filter(d=>ids.has(d.id));
   }
 
-  const esKg=u=>normNotif(u||"")==="kg";
   const totalKg=items.filter(p=>esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
   const totalUnid=items.filter(p=>!esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
   const motivoBase=p=>(p.motivo||"Sin motivo").split(" — ")[0]||"Sin motivo";
 
-  // Evolución por día según la métrica elegida
   const porDia={};
   if(metrica==="devs"){ devs.forEach(d=>{ const f=d.createdAt?d.createdAt.slice(0,10):null; if(f) porDia[f]=(porDia[f]||0)+1; }); }
   else items.forEach(p=>{
@@ -3037,20 +3080,19 @@ function renderMetricasCalidad(){
   const colorMetrica = metrica==="devs"?"#2de0c4":metrica==="kg"?"#f5a623":"#4f9eff";
   const unidadMetrica = metrica==="devs"?"devoluciones por día":metrica==="kg"?"kg devueltos por día":"unidades devueltas por día";
 
-  // Motivos (cada producto tiene su propio motivo)
   const porMotivo={};
   items.forEach(p=>{ const m=motivoBase(p); (porMotivo[m]=porMotivo[m]||{veces:0,kg:0}).veces++; if(esKg(p.unidad)) porMotivo[m].kg+=(+p.cantidad||0); });
   const datosMotivo=Object.entries(porMotivo).sort((a,b)=>b[1].veces-a[1].veces)
     .map(([m,v],i)=>({label:m, valor:v.veces, color:colorMotivoCalidad(m,i), extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
+  const motSel = S.calidadMotivoSel ? datosMotivo.find(d=>d.label===S.calidadMotivoSel) : null;
 
-  // Sucursales
   const porSuc={};
   devs.forEach(d=>{ const s=d.sucursal||"—"; (porSuc[s]=porSuc[s]||{n:0,kg:0}).n++; });
   items.forEach(p=>{ if(esKg(p.unidad) && porSuc[p.sucursal]) porSuc[p.sucursal].kg+=(+p.cantidad||0); });
   const filasSuc=Object.entries(porSuc).sort((a,b)=>b[1].n-a[1].n).slice(0,15)
     .map(([s,v])=>({label:s, valor:v.n, extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
 
-  // Ranking de productos (clic = filtrar)
+  const attrFiltrar=nombre=>`onclick='calidadFiltrarProducto(${JSON.stringify(nombre).replace(/'/g,"&apos;")})'`;
   const porProd={};
   items.forEach(p=>{
     const k=p.descripcion||"Sin descripción";
@@ -3062,11 +3104,9 @@ function renderMetricasCalidad(){
   const filasProd=rankingProd.slice(0,10).map(([nombre,v],i)=>{
     const motPrinc=Object.entries(v.motivos).sort((a,b)=>b[1]-a[1])[0];
     return {label:nombre, valor:v.veces, color:PALETA_CALIDAD[i%PALETA_CALIDAD.length],
-      extra:`${v.kg?fmtNum(v.kg)+" kg · ":""}${motPrinc?escH(motPrinc[0]):""}`,
-      onclickAttr:`onclick='calidadFiltrarProducto(${JSON.stringify(nombre).replace(/'/g,"&apos;")})'`};
+      extra:`${v.kg?fmtNum(v.kg)+" kg · ":""}${motPrinc?escH(motPrinc[0]):""}`, onclickAttr:attrFiltrar(nombre)};
   });
 
-  // Detalle sucursal × producto × motivo
   const detalle={};
   items.forEach(p=>{
     const m=motivoBase(p), k=p.sucursal+"|"+p.descripcion+"|"+m;
@@ -3075,12 +3115,72 @@ function renderMetricasCalidad(){
   });
   const detalleOrd=Object.values(detalle).sort((a,b)=>b.cantidad-a.cantidad);
 
+  // ── Desplegable de productos (solo los que se devolvieron) ──
+  const nq=normNotif(q);
+  const sugerencias=Object.entries(catalogo)
+    .filter(([k])=>!nq || normNotif(k).includes(nq))
+    .sort((a,b)=>b[1].veces-a[1].veces).slice(0,10);
+  const desplegable = (S.calidadProdAbierto && sugerencias.length) ? `
+    <div class="card" style="position:absolute;left:0;right:0;top:74px;z-index:60;max-height:340px;overflow-y:auto;padding:6px;box-shadow:0 12px 32px #000a">
+      <div style="padding:6px 10px 8px;font-size:12px;color:#a9b8d0;text-transform:uppercase;letter-spacing:.08em">${nq?"Coincidencias":"Más devueltos"}</div>
+      ${sugerencias.map(([k,v])=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer"
+          onmouseover="this.style.background='var(--s2)'" onmouseout="this.style.background=''"
+          onmousedown='calidadElegirProducto(${JSON.stringify(k).replace(/'/g,"&apos;")})'>
+          <span style="font-size:15px;font-weight:600;color:var(--text)">${escH(k)}</span>
+          <span style="font-size:13px;color:#a9b8d0;flex-shrink:0">${v.veces} ${v.veces===1?"vez":"veces"}${v.kg?` · ${fmtNum(v.kg)} kg`:""}</span>
+        </div>`).join("")}
+    </div>`:"";
+
+  const hayFiltros = !!(desde||hasta||q);
+  const chip=(txt,extra="")=>`<span style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#4f9eff22;border:1px solid #4f9eff66;font-size:14px;font-weight:600;color:var(--text)">${txt}${extra}</span>`;
+  const barraSticky = hayFiltros ? `
+  <div style="position:sticky;top:var(--nav-h,56px);z-index:45;margin:-4px 0 18px;padding:10px 14px;border-radius:12px;background:#111827f5;border:1px solid #4f9eff55;box-shadow:0 8px 22px #000b;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <span style="font-size:13px;color:#a9b8d0">Analizando:</span>
+    ${q?chip(`🔎 ${escH(q)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadProducto='';render()">✕</button>`):chip("Todos los productos")}
+    ${(desde||hasta)?chip(`📅 ${desde?fechaCortaISO(desde):"…"} → ${hasta?fechaCortaISO(hasta):"hoy"}`):""}
+    <span style="margin-left:auto;font-size:13px;color:#a9b8d0">${devs.length} devolución${devs.length!==1?"es":""} · ${items.length} línea${items.length!==1?"s":""}</span>
+    <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadMotivoSel='';render()">✕ Limpiar</button>
+  </div>`:"";
+
   const topProd=rankingProd[0], topMotivo=datosMotivo[0];
   const cardStyle="padding:24px;margin-bottom:20px";
-  const pill=(val,txt,col)=>`<button class="btn ${metrica===val?"btn-primary":"btn-ghost"} btn-sm" onclick="S.calidadMetrica='${val}';render()">${txt}</button>`;
+  const pill=(val,txt)=>`<button class="btn ${metrica===val?"btn-primary":"btn-ghost"} btn-sm" onclick="S.calidadMetrica='${val}';render()">${txt}</button>`;
+
+  // ── Detalle de la porción elegida en la dona ──
+  let detalleMotivo="";
+  if(motSel){
+    const its=items.filter(p=>motivoBase(p)===motSel.label);
+    const pp={}, ss={};
+    its.forEach(p=>{
+      const k=p.descripcion||"Sin descripción"; const o=pp[k]=pp[k]||{n:0,kg:0}; o.n++; if(esKg(p.unidad)) o.kg+=(+p.cantidad||0);
+      const s=p.sucursal; const o2=ss[s]=ss[s]||{n:0,kg:0}; o2.n++; if(esKg(p.unidad)) o2.kg+=(+p.cantidad||0);
+    });
+    const filasP=Object.entries(pp).sort((a,b)=>b[1].n-a[1].n||b[1].kg-a[1].kg).slice(0,10)
+      .map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:"",onclickAttr:attrFiltrar(k)}));
+    const filasS=Object.entries(ss).sort((a,b)=>b[1].n-a[1].n).slice(0,10)
+      .map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
+    detalleMotivo=`
+    <div id="calidad-detalle-motivo" class="card" style="${cardStyle};border-left:5px solid ${motSel.color};scroll-margin-top:130px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        ${tituloGrafico(`De dónde sale el ${pctTxt(motSel.valor,items.length)} de «${escH(motSel.label)}»`, `${motSel.valor} producto${motSel.valor!==1?"s":""} devuelto${motSel.valor!==1?"s":""} por este motivo${q?` · solo "${escH(q)}"`:""}`)}
+        <button class="btn btn-ghost btn-sm" onclick="calidadSeleccionarMotivo('${escH(motSel.label).replace(/'/g,"&#39;")}')">✕ Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:32px">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:${motSel.color};margin-bottom:12px">Productos</div>
+          ${barrasHorizontales(filasP,motSel.color,its.length)}
+        </div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:${motSel.color};margin-bottom:12px">Sucursales</div>
+          ${barrasHorizontales(filasS,motSel.color,its.length)}
+        </div>
+      </div>
+    </div>`;
+  }
 
   return `
-  <div class="card" style="${cardStyle}">
+  <div class="card" style="${cardStyle};margin-bottom:16px">
     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="margin-bottom:0">
         <label>Desde</label>
@@ -3090,23 +3190,18 @@ function renderMetricasCalidad(){
         <label>Hasta</label>
         <input type="date" class="inp" value="${escH(hasta)}" onchange="S.calidadHasta=this.value;render()"/>
       </div>
-      <div class="field" style="margin-bottom:0;flex:1;min-width:240px">
+      <div class="field" style="margin-bottom:0;flex:1;min-width:240px;position:relative">
         <label>Producto</label>
-        <input class="inp" list="calidad-prods" placeholder="🔎 Buscá un producto o código..." value="${escH(S.calidadProducto||"")}" oninput="S.calidadProducto=this.value;render()"/>
-        <datalist id="calidad-prods">${todosProductos.slice(0,400).map(p=>`<option value="${escH(p)}">`).join("")}</datalist>
+        <input id="calidad-prod-input" class="inp" type="text" autocomplete="off" placeholder="🔎 Buscá un producto devuelto o su código..." value="${escH(S.calidadProducto||"")}"
+          oninput="S.calidadProducto=this.value;S.calidadProdAbierto=true;render()"
+          onfocus="if(!S.calidadProdAbierto){S.calidadProdAbierto=true;render()}"
+          onblur="setTimeout(()=>{ if(S.calidadProdAbierto){S.calidadProdAbierto=false;render()} },180)"/>
+        ${desplegable}
       </div>
-      ${(desde||hasta||q)?`<button class="btn btn-ghost btn-md" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';render()">✕ Limpiar filtros</button>`:""}
     </div>
-    ${q?`<div style="margin-top:14px;padding:10px 14px;border-radius:8px;background:#4f9eff1a;border:1px solid #4f9eff55;font-size:15px;color:var(--text)">
-      Mostrando solo el producto <strong>"${escH(q)}"</strong> — ${devs.length} devolución${devs.length!==1?"es":""}, ${items.length} línea${items.length!==1?"s":""}.</div>`:""}
   </div>
 
-  <div class="stats-grid" style="margin-bottom:20px">
-    ${statCard("📦","DEVOLUCIONES", devs.length, "var(--teal)")}
-    ${statCard("⚖️","TOTAL KG", fmtNum(Math.round(totalKg*10)/10), "var(--amber)")}
-    ${statCard("🔢","TOTAL UNIDADES", fmtNum(Math.round(totalUnid)), "var(--blue)")}
-    ${statCard("🏪","SUCURSALES", Object.keys(porSuc).length, "var(--purple)")}
-  </div>
+  ${barraSticky}
 
   ${(topProd||topMotivo)?`
   <div class="card" style="${cardStyle};border-left:4px solid var(--amber)">
@@ -3126,13 +3221,15 @@ function renderMetricasCalidad(){
   </div>
 
   <div class="card" style="${cardStyle}">
-    ${tituloGrafico("¿Por qué se devuelve?", q?`Motivos de "${escH(q)}"`:"Reparto por motivo — cada producto devuelto cuenta una vez")}
+    ${tituloGrafico("¿Por qué se devuelve?", q?`Motivos de "${escH(q)}" · tocá una porción para ver de dónde sale`:"Reparto por motivo · tocá una porción para ver qué productos y sucursales lo explican")}
     ${datosMotivo.length?`
     <div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap;justify-content:center">
-      ${donutPorcentajes(datosMotivo,280,"productos devueltos")}
-      ${leyendaPorcentajes(datosMotivo)}
+      ${donutPorcentajes("motivo",datosMotivo,280,"productos devueltos",motSel?motSel.label:"","calidadSeleccionarMotivo")}
+      ${leyendaPorcentajes("motivo",datosMotivo,motSel?motSel.label:"")}
     </div>`:`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`}
   </div>
+
+  ${detalleMotivo}
 
   <div class="card" style="${cardStyle}">
     ${tituloGrafico("Productos más devueltos", "Tocá un producto para ver solo ese: sus motivos y las sucursales que lo devuelven")}
@@ -3160,6 +3257,13 @@ function renderMetricasCalidad(){
       </tbody>
     </table></div>
     ${detalleOrd.length>100?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Mostrando los 100 cruces más relevantes de ${detalleOrd.length}.</p>`:""}`}
+  </div>
+
+  <div class="stats-grid" style="margin-bottom:20px">
+    ${statCard("📦","DEVOLUCIONES", devs.length, "var(--teal)")}
+    ${statCard("⚖️","TOTAL KG", fmtNum(Math.round(totalKg*10)/10), "var(--amber)")}
+    ${statCard("🔢","TOTAL UNIDADES", fmtNum(Math.round(totalUnid)), "var(--blue)")}
+    ${statCard("🏪","SUCURSALES", Object.keys(porSuc).length, "var(--purple)")}
   </div>`;
 }
 
@@ -3729,12 +3833,6 @@ function renderRecepcionista(){
       <h2 style="font-size:20px;font-weight:700;margin-bottom:2px">Recepción — Fábrica / Depósito</h2>
       <p style="color:var(--muted);font-size:13px">${escH(u.nombre)} · Gestión de transferencias en fábrica</p>
     </div>
-    <div class="stats-grid">
-      ${statCard("📥","POR LLEGAR",entActivas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
-      ${statCard("📤","POR SALIR",salActivas.filter(r=>["Aprobada","Programada","Lista para retirar"].includes(r.estado)).length,"var(--teal)")}
-      ${statCard("🚚","EN CAMINO",salActivas.filter(r=>r.estado==="En tránsito").length,"var(--amber)")}
-      ${statCard("📦","HOY",[...entHist,...salHist].filter(r=>r.deliveredAt&&r.deliveredAt.startsWith(new Date().toISOString().slice(0,10))).length,"#1fa86a")}
-    </div>
     <div class="tabs">
       <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes (${entActivas.length})</button>
       <button class="tab ${tab==="salientes"?"active":""}" onclick="S.tabSuc='salientes';render()">📤 Salientes (${salActivas.length})</button>
@@ -3917,15 +4015,9 @@ function renderSucursalArea(){
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
         ${u.rol==="sucursal"?`<button class="btn btn-danger btn-md" onclick="openQuiebreStock()">🚨 Quiebre de stock</button>`:""}
-        ${bolsinesActivo()?`
+        ${bolsinesActivo() && u.rol!=="calidad"?`
         <button class="btn btn-teal btn-md" onclick="openEnviarBolsin()">📤 Enviar bolsín</button>`:""}
       </div>
-    </div>
-    <div class="stats-grid">
-      ${statCard("📤","MIS PEDIDOS",miosPedidos.length,"var(--blue)")}
-      ${statCard("📥","ME LLEGAN",miDestinoQ.length,"var(--teal)")}
-      ${statCard("✅","APROBADAS",mine.filter(r=>r.estado==="Aprobada").length,"var(--green)")}
-      ${statCard("📦","ENTREGADAS",mine.filter(r=>r.estado==="Entregada").length,"#1fa86a")}
     </div>
     <div class="tabs">
       <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas (${open.length})</button>
@@ -9065,6 +9157,24 @@ function stopAutoRefresh(){
 }
 
 // ── ACTUALIZAR DATOS (sin cerrar sesión) ─────────────────
+// Sin botón "Actualizar": los datos se mantienen al día solos por
+// Realtime. Esto cubre el único caso donde puede fallar — el celular
+// o la compu estuvo dormida/en segundo plano y se cortó la conexión —
+// volviendo a traer todo apenas se vuelve a la pestaña.
+let _ultimoResyncSilencioso = 0;
+document.addEventListener("visibilitychange", async ()=>{
+  if(document.visibilityState!=="visible") return;
+  if(S.view!=="app" || S.refreshing || S.modal) return;
+  if(Date.now()-_ultimoResyncSilencioso < 45000) return;
+  _ultimoResyncSilencioso = Date.now();
+  try{
+    await sheetsLoadDatos();
+    if(S.devolucionesLoaded) await cargarDevoluciones();
+    S.lastRefresh = Date.now();
+    render();
+  }catch(e){ console.warn("Resync silencioso:", e); }
+});
+
 async function doRefresh(){
   if(S.refreshing) return; // evitar doble click
   S.refreshing = true;
