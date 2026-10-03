@@ -643,7 +643,7 @@ let S = {
   fRepNombre:"",
   fRepSoloBolsin:false,
   subTabBolsines:"buzon",
-  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"",
+  metDesde:"", metHasta:"", metSucursal:"", metRecorrido:"", metSerie:"creadas", metEstadoSel:"",
   miIdentidadRep:null, // {dni,nombre} — quién es EN ESTE CELULAR (login de repartidor es compartido)
   miIdentidadFresco:null, // {dni,nombre} — idem para Recepción Fresco (login compartido)
   miIdentidadTesoreria:null, // {dni,nombre} — idem para Tesorería (confirmar recepciones sin pedir DNI cada vez)
@@ -2871,6 +2871,16 @@ const COLOR_MOTIVO_CALIDAD = {
   "Pérdida de frío":"#38bdf8","Roto con cambio":"#f472b6","Vencido con cambio":"#2ecc7a","Vencido sin cambio":"#2de0c4",
 };
 function colorMotivoCalidad(m,i){ return COLOR_MOTIVO_CALIDAD[m] || PALETA_CALIDAD[i%PALETA_CALIDAD.length]; }
+// Los colores de estado vienen como var(--x): para pintar SVG de forma
+// confiable se pasan a su valor real.
+function colorHex(c){
+  if(c && String(c).startsWith("var(")){
+    const n=String(c).slice(4,-1).split(",")[0].trim();
+    const v=getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    return v||"#4f9eff";
+  }
+  return c;
+}
 function pctTxt(v,total){ if(!total) return "0%"; const p=v/total*100; return (p>=10?Math.round(p):p.toFixed(1))+"%"; }
 function fmtNum(v){ return Number.isInteger(v)?String(v):(Math.round(v*10)/10).toString(); }
 function fechaCortaISO(iso){ const [y,m,d]=String(iso||"").split("-"); return d?`${d}/${m}/${y}`:""; }
@@ -2898,7 +2908,7 @@ function donutPorcentajes(id, datos, size, centroTxt, sel, onClickFn){
   datos.forEach((d,i)=>{
     const frac=d.valor/total, largo=frac*circ, gap=datos.length>1?2.5:0;
     const esSel = haySel && d.label===sel;
-    segs += `<circle class="dn-seg" data-i="${i}" data-w="${grosor}" data-sel="${esSel?1:""}" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${d.color}"
+    segs += `<circle class="dn-seg" data-i="${i}" data-w="${grosor}" data-sel="${esSel?1:""}" cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${colorHex(d.color)}"
       stroke-width="${grosor+(esSel?10:0)}" stroke-dasharray="${Math.max(largo-gap,0.5)} ${circ}" stroke-dashoffset="${-acum*circ}" transform="rotate(-90 ${cx} ${cy})"
       style="cursor:pointer;transition:stroke-width .15s,opacity .15s;opacity:${haySel?(esSel?1:.45):1}"
       onmouseenter="donutResaltar('${id}',${i})" onmouseleave="donutRestaurar('${id}')" onclick="donutClick('${id}',${i})"/>`;
@@ -3011,6 +3021,12 @@ function graficoEvolucion(puntos, color, id){
     <path d="${linea}" fill="none" stroke="${color}" stroke-width="3.5" stroke-linejoin="round" stroke-linecap="round"/>
     ${dots}${ejeX}
   </svg></div>`;
+}
+
+function metSeleccionarEstado(label){
+  S.metEstadoSel = (S.metEstadoSel===label) ? "" : label;
+  render();
+  if(S.metEstadoSel) setTimeout(()=>{ document.getElementById("met-detalle-estado")?.scrollIntoView({behavior:"smooth",block:"start"}); },80);
 }
 
 function calidadFiltrarProducto(nombre){
@@ -5298,6 +5314,49 @@ function renderMetricas(){
   const sucursalesOpts = [...new Set(S.requests.flatMap(r=>[r.sucursal,r.area,r.destino].filter(Boolean)))].sort();
   const recorridosOpts = [...new Set(S.requests.map(r=>r.recorrido).filter(Boolean))].sort();
 
+  // ── Evolución por día (creadas o entregadas) ──
+  const serie = S.metSerie||"creadas";
+  const porDiaL = {};
+  if(serie==="creadas") reqs.forEach(r=>{ const f=r.createdAt?r.createdAt.slice(0,10):null; if(f) porDiaL[f]=(porDiaL[f]||0)+1; });
+  else reqs.filter(r=>r.estado==="Entregada"&&r.deliveredAt).forEach(r=>{ const f=fechaLocalDeTimestamp(r.deliveredAt); if(f) porDiaL[f]=(porDiaL[f]||0)+1; });
+  const diasL = Object.keys(porDiaL).sort().slice(-45);
+  const puntosL = diasL.map(f=>({label:`${f.slice(8,10)}/${f.slice(5,7)}`, valor:porDiaL[f]}));
+  const pillL = (val,txt)=>`<button class="btn ${serie===val?"btn-primary":"btn-ghost"} btn-sm" onclick="S.metSerie='${val}';render()">${txt}</button>`;
+
+  // ── Dona por estado (interactiva) y su detalle ──
+  const datosEstado = ESTADOS.filter(e=>byE[e]>0).map(e=>({label:e, valor:byE[e], color:S_COLOR[e]})).sort((a,b)=>b.valor-a.valor);
+  const totalEstados = datosEstado.reduce((a,d)=>a+d.valor,0);
+  const estSel = S.metEstadoSel ? datosEstado.find(d=>d.label===S.metEstadoSel) : null;
+  const cardL = "padding:24px;grid-column:1/-1";
+  let detalleEstado = "";
+  if(estSel){
+    const its = reqs.filter(r=>r.estado===estSel.label);
+    const grp = fn=>{ const m={}; its.forEach(r=>{ const k=fn(r)||"—"; m[k]=(m[k]||0)+1; }); return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,10).map(([k,v])=>({label:k,valor:v})); };
+    const col = colorHex(estSel.color);
+    detalleEstado = `
+    <div id="met-detalle-estado" class="card" style="${cardL};border-left:5px solid ${col};scroll-margin-top:130px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        ${tituloGrafico(`De dónde sale el ${pctTxt(estSel.valor,totalEstados)} de «${escH(estSel.label)}»`, `${estSel.valor} solicitud${estSel.valor!==1?"es":""} en este estado`)}
+        <button class="btn btn-ghost btn-sm" onclick="metSeleccionarEstado('${escH(estSel.label).replace(/'/g,"&#39;")}')">✕ Cerrar</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px;margin-bottom:24px">
+        <div><div style="font-size:15px;font-weight:700;color:${col};margin-bottom:12px">Origen</div>${barrasHorizontales(grp(r=>r.sucursal||r.area),col,its.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:${col};margin-bottom:12px">Destino</div>${barrasHorizontales(grp(r=>r.destino),col,its.length)}</div>
+        <div><div style="font-size:15px;font-weight:700;color:${col};margin-bottom:12px">Recorrido</div>${barrasHorizontales(grp(r=>r.recorrido||"Sin recorrido"),col,its.length)}</div>
+      </div>
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px">Últimas ${Math.min(its.length,15)} de ${its.length}</div>
+      <div class="table-wrap"><table style="font-size:14px">
+        <thead><tr><th>N°</th><th>Origen</th><th>Destino</th><th>Descripción</th><th>Fecha</th></tr></thead>
+        <tbody>${its.slice(0,15).map(r=>`
+          <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+            <td class="id-cell">${escH(r.id)}</td><td>${escH(r.sucursal||r.area||"—")}</td><td>${escH(r.destino||"—")}</td>
+            <td><div class="trunc">${escH(r.descripcion||"")}</div></td><td class="muted-cell">${fd(r.createdAt)}</td>
+          </tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
+  }
+  const filasSucL = Object.entries(byS).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).slice(0,15).map(([s,v])=>({label:s,valor:v}));
+
   return `
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
     <div class="field" style="margin-bottom:0"><label>Desde</label><input type="date" class="inp" value="${escH(S.metDesde)}" onchange="S.metDesde=this.value;render()"/></div>
@@ -5316,12 +5375,12 @@ function renderMetricas(){
         ${recorridosOpts.map(r=>`<option ${S.metRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
       </select>
     </div>
-    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';render()">✕ Limpiar filtros</button>`:""}
+    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';S.metEstadoSel='';render()">✕ Limpiar filtros</button>`:""}
   </div>
   <div class="metrics-grid">
-    <div class="card">
-      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">KPIs</p>
-      <div class="kpi-mini-grid">
+    <div class="card" style="${cardL}">
+      ${tituloGrafico("Resumen")}
+      <div class="kpi-mini-grid" style="grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--blue)">${reqs.length}</div><div class="kpi-mini-lbl">Total</div></div>
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--red)">${reqs.filter(r=>r.prioridad==="Urgente").length}</div><div class="kpi-mini-lbl">Urgentes</div></div>
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--amber)">${reqs.filter(r=>r.estado==="Rechazada").length}</div><div class="kpi-mini-lbl">Rechazadas</div></div>
@@ -5329,33 +5388,38 @@ function renderMetricas(){
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--teal)">${reqs.filter(r=>r.estado==="Entregada").length}</div><div class="kpi-mini-lbl">Entregadas</div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">⚡ T. prom. respuesta</span><span class="mono" style="color:var(--blue)">${avgR!=null?avgR+"h":"—"}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">🚚 T. prom. entrega</span><span class="mono" style="color:var(--green)">${avgD!=null?avgD+"h":"—"}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">⚠️ No entregadas</span><span class="mono" style="color:var(--red)">${noEntregadas.length} <span style="color:var(--faint);font-weight:400">(${noEntregadasReprog} reprogramadas)</span></span></div>
-        <div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--muted)">📅 Entregadas fuera de fecha</span><span class="mono" style="color:${fueraDeFecha.length?"var(--red)":"var(--green)"}">${fueraDeFecha.length} <span style="color:var(--faint);font-weight:400">(${pctFuera}% de las entregadas con fecha)</span></span></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">⚡ T. prom. respuesta</span><span class="mono" style="color:var(--blue)">${avgR!=null?avgR+"h":"—"}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">🚚 T. prom. entrega</span><span class="mono" style="color:var(--green)">${avgD!=null?avgD+"h":"—"}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">⚠️ No entregadas</span><span class="mono" style="color:var(--red)">${noEntregadas.length} <span style="color:var(--faint);font-weight:400">(${noEntregadasReprog} reprogramadas)</span></span></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">📅 Entregadas fuera de fecha</span><span class="mono" style="color:${fueraDeFecha.length?"var(--red)":"var(--green)"}">${fueraDeFecha.length} <span style="color:var(--faint);font-weight:400">(${pctFuera}% de las entregadas con fecha)</span></span></div>
       </div>
     </div>
-    <div class="card">
-      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR ESTADO</p>
-      <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
-        ${donutChart(ESTADOS.filter(e=>byE[e]>0).map(e=>({label:e, valor:byE[e], color:S_COLOR[e]})), 140)}
-        <div style="flex:1;min-width:160px;display:flex;flex-direction:column;gap:6px">
-          ${ESTADOS.filter(e=>byE[e]>0).sort((a,b)=>byE[b]-byE[a]).map(e=>`
-            <div style="display:flex;align-items:center;gap:8px;font-size:12px">
-              <span style="width:9px;height:9px;border-radius:50%;background:${S_COLOR[e]};flex-shrink:0"></span>
-              <span style="flex:1;color:var(--muted)">${escH(e)}</span>
-              <strong>${byE[e]}</strong>
-            </div>`).join("")}
-        </div>
+    <div class="card" style="${cardL}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        ${tituloGrafico("Evolución en el tiempo", serie==="creadas"?"solicitudes creadas por día":"solicitudes entregadas por día")}
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${pillL("creadas","Creadas")}${pillL("entregadas","Entregadas")}</div>
       </div>
+      ${graficoEvolucion(puntosL, serie==="creadas"?"#4f9eff":"#2de0c4", "gradEvoLog")}
     </div>
-    <div class="card" style="grid-column:1/-1">
-      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">POR SUCURSAL / ÁREA</p>
-      ${barChart(Object.entries(byS).filter(([,v])=>v>0).sort(([,a],[,b])=>b-a).slice(0,12).map(([s,v])=>({label:s, valor:v})), "var(--blue)")}
+
+    <div class="card" style="${cardL}">
+      ${tituloGrafico("Estado de las solicitudes","Tocá una porción para ver de dónde sale ese porcentaje")}
+      ${datosEstado.length?`
+      <div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap;justify-content:center">
+        ${donutPorcentajes("estado",datosEstado,280,"solicitudes",estSel?estSel.label:"","metSeleccionarEstado")}
+        ${leyendaPorcentajes("estado",datosEstado,estSel?estSel.label:"")}
+      </div>`:`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`}
+    </div>
+
+    ${detalleEstado}
+
+    <div class="card" style="${cardL}">
+      ${tituloGrafico("Por sucursal / área","Solicitudes creadas por cada una")}
+      ${barrasHorizontales(filasSucL,"#4f9eff",reqs.length)}
     </div>
     ${fueraDeFecha.length?`
-    <div class="card" style="grid-column:1/-1">
-      <p style="font-size:10px;font-weight:700;color:var(--faint);letter-spacing:1.5px;margin-bottom:14px">ENTREGADAS FUERA DE FECHA (${fueraDeFecha.length})</p>
+    <div class="card" style="${cardL}">
+      ${tituloGrafico(`Entregadas fuera de fecha (${fueraDeFecha.length})`,"Se entregaron un día posterior al pedido")}
       <div class="table-wrap">
         <table>
           <thead><tr><th>N°</th><th>Sucursal/Área</th><th>Destino</th><th>Fecha requerida</th><th>Entregada</th></tr></thead>
