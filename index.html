@@ -3179,7 +3179,7 @@ function renderMetricasCalidad(){
     detalleMotivo=`
     <div id="calidad-detalle-motivo" class="card" style="${cardStyle};border-left:5px solid ${motSel.color};scroll-margin-top:130px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        ${tituloGrafico(`De dónde sale el ${pctTxt(motSel.valor,items.length)} de «${escH(motSel.label)}»`, `${motSel.valor} producto${motSel.valor!==1?"s":""} devuelto${motSel.valor!==1?"s":""} por este motivo${q?` · solo "${escH(q)}"`:""}`)}
+        ${tituloGrafico(`${pctTxt(motSel.valor,items.length)} de "${escH(motSel.label)}"`, `${motSel.valor} producto${motSel.valor!==1?"s":""} devuelto${motSel.valor!==1?"s":""} por este motivo${q?` · solo "${escH(q)}"`:""}`)}
         <button class="btn btn-ghost btn-sm" onclick="calidadSeleccionarMotivo('${escH(motSel.label).replace(/'/g,"&#39;")}')">✕ Cerrar</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:32px">
@@ -5336,7 +5336,7 @@ function renderMetricas(){
     detalleEstado = `
     <div id="met-detalle-estado" class="card" style="${cardL};border-left:5px solid ${col};scroll-margin-top:130px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        ${tituloGrafico(`De dónde sale el ${pctTxt(estSel.valor,totalEstados)} de «${escH(estSel.label)}»`, `${estSel.valor} solicitud${estSel.valor!==1?"es":""} en este estado`)}
+        ${tituloGrafico(`${pctTxt(estSel.valor,totalEstados)} de "${escH(estSel.label)}"`, `${estSel.valor} solicitud${estSel.valor!==1?"es":""} en este estado`)}
         <button class="btn btn-ghost btn-sm" onclick="metSeleccionarEstado('${escH(estSel.label).replace(/'/g,"&#39;")}')">✕ Cerrar</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px;margin-bottom:24px">
