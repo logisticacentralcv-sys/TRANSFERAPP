@@ -2044,7 +2044,7 @@ async function confirmarAccionDevolucion(){
 function openEditarDevolucion(id){
   const d = S.devoluciones.find(x=>String(x.id)===String(id));
   if(!d) return;
-  S.editarDevolucionModal = {id, sucursal:d.sucursal||"", motivo:d.motivo||"", estado:d.estado||"Pendiente", err:"", loading:false};
+  S.editarDevolucionModal = {id, sucursal:d.sucursal||"", motivo:unificarMotivoDevol(d.motivo||""), estado:d.estado||"Pendiente", err:"", loading:false};
   S.modal = "editarDevolucion";
   render();
 }
@@ -2146,7 +2146,7 @@ function renderDetalleDevolucionRep(){
   const drow=(l,v)=>`<div class="field"><label>${l}</label><div style="font-size:14px">${escH(v||"—")}</div></div>`;
   return `
   ${drow("Sucursal", d.sucursal)}
-  ${drow("Motivo", d.motivo)}
+  ${drow("Motivo", unificarMotivoDevol(d.motivo))}
   <div class="field"><label>Estado</label>${badge(d.estado, d.estado==="En camino"?"var(--blue)":d.estado==="En fábrica"?"var(--teal)":"var(--amber)")}</div>
   ${drow("Cargada", fdt(d.createdAt))}
   ${d.nombreQuienLevanto?drow("Tomada por", d.nombreQuienLevanto):""}
@@ -2306,11 +2306,17 @@ async function submitDejarDevolucionesFabrica(){
   render();
 }
 
+// "Mal olor o color" y "Mal estado" eran lo mismo: quedó solo "Mal estado".
+// Las devoluciones viejas todavía guardan el nombre anterior, así que se
+// unifica al leerlas (y el SQL devoluciones_04 lo corrige en la base).
+function unificarMotivoDevol(m){
+  return String(m??"").replace(/mal\s+olor\s+o\s+color/gi,"Mal estado");
+}
 function productosDeDevolucion(d){
   if(d.productosJson){
-    try{ const arr = JSON.parse(d.productosJson); if(Array.isArray(arr)) return arr; }catch(e){}
+    try{ const arr = JSON.parse(d.productosJson); if(Array.isArray(arr)) return arr.map(p=>({...p, motivo:unificarMotivoDevol(p.motivo)})); }catch(e){}
   }
-  if(d.productoDescripcion) return [{descripcion:d.productoDescripcion, codigoInterno:d.productoCodigoInterno||"", motivo:d.motivo||""}];
+  if(d.productoDescripcion) return [{descripcion:d.productoDescripcion, codigoInterno:d.productoCodigoInterno||"", motivo:unificarMotivoDevol(d.motivo||"")}];
   return [];
 }
 function renderDevoluciones(){
@@ -2513,7 +2519,7 @@ function renderDevoluciones(){
               ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
             </div>
           </div>
-          ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?"":`<p style="margin-top:8px;font-size:14px">${escH(d.motivo)}</p>`; })()}
+          ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?"":`<p style="margin-top:8px;font-size:14px">${escH(unificarMotivoDevol(d.motivo))}</p>`; })()}
           ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
             ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
