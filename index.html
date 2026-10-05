@@ -2909,6 +2909,13 @@ function renderApp(){
       <a class="btn btn-ghost btn-sm" href="https://dashboard-wheat-pi-94.vercel.app/" target="_blank" rel="noopener" style="text-decoration:none" title="Flota">
         🚛 <span class="nav-lbl">Flota</span>
       </a>`:""}
+      ${S.user?.rol==="logistica"?(()=>{
+        const ag=areaGestionadaPorUsuario();
+        const nq=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;
+        return `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirQuejas()" title="Quejas">
+          💬 <span class="nav-lbl">Quejas</span>${nq>0?`<span class="nbadge">${nq}</span>`:""}
+        </button>`;
+      })():""}
       <button class="btn btn-ghost btn-sm" onclick="abrirNotificaciones()" title="Notificaciones">
         🔔${misNotificaciones().length>0?`<span class="nbadge">${misNotificaciones().length}</span>`:""}
       </button>
@@ -4265,7 +4272,10 @@ function accesosRapidosHtml(){
   const ag=areaGestionadaPorUsuario();
   const nq=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;
   const nd=esGestorDevolucion()?S.devoluciones.filter(d=>d.estado==="Pendiente").length:0;
-  return `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-purple"} btn-md" onclick="abrirQuejas()">💬 Quejas${nq>0?`<span class="nbadge">${nq}</span>`:""}</button>`
+  // En Logística, Quejas va en la barra de arriba, junto a las notificaciones
+  const botonQuejas = u.rol==="logistica" ? "" :
+    `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-purple"} btn-md" onclick="abrirQuejas()">💬 Quejas${nq>0?`<span class="nbadge">${nq}</span>`:""}</button>`;
+  return botonQuejas
     + (puedeVerDevoluciones() && u.rol!=="repartidor"
         ? `<button class="btn ${S.vista==="devoluciones"?"btn-primary":"btn-purple"} btn-md" onclick="abrirDevoluciones()">📦 Devoluciones${nd>0?`<span class="nbadge">${nd}</span>`:""}</button>`
         : "");
@@ -4440,7 +4450,7 @@ function renderLogistica(){
         <button class="tab ${S.tabLog==="devMetricas"?"active":""}" onclick="S.tabLog='devMetricas';render()">📉 Métricas de devoluciones</button>
       </div>
       <div class="actions-bar">
-        ${!["recorridos","flotaDash","devMetricas"].includes(S.tabLog)?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>`:""}
+        ${!["recorridos","flotaDash","devMetricas"].includes(S.tabLog)?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva transferencia</button>`:""}
         ${accesosRapidosHtml()}
       </div>
     </div>
@@ -4502,7 +4512,6 @@ function renderLogTabla(){
       <button class="btn ${S.fSoloActivas?"btn-primary":"btn-ghost"} btn-sm" onclick="S.fSoloActivas=!S.fSoloActivas;render()">
         🚚 Solo activas ${S.fSoloActivas?"✓":""}
       </button>
-      <span style="font-size:12px;color:var(--muted)">Misma vista que tienen los repartidores: aprobadas, programadas, listas para retirar, en tránsito o en fábrica — para ir cerrando lo que quedó colgado.</span>
     </div>
     <div class="filter-grid">
       <div class="field" style="margin-bottom:0"><label>Estado</label>
@@ -6140,7 +6149,7 @@ function renderModals(){
       </div>
     </div>`;
 
-  if(S.modal==="nuevaSol")  return wrapModal("m","Nueva Solicitud de Transferencia",renderFormNueva(),620);
+  if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
   if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
   if(S.modal==="dniConfirm")return wrapModal("m",escH(S.dniModal.title),renderDniModal(),400);
@@ -6210,8 +6219,10 @@ function renderFormNueva(){
     <input class="inp" value="${escH(u.area)}" disabled style="opacity:.5"/>
   </div>`}
   <div class="alert-info" style="margin-bottom:14px;font-size:13px">
-    🔒 Al enviar se pedirá tu <strong>DNI</strong>. Tu nombre se registra automáticamente.<br/>
-    <span style="color:var(--faint);font-size:12px">Si el pedido es urgente, aclaralo en la descripción.</span>
+    ${u.rol==="logistica"
+      ? `✅ Se crea <strong>ya aprobada</strong>, a nombre de <strong>${escH(u.nombre||"Logística")}</strong>.`
+      : `🔒 Al enviar se pedirá tu <strong>DNI</strong>. Tu nombre se registra automáticamente.<br/>
+    <span style="color:var(--faint);font-size:12px">Si el pedido es urgente, aclaralo en la descripción.</span>`}
   </div>
   ${divider("DETALLE DEL PEDIDO")}
   <div class="field">
@@ -6264,7 +6275,7 @@ function renderFormNueva(){
   <div style="display:flex;gap:10px;justify-content:flex-end;padding-top:4px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button id="btn-submit-nueva" class="btn btn-success btn-md" onclick="submitNueva()" ${S.saving?"disabled":""}>
-      ${S.saving?`<span class="spinner"></span> Guardando...`:"✓ Enviar solicitud"}
+      ${S.saving?`<span class="spinner"></span> Guardando...`:(S.user?.rol==="logistica"?"✓ Crear transferencia":"✓ Enviar solicitud")}
     </button>
   </div>`;
 }
@@ -9814,7 +9825,7 @@ async function submitNueva(){
     S.form     = emptyForm();
     S.saving   = false;
     S.modal    = null;
-    toast(`Solicitud ${(creada||nueva).id} creada${esLogSubmit?" y aprobada":""} — ${nombreSolicitante}`);
+    toast(`${esLogSubmit?"Transferencia":"Solicitud"} ${(creada||nueva).id} creada${esLogSubmit?" y aprobada":""} — ${nombreSolicitante}`);
     render();
     notificarNuevaSolicitud(creada||nueva); // aviso a logística, en background
   };
