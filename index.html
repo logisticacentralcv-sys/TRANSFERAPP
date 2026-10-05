@@ -390,6 +390,44 @@ tr[onclick]:active td{background:var(--s3)}
 .enter .ev-dot{animation:dotIn .35s cubic-bezier(.2,1.2,.4,1) backwards}
 .enter .dn-anim{animation:donutIn .7s cubic-bezier(.2,.9,.25,1) backwards}
 
+
+/* ── Celular: barra superior en UNA fila, que no se coma la pantalla ── */
+@media(max-width:640px){
+  .navbar{padding:8px 12px;min-height:0;gap:8px 10px;flex-wrap:wrap;justify-content:space-between}
+  .navbar-brand{flex:1 1 auto;min-width:0;gap:10px}
+  .brand-main{gap:0}
+  .brand-name{display:none}
+  .brand-logo{width:38px;height:38px}
+  .ntag{padding:5px 11px;font-size:12.5px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .navbar .nav-actions{width:auto;flex:0 0 auto;gap:6px;flex-wrap:nowrap}
+  .navbar .nav-actions .btn,.navbar .nav-user{flex:0 0 auto;min-width:40px;min-height:40px;padding:6px 10px;justify-content:center}
+  .navbar .nav-user{max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;padding:0 8px}
+}
+
+/* ── Pestañas en una sola fila con desplazamiento lateral ── */
+@media(max-width:640px){
+  .tabs{flex-wrap:nowrap;overflow-x:auto;max-width:100%;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs .tab{flex:0 0 auto;white-space:nowrap}
+  .toolbar .tabs .tab{flex:1 0 auto}
+}
+
+/* ── Panel del repartidor: identidad, filtros plegables ── */
+.rep-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.rep-yo{display:inline-flex;align-items:center;gap:7px;font-family:var(--font);font-size:13px;color:var(--muted);margin-right:auto;min-width:0;background:var(--s2);border:1px solid var(--border);border-radius:var(--rsm);padding:0 11px;min-height:36px;cursor:pointer;transition:border-color .15s,background-color .15s}
+.rep-yo:hover{border-color:var(--border2);background:var(--s3)}
+.rep-yo strong{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:34vw}
+.rep-edit{color:var(--blue);font-size:12px}
+.rep-toolbar .btn{min-height:36px}
+.rep-filtros{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:center}
+.rep-filtros select{min-width:170px}
+@media(max-width:640px){
+  .rep-filtros{display:none;flex-direction:column;align-items:stretch;gap:8px;padding:12px;background:var(--s1);border:1px solid var(--border);border-radius:12px}
+  .rep-filtros.abierto{display:flex;animation:fadeIn .2s ease}
+  .rep-filtros select{width:100%}
+}
+@media(min-width:641px){ .rep-filtros-btn{display:none} }
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -796,7 +834,7 @@ let S = {
   pushActivo: false,
   usuarioForm: {usuarioOriginal:"", usuario:"", password:"", tipo:"", nombre:"", area:"", recorrido:"", dni:"", email:"", activo:"si", err:"", loading:false},
   adminFiltroTexto: "",
-  repSeleccion: new Set(),
+  repFiltrosAbiertos:false, repSeleccion: new Set(),
   modoSeleccionRep: false,
   tomarVariasModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
   dejarBolsinesModal: {ids:[], dni:"", err:"", loading:false, nombreOk:""},
@@ -2735,7 +2773,7 @@ function aplicarRenderDOMInterno(){
   }
 
   const _nb=document.querySelector(".navbar"); if(_nb) document.documentElement.style.setProperty("--nav-h", _nb.offsetHeight+"px");
-  const htmlModal = (S.view==="login" && S.modal!=="identificarLogistica") ? "" : (renderModals() + renderLightbox());
+  const htmlModal = (S.view==="login" && S.modal!=="identificarLogistica" && !(S.modal==="identidadRep" && S.identidadRepModal?.alIngresar)) ? "" : (renderModals() + renderLightbox());
   if(htmlModal !== _ultimoHTMLModal){
     _ultimoHTMLModal = htmlModal;
     morphSeguro(elModal, `<div id="app-modal">${htmlModal}</div>`);
@@ -2920,7 +2958,7 @@ function renderApp(){
         🔔${misNotificaciones().length>0?`<span class="nbadge">${misNotificaciones().length}</span>`:""}
       </button>
       ${nombreSesionVisible()?`<span class="nav-user" title="Sesión identificada">👤 ${escH(nombreSesionVisible())}</span>`:""}
-      <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">Salir</button>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">🚪<span class="nav-lbl">Salir</span></button>
     </div>
   </nav>
   <main>${mainContent}</main>
@@ -4269,6 +4307,7 @@ function renderRecepcionFresco(){
 // pantalla (misma forma, misma fila) en vez de en la barra de arriba.
 function accesosRapidosHtml(){
   const u=S.user; if(!u) return "";
+  if(u.rol==="repartidor") return ""; // el repartidor no maneja quejas ni devoluciones desde acá
   const ag=areaGestionadaPorUsuario();
   const nq=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;
   const nd=esGestorDevolucion()?S.devoluciones.filter(d=>d.estado==="Pendiente").length:0;
@@ -5882,46 +5921,42 @@ function renderRepartidor(){
 
   return `
   <div style="animation:fadeUp .3s ease">
-    ${pageHead("Panel de reparto", u.recorrido?`Recorrido: ${badge(u.recorrido,"var(--teal)")}`:"", accesosRapidosHtml())}
-    ${S.miIdentidadRep?`
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;font-size:12px;color:var(--muted)">
-      👤 En este celular: <strong style="color:var(--text)">${escH(S.miIdentidadRep.nombre)}</strong>
-      <button class="btn btn-ghost btn-sm" onclick="cambiarIdentidadRepartidor()">Cambiar</button>
-    </div>`:`
-    <div class="card" style="margin-bottom:16px;padding:12px 16px;border-left:3px solid var(--amber);display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
-      <span style="font-size:13px">👤 Todavía no sabemos quién sos en este celular — por eso ves lo de todos.</span>
-      <button class="btn btn-warn btn-sm" onclick="abrirIdentificarRepartidor()">Identificarme</button>
-    </div>`}
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-      <div class="tabs" style="margin-bottom:0">
-        <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas (${paraTomarGeneral.length})</button>
-        <button class="tab ${S.tabRep==="tomadas"?"active":""}" onclick="S.tabRep='tomadas';render()">Tomadas (${tomadasGeneral.length})</button>
-        <button class="tab ${S.tabRep==="bolsines"?"active":""}" onclick="S.tabRep='bolsines';render()">Bolsines (${bolsinesActivos.length})</button>
-        <button class="tab ${S.tabRep==="devoluciones"?"active":""}" onclick="S.tabRep='devoluciones';render()">Devoluciones (${devolucionesRep.length})</button>
-      </div>
-      <div class="field" style="margin-bottom:0;min-width:160px">
-        <select onchange="S.fRepRecorrido=this.value;render()">
-          <option value="">Todos los recorridos</option>
-          ${recOpts.map(r=>`<option ${S.fRepRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field" style="margin-bottom:0;min-width:160px">
-        <select onchange="S.fRepSucursal=this.value;render()">
-          <option value="">Todas las sucursales</option>
-          ${sucursalesRepOpts.map(s=>`<option ${S.fRepSucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
-        </select>
-      </div>
-      <div class="field" style="margin-bottom:0;min-width:160px">
-        <select onchange="S.fRepNombre=this.value;render()">
-          <option value="">Quién la tomó (todos)</option>
-          ${nombresRepOpts.map(n=>`<option ${S.fRepNombre===n?"selected":""}>${escH(n)}</option>`).join("")}
-        </select>
-      </div>
+    ${u.recorrido?`<div class="page-sub" style="margin:0 0 10px">Recorrido: ${badge(u.recorrido,"var(--teal)")}</div>`:""}
+    <div class="tabs tabs-scroll" style="margin-bottom:10px">
+      <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas<span class="tab-n">${paraTomarGeneral.length}</span></button>
+      <button class="tab ${S.tabRep==="tomadas"?"active":""}" onclick="S.tabRep='tomadas';render()">Tomadas<span class="tab-n">${tomadasGeneral.length}</span></button>
+      <button class="tab ${S.tabRep==="bolsines"?"active":""}" onclick="S.tabRep='bolsines';render()">Bolsines<span class="tab-n">${bolsinesActivos.length}</span></button>
+      <button class="tab ${S.tabRep==="devoluciones"?"active":""}" onclick="S.tabRep='devoluciones';render()">Devoluciones<span class="tab-n">${devolucionesRep.length}</span></button>
+    </div>
+    ${(()=>{
+      const nFiltros=[S.fRepRecorrido,S.fRepSucursal,S.fRepNombre].filter(Boolean).length;
+      return `
+    <div class="rep-toolbar">
+      ${S.miIdentidadRep?`<button class="rep-yo" onclick="cambiarIdentidadRepartidor()" title="Tocá para cambiar de persona">👤 <strong>${escH(S.miIdentidadRep.nombre)}</strong><span class="rep-edit">✎</span></button>`:`<span></span>`}
+      <button class="btn ${S.repFiltrosAbiertos||nFiltros?"btn-primary":"btn-ghost"} btn-sm rep-filtros-btn" onclick="S.repFiltrosAbiertos=!S.repFiltrosAbiertos;render()">
+        🔎 Filtros${nFiltros?`<span class="nbadge">${nFiltros}</span>`:""}
+      </button>
       ${["activas","tomadas","bolsines"].includes(S.tabRep)?`
-      <button class="btn ${S.modoSeleccionRep?"btn-primary":"btn-ghost"} btn-sm" style="margin-left:auto" onclick="S.modoSeleccionRep=!S.modoSeleccionRep; if(!S.modoSeleccionRep) S.repSeleccion=new Set(); render()">
-        ${S.modoSeleccionRep?"✕ Cancelar selección":"◯ Seleccionar"}
+      <button class="btn ${S.modoSeleccionRep?"btn-primary":"btn-ghost"} btn-sm" onclick="S.modoSeleccionRep=!S.modoSeleccionRep; if(!S.modoSeleccionRep) S.repSeleccion=new Set(); render()">
+        ${S.modoSeleccionRep?"✕ Cancelar":"◯ Seleccionar"}
       </button>`:""}
     </div>
+    <div class="rep-filtros ${S.repFiltrosAbiertos?"abierto":""}">
+      <select onchange="S.fRepRecorrido=this.value;render()">
+        <option value="">Todos los recorridos</option>
+        ${recOpts.map(r=>`<option ${S.fRepRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
+      </select>
+      <select onchange="S.fRepSucursal=this.value;render()">
+        <option value="">Todas las sucursales</option>
+        ${sucursalesRepOpts.map(s=>`<option ${S.fRepSucursal===s?"selected":""}>${escH(s)}</option>`).join("")}
+      </select>
+      <select onchange="S.fRepNombre=this.value;render()">
+        <option value="">Quién la tomó (todos)</option>
+        ${nombresRepOpts.map(n=>`<option ${S.fRepNombre===n?"selected":""}>${escH(n)}</option>`).join("")}
+      </select>
+      ${nFiltros?`<button class="btn btn-ghost btn-sm" onclick="S.fRepRecorrido='';S.fRepSucursal='';S.fRepNombre='';render()">✕ Limpiar</button>`:""}
+    </div>`;
+    })()}
     <div id="rep-bar-slot">${S.modoSeleccionRep && S.repSeleccion.size>0?`
     <div class="card" style="margin-bottom:14px;padding:12px 16px;border-left:3px solid var(--blue);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
       <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
@@ -6141,10 +6176,11 @@ function renderRepartidor(){
 // ══════════════════════════════════════════════════════════
 function renderModals(){
   if(!S.modal) return "";
+  const esGate = (S.modal==="identidadRep" && S.identidadRepModal?.obligatoria) || S.modal==="identificarLogistica";
   const wrapModal=(id,title,body,width=580)=>`
-    <div class="modal-bg" id="modal-bg" onclick="handleBg(event)">
+    <div class="modal-bg" id="modal-bg" ${esGate?'':'onclick="handleBg(event)"'}>
       <div class="modal-box" style="max-width:${width}px">
-        <div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">✕</button></div>
+        <div class="modal-head"><h3>${title}</h3>${esGate?'':'<button class="modal-close" onclick="closeModal()">✕</button>'}</div>
         <div class="modal-body">${body}</div>
       </div>
     </div>`;
@@ -9470,6 +9506,18 @@ async function doLogin(){
     return;
   }
 
+  // Reparto: el login es compartido, así que en cada ingreso se pide el DNI
+  // ANTES de mostrar nada — y no se puede entrar sin identificarse. Lo que
+  // haya quedado guardado de una sesión anterior no se reutiliza.
+  if(S.user.rol==="repartidor"){
+    try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
+    S.miIdentidadRep = null;
+    S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true};
+    S.modal = "identidadRep";
+    render();
+    return;
+  }
+
   finalizarEntradaApp();
 }
 
@@ -9501,9 +9549,12 @@ function renderIdentificarLogisticaModal(){
       onkeydown="if(event.key==='Enter')submitIdentificarLogistica()"/>
     ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
   </div>
-  <button class="btn btn-success btn-md btn-full" style="margin-top:14px" onclick="submitIdentificarLogistica()" ${d.loading?"disabled":""}>
-    ${d.loading?`<span class="spinner"></span> Verificando...`:"Ingresar →"}
-  </button>`;
+  <div style="display:flex;gap:10px;margin-top:14px">
+    <button class="btn btn-ghost btn-md" onclick="doLogout()">Salir</button>
+    <button class="btn btn-success btn-md" style="flex:1;justify-content:center" onclick="submitIdentificarLogistica()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Verificando...`:"Ingresar →"}
+    </button>
+  </div>`;
 }
 function submitIdentificarLogistica(){
   const d = S.identificarLogisticaModal;
@@ -9680,7 +9731,7 @@ function doLogout(){
   S.miIdentidadFresco = null;
   S.miIdentidadTesoreria = null;
   try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
-  stopAutoRefresh(); S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
+  stopAutoRefresh(); S.modal=null; S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
 }
 
 // ══════════════════════════════════════════════════════════
@@ -9712,6 +9763,7 @@ function abrirIdentificarRepartidor(){
 function renderIdentidadRepModal(){
   const d = S.identidadRepModal;
   return `
+  ${d.obligatoria?`<div class="alert-info" style="margin-bottom:14px;font-size:13px">🔒 Para entrar tenés que identificarte con tu DNI.</div>`:""}
   <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Como el login de reparto lo usan varias personas, necesitamos saber quién sos en este celular — así solo te mostramos lo que vos tomaste (lo que nadie tomó todavía lo ven todos).</p>
   <div class="field">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
@@ -9722,6 +9774,7 @@ function renderIdentidadRepModal(){
     ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+    ${d.obligatoria?`<button class="btn btn-ghost btn-md" onclick="cancelarIdentidadRepartidor()">${d.alIngresar?"Salir":"Cancelar"}</button>`:""}
     <button class="btn btn-success btn-md" onclick="confirmarIdentidadRepartidor()" ${d.loading?"disabled":""}>
       ${d.loading?`<span class="spinner"></span> Verificando...`:"✅ Soy yo"}
     </button>
@@ -9737,12 +9790,27 @@ function confirmarIdentidadRepartidor(){
   try{ localStorage.setItem("tl_rep_identidad", JSON.stringify(S.miIdentidadRep)); }catch(e){}
   S.modal = null;
   toast(`👤 Listo, ${check.nombre}`);
+  if(d.alIngresar){ finalizarEntradaApp(); return; }   // recién ahora entra a la app
   render();
 }
+// Reparto: quien no se identifica no entra. Si venía de un ingreso, vuelve al
+// login; si estaba cambiando de persona, vuelve a quien estaba antes.
+function cancelarIdentidadRepartidor(){
+  const d = S.identidadRepModal;
+  if(d.previa){
+    S.miIdentidadRep = d.previa;
+    try{ localStorage.setItem("tl_rep_identidad", JSON.stringify(d.previa)); }catch(e){}
+    S.modal = null; render(); return;
+  }
+  doLogout();
+}
 function cambiarIdentidadRepartidor(){
+  const previa = S.miIdentidadRep;
   try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
   S.miIdentidadRep = null;
-  abrirIdentificarRepartidor();
+  S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:false, previa};
+  S.modal = "identidadRep";
+  render();
 }
 // Si ya identificamos a la persona en este celular, usamos eso directo
 // (sin volver a pedir DNI en cada acción). Si no, cae al campo de DNI
@@ -10068,11 +10136,20 @@ if(_sesionRestaurada){
   S.view = "app";
   S.lastRefresh = Date.now();
   cargarIdentidadRepartidor();
+  if(S.user.rol==="repartidor" && !S.miIdentidadRep){
+    // Recargó la página y no hay identidad guardada: se pide antes de mostrar nada
+    S.view = "login";
+    S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true};
+    S.modal = "identidadRep";
+    render();
+    if(USE_SHEETS) sheetsLoadUsuarios();   // hace falta para validar el DNI
+  } else {
   reiniciarTimerInactividad();
   render();
   if(USE_SHEETS) sheetsLoadUsuarios();
   sheetsLoadDatos().then(()=>{ render(); });
   startAutoRefresh();
+  }
 } else {
   render();
 }
