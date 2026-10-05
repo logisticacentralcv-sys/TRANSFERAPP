@@ -2631,10 +2631,6 @@ function renderPickeoModal(){
       </div>`).join("")}
     </div>
     <div class="pk-cierre">
-      <div class="field" style="margin-bottom:12px">
-        <label>Foto del ticket <span class="req">*</span></label>
-        <input id="pk-foto" type="file" accept="image/*" style="font-size:12px"/>
-      </div>
       ${sinDni?`<div class="field" style="margin-bottom:0">
         <label>Tu DNI (sin puntos) <span class="req">*</span></label>
         <input id="pk-dni" class="inp" type="number" placeholder="Ej: 30123456" value="${escH(p.dni||"")}" oninput="S.pickeo.dni=this.value"/>
@@ -2726,15 +2722,12 @@ async function pickeoEnviar(){
     if(!(+l.cantidad>0)){ p.err=`Ingresá la cantidad de "${l.producto.descripcion}".`; render(); return; }
     if(!l.motivo){ p.err=`Elegí el motivo de "${l.producto.descripcion}".`; render(); return; }
   }
-  const foto=$("pk-foto")?.files?.[0]||null;
-  if(!foto){ p.err="La foto del ticket es obligatoria."; render(); return; }
   const firma=pickeoFirmante();
   if(!firma.ok){ p.err=firma.msg; render(); return; }
 
   p.loading=true; p.err=""; renderNow();
   const u=S.user;
   try{
-    const fotoUrl=await subirArchivo(foto,"devoluciones");
     const productosJson=p.lineas.map(l=>{
       const sobre=esSobrestock(l.motivo);
       return {
@@ -2749,7 +2742,7 @@ async function pickeoEnviar(){
     const haySobre=productosJson.some(x=>x.evaluacion==="pendiente");
     const motivoResumen=productosJson.length===1?productosJson[0].motivo:`${productosJson.length} productos: `+productosJson.map(x=>x.descripcion).join(", ");
     const payload=toSnakeRow({
-      sucursal:u.area||"", motivo:motivoResumen, fotoUrl,
+      sucursal:u.area||"", motivo:motivoResumen, fotoUrl:"",
       estado: haySobre?"En evaluación":"Pendiente",
       creadoPor:firma.nombre, productosJson:JSON.stringify(productosJson), tipoDevolucion:"Secos",
     });
