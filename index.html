@@ -428,6 +428,54 @@ tr[onclick]:active td{background:var(--s3)}
 }
 @media(min-width:641px){ .rep-filtros-btn{display:none} }
 
+
+/* ── Pickeo de Secos ── */
+.pk-reader{width:100%;border-radius:12px;overflow:hidden;background:#000;min-height:180px}
+.pk-ultimo{margin-top:10px;padding:10px 14px;border-radius:10px;font-size:14px;font-weight:600;background:var(--s2);border:1px solid var(--border)}
+.pk-ultimo.bien{background:#2ecc7a18;border-color:#2ecc7a55;color:#4ade80}
+.pk-ultimo.mal{background:#f0525218;border-color:#f0525255;color:#fca5a5}
+.pk-vacio{padding:26px 14px;text-align:center;color:#a9b8d0;border:1px dashed var(--border2);border-radius:12px;font-size:14px}
+.pk-line{background:var(--s2);border:1px solid var(--border);border-left:4px solid var(--blue);border-radius:12px;padding:12px 14px;animation:cardIn .25s ease backwards}
+.pk-line.sobre{border-left-color:#fb7185}
+.pk-line.ctrl.ok{border-left-color:var(--green)}
+.pk-line.ctrl.parcial{border-left-color:var(--amber)}
+.pk-line.ctrl.mas{border-left-color:var(--red)}
+.pk-line.ctrl.falta{border-left-color:var(--border2)}
+.pk-name{font-size:15px;font-weight:700;line-height:1.3}
+.pk-code{font-size:12px;color:#8ea2c4;font-family:var(--mono);margin-top:2px}
+.pk-row{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap}
+.pk-row .inp{width:auto;flex:1 1 110px;max-width:none!important}
+.pk-stepper{display:inline-flex;align-items:stretch;border:1px solid var(--border2);border-radius:10px;overflow:hidden;background:var(--s1)}
+.pk-stepper button{width:44px;border:0;background:var(--s3);color:var(--text);font-size:20px;font-weight:700;cursor:pointer;font-family:var(--font);transition:background .15s}
+.pk-stepper button:hover{background:var(--border2)}
+.pk-stepper button:active{background:var(--blue)}
+.pk-stepper input{width:70px;text-align:center;border:0;background:transparent;color:var(--text);font-size:18px;font-weight:700;font-family:var(--mono);outline:none;padding:10px 0}
+.pk-nota{margin-top:8px;font-size:12.5px;color:#fda4af;background:#fb718514;border-radius:8px;padding:6px 10px}
+.pk-nota.mal{color:#fca5a5;background:#f0525214}
+.pk-prog-num{font-family:var(--mono);font-size:16px;font-weight:800;white-space:nowrap}
+.pk-bar{height:8px;background:var(--s3);border-radius:4px;overflow:hidden;margin-top:10px}
+.pk-bar>div{height:100%;border-radius:4px;transition:width .3s ease,background-color .3s}
+.pk-res{padding:9px 10px;border-radius:8px;cursor:pointer;transition:background .12s}
+.pk-res:hover{background:var(--s2)}
+.pk-cierre{margin-top:18px;padding-top:16px;border-top:1px solid var(--border)}
+.pk-foot{position:sticky;bottom:-1px;margin:18px -2px 0;padding:12px 2px 6px;background:var(--s1);border-top:1px solid var(--border);z-index:5;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pk-resumen{font-size:13px;color:var(--muted);line-height:1.35}
+.pk-resumen strong{color:var(--text)}
+.pk-foot .btn{flex:0 0 auto;min-width:150px;justify-content:center}
+#pickeo-reader video{max-height:250px;object-fit:cover}
+.pk-launcher{margin-top:14px;padding:16px;border-radius:12px;border:1px solid #f5a62344;background:#f5a6230d}
+.sk-lista{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.sk-item{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;background:var(--s2);border-radius:8px;padding:8px 12px}
+.sk-nombre{font-size:14px;font-weight:600}
+.sk-meta{font-size:12.5px;color:#a9b8d0;margin-top:2px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.sk-chip{display:inline-block;padding:2px 9px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid}
+.sk-chip.amber{color:var(--amber);border-color:#f5a62355;background:#f5a62314}
+.sk-chip.green{color:#4ade80;border-color:#2ecc7a55;background:#2ecc7a14}
+.sk-chip.red{color:#fca5a5;border-color:#f0525255;background:#f0525214}
+.sk-eval{display:flex;gap:6px;align-items:center}
+.sk-eval select{min-width:130px}
+.sk-aviso{margin-top:8px;font-size:13px;color:#d8b4fe;background:#9b8ff714;border-radius:8px;padding:8px 12px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -810,7 +858,7 @@ let S = {
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
   devolucionFiltroProducto: "",
-  devolucionFiltroTipo: "",
+  devolucionFiltroTipo: "", pickeo: null, evalSecos: {},
   tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "", calidadDiaSel: "", calidadSucursal: "", devMetCategoria: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
@@ -1848,7 +1896,7 @@ const TIPOS_DEVOLUCION_MARKET = ["Fresco","Secos","Congelado"];
 const TIPOS_DEVOLUCION_GRANJA = ["Fresco","Congelado"];
 const MOTIVOS_POR_TIPO_DEVOLUCION = {
   Fresco:    ["Mal estado","Pérdida de vacío","Vencido","Roto"],
-  Secos:     ["Roto","Roto con cambio","Vencido con cambio","Vencido sin cambio"],
+  Secos:     ["Roto con cambio","Vencido con cambio","Vencido sin cambio","Roto sin cambio","Sobrestock"],
   Congelado: ["Vencido","Roto","Pérdida de frío"],
 };
 function tiposDevolucionDisponibles(sucursal){
@@ -2306,6 +2354,564 @@ async function submitDejarDevolucionesFabrica(){
   render();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  DEVOLUCIONES DE SECOS — pickeo
+//  Circuito:
+//   1) El market arma la devolución escaneando (o buscando) cada producto,
+//      con cantidad y motivo.
+//   2) Si hay líneas de SOBRESTOCK, Logística/Admin evalúan qué vuelve
+//      ("En evaluación"). Los demás motivos se aceptan solos.
+//   3) El repartidor lo lleva a fábrica (lo que se aceptó).
+//   4) Depósito lo levanta y CONTROLA pickeando que haya llegado lo declarado.
+// ═══════════════════════════════════════════════════════════════════
+const esSobrestock = m => normNotif(String(m||"").split(" — ")[0])==="sobrestock";
+function puedeEvaluarSecos(){ const r=S.user?.rol; return r==="logistica"||r==="admin"; }
+function puedeControlarSecos(){
+  const u=S.user; if(!u) return false;
+  return u.rol==="logistica"||u.rol==="admin"||(u.rol==="planificacion"&&u.tipoReal==="DEPOSITO");
+}
+// Lo que realmente viaja a fábrica: lo aceptado (las devoluciones que no
+// pasan por evaluación no tienen cantidadAceptada y viajan completas).
+function lineasQueViajan(d){
+  return productosDeDevolucion(d)
+    .filter(p=>p.cantidadAceptada===undefined||p.cantidadAceptada===null||+p.cantidadAceptada>0)
+    .map(p=>({...p, cantidad:(p.cantidadAceptada===undefined||p.cantidadAceptada===null)?p.cantidad:+p.cantidadAceptada}));
+}
+
+// ── Lector de códigos (se carga recién cuando se abre la cámara) ──
+let _qrLibPromise=null, _qr=null, _ultimoScan={code:"",t:0};
+function cargarLibQR(){
+  if(window.Html5Qrcode) return Promise.resolve();
+  if(_qrLibPromise) return _qrLibPromise;
+  const cargar=url=>new Promise((res,rej)=>{
+    const s=document.createElement("script"); s.src=url; s.onload=res;
+    s.onerror=()=>{ s.remove(); rej(new Error("no cargó "+url)); };
+    document.head.appendChild(s);
+  });
+  _qrLibPromise=cargar("https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js")
+    .catch(()=>cargar("https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"))
+    .catch(e=>{ _qrLibPromise=null; throw e; });
+  return _qrLibPromise;
+}
+async function pickeoAbrirCamara(){
+  const p=S.pickeo; if(!p) return;
+  p.camara=true; p.errCamara=""; render();
+  try{
+    await cargarLibQR();
+    await new Promise(r=>setTimeout(r,80));
+    if(!S.pickeo || !S.pickeo.camara || !document.getElementById("pickeo-reader")) return;
+    _qr=new Html5Qrcode("pickeo-reader");
+    const F=window.Html5QrcodeSupportedFormats||{};
+    const formatos=["EAN_13","EAN_8","UPC_A","UPC_E","CODE_128","CODE_39","QR_CODE"].map(k=>F[k]).filter(v=>v!==undefined);
+    await _qr.start({facingMode:"environment"},{fps:10,qrbox:{width:260,height:140},...(formatos.length?{formatsToSupport:formatos}:{})},
+      code=>pickeoCodigoLeido(code,false), ()=>{});
+  }catch(e){
+    console.warn("Cámara:",e);
+    await pickeoCerrarCamara(true);
+    if(S.pickeo){ S.pickeo.errCamara="No se pudo abrir la cámara. Revisá el permiso del navegador o cargá el código a mano."; render(); }
+  }
+}
+async function pickeoCerrarCamara(silencioso){
+  const q=_qr; _qr=null;
+  if(q){ try{ await q.stop(); }catch(e){} try{ q.clear(); }catch(e){} }
+  if(S.pickeo) S.pickeo.camara=false;
+  if(!silencioso) render();
+}
+
+// ── Búsqueda de productos por código ──
+function variantesCodigo(code){
+  const raw=String(code||"").trim(); if(!raw) return [];
+  const set=new Set([raw]);
+  if(/^\d+$/.test(raw)){
+    const sin=raw.replace(/^0+/,""); if(sin) set.add(sin);
+    [8,12,13,14].forEach(n=>{ if(raw.length<n) set.add(raw.padStart(n,"0")); });
+    if(raw.length===14||raw.length===13) set.add(raw.replace(/^0/,""));
+  }
+  return [...set];
+}
+function mismosCodigos(a,b){
+  const va=variantesCodigo(a), vb=new Set(variantesCodigo(b));
+  return va.some(x=>vb.has(x));
+}
+async function buscarProductoPorCodigo(code){
+  const vars=variantesCodigo(code); if(!vars.length) return null;
+  for(const col of ["codigo_barras","codigo_interno"]){
+    try{
+      const { data, error } = await sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras").in(col,vars).limit(1);
+      if(error) throw error;
+      if(data && data.length) return toCamelRows(data)[0];
+    }catch(e){ console.warn("Buscar por código:",e); }
+  }
+  return null;
+}
+
+// ── Apertura de la ventana ──
+function pickeoEstadoBase(extra){
+  return {camara:false,errCamara:"",query:"",resultados:[],buscando:false,ultimo:null,err:"",loading:false,dni:"",...extra};
+}
+function abrirPickeoArmar(){
+  S.pickeo=pickeoEstadoBase({modo:"armar",lineas:[]});
+  S.modal="pickeo"; render();
+}
+function abrirPickeoControl(id){
+  const d=S.devoluciones.find(x=>String(x.id)===String(id)); if(!d) return;
+  let guardado={}; try{ guardado=JSON.parse(localStorage.getItem("tl_ctrl_"+id)||"{}"); }catch(e){}
+  const lineas=lineasQueViajan(d).map(p=>{
+    const k=String(p.productoId??p.descripcion);
+    return {k, productoId:p.productoId, descripcion:p.descripcion, codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||"",
+            unidad:p.unidad||"Unidades", esperado:+p.cantidad||0, recibido:+(guardado[k]||0), motivo:p.motivo||""};
+  });
+  S.pickeo=pickeoEstadoBase({modo:"controlar",devId:id,sucursal:d.sucursal,lineas});
+  S.modal="pickeo"; render();
+}
+function pickeoGuardarProgreso(){
+  const p=S.pickeo; if(!p||p.modo!=="controlar") return;
+  const m={}; p.lineas.forEach(l=>{ if(+l.recibido>0) m[l.k]=+l.recibido; });
+  try{ localStorage.setItem("tl_ctrl_"+p.devId, JSON.stringify(m)); }catch(e){}
+}
+
+// ── Escaneo / ingreso de un código ──
+async function pickeoCodigoLeido(code, manual){
+  const p=S.pickeo; if(!p) return;
+  code=String(code||"").trim(); if(!code) return;
+  const ahora=Date.now();
+  if(!manual && _ultimoScan.code===code && ahora-_ultimoScan.t<1800) return;   // la cámara lee varias veces el mismo código
+  _ultimoScan={code,t:ahora};
+  if(navigator.vibrate) navigator.vibrate(60);
+
+  if(p.modo==="armar"){
+    const prod=await buscarProductoPorCodigo(code);
+    if(!S.pickeo) return;
+    if(!prod){ p.ultimo={ok:false,txt:`El código ${code} no está en el catálogo. Probá buscarlo por nombre.`}; render(); return; }
+    pickeoAgregarProducto(prod);
+    return;
+  }
+  // control
+  let idx=p.lineas.findIndex(l=>l.codigoBarras && mismosCodigos(code,l.codigoBarras));
+  if(idx<0 && /^\d+$/.test(code)) idx=p.lineas.findIndex(l=>l.codigoInterno && String(l.codigoInterno)===code);
+  let prod=null;
+  if(idx<0){
+    prod=await buscarProductoPorCodigo(code);
+    if(!S.pickeo) return;
+    if(prod) idx=p.lineas.findIndex(l=>String(l.productoId)===String(prod.id));
+  }
+  if(idx<0){
+    p.ultimo={ok:false,txt: prod ? `${prod.descripcion} NO figura en esta devolución.` : `El código ${code} no figura en esta devolución.`};
+    render(); return;
+  }
+  const l=p.lineas[idx];
+  l.recibido=(+l.recibido||0)+1;
+  p.ultimo={ok:l.recibido<=l.esperado, txt: l.recibido>l.esperado
+    ? `${l.descripcion}: ya van ${l.recibido} y se esperaban ${l.esperado} (de más)`
+    : `${l.descripcion} · ${l.recibido} de ${l.esperado}`};
+  pickeoGuardarProgreso(); render();
+}
+function pickeoBuscarManual(){
+  const el=$("pk-busqueda"); const v=(el?.value||S.pickeo?.query||"").trim();
+  if(!v) return;
+  if(/^[\dA-Za-z\-]{6,}$/.test(v) && /\d{6,}/.test(v)){
+    if(el) el.value=""; S.pickeo.query=""; S.pickeo.resultados=[];
+    pickeoCodigoLeido(v,true);
+  }
+}
+
+// ── Armar: buscar por nombre, agregar, editar líneas ──
+let _timerPickeoBusq=null;
+function pickeoBuscar(q){
+  const p=S.pickeo; if(!p) return;
+  p.query=q;
+  clearTimeout(_timerPickeoBusq);
+  const t=q.trim();
+  if(t.length<2){ p.resultados=[]; p.buscando=false; render(); return; }
+  p.buscando=true; render();
+  _timerPickeoBusq=setTimeout(async ()=>{
+    try{
+      const { data, error } = await sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras")
+        .or(`descripcion.ilike.%${t}%,codigo_interno.ilike.%${t}%,codigo_barras.ilike.%${t}%`).limit(12);
+      if(error) throw error;
+      if(S.pickeo) S.pickeo.resultados=toCamelRows(data||[]);
+    }catch(e){ console.warn("Buscar:",e); if(S.pickeo) S.pickeo.resultados=[]; }
+    if(S.pickeo){ S.pickeo.buscando=false; render(); }
+  },280);
+}
+function pickeoAgregarProducto(prod){
+  const p=S.pickeo; if(!p) return;
+  const ex=p.lineas.find(l=>String(l.producto.id)===String(prod.id));
+  if(ex){ ex.cantidad=(+ex.cantidad||0)+1; p.ultimo={ok:true,txt:`${prod.descripcion} · ahora ${ex.cantidad}`}; }
+  else { p.lineas.unshift({producto:prod,cantidad:1,unidad:"Unidades",motivo:""}); p.ultimo={ok:true,txt:`${prod.descripcion} agregado`}; }
+  p.query=""; p.resultados=[]; p.err="";
+  const el=$("pk-busqueda"); if(el) el.value="";
+  render();
+}
+function pickeoElegirResultado(prod){ pickeoAgregarProducto(prod); }
+function pickeoQuitar(i){ S.pickeo.lineas.splice(i,1); render(); }
+function pickeoCambiarCant(i,delta){
+  const l=S.pickeo.lineas[i]; if(!l) return;
+  const v=Math.max(0,(+l.cantidad||0)+delta);
+  l.cantidad=v; render();
+}
+function pickeoSetCant(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.cantidad=v; render(); } }
+function pickeoSetUnidad(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.unidad=v; render(); } }
+function pickeoSetMotivo(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.motivo=v; render(); } }
+// Control: sumar/restar/escribir lo recibido
+function pickeoCtrlCambiar(i,delta){
+  const l=S.pickeo.lineas[i]; if(!l) return;
+  l.recibido=Math.max(0,(+l.recibido||0)+delta); pickeoGuardarProgreso(); render();
+}
+function pickeoCtrlSet(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.recibido=Math.max(0,+v||0); pickeoGuardarProgreso(); render(); } }
+function pickeoCtrlTodoOk(i){ const l=S.pickeo.lineas[i]; if(l){ l.recibido=l.esperado; pickeoGuardarProgreso(); render(); } }
+
+// ── Ventana ──
+function renderPickeoModal(){
+  const p=S.pickeo; if(!p) return "";
+  const armar=p.modo==="armar";
+  const camara=`
+    ${p.camara
+      ? `<div id="pickeo-reader" class="pk-reader"></div>
+         <button class="btn btn-ghost btn-md btn-full" style="margin-top:8px" onclick="pickeoCerrarCamara()">✕ Cerrar cámara</button>`
+      : `<button class="btn btn-primary btn-md btn-full" onclick="pickeoAbrirCamara()">📷 Escanear código de barras</button>`}
+    ${p.errCamara?`<div class="err-msg" style="display:block;margin-top:8px">${escH(p.errCamara)}</div>`:""}`;
+  const ultimo = p.ultimo ? `<div class="pk-ultimo ${p.ultimo.ok===false?"mal":p.ultimo.ok===null?"":"bien"}">${p.ultimo.ok===false?"⚠️":"✓"} ${escH(p.ultimo.txt)}</div>` : "";
+  const buscador=`
+    <div class="field" style="position:relative;margin:12px 0 0">
+      <label>${armar?"Código de barras o nombre del producto":"¿No lee? Escribí el código de barras"}</label>
+      <div style="display:flex;gap:8px">
+        <input id="pk-busqueda" class="inp" type="text" inputmode="${armar?"text":"numeric"}" autocomplete="off" placeholder="${armar?"Escaneá, escribí el código o buscá por nombre…":"Código de barras"}"
+          value="${escH(p.query||"")}"
+          oninput="${armar?"pickeoBuscar(this.value)":"S.pickeo.query=this.value"}"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();pickeoBuscarManual()}"/>
+        <button class="btn btn-ghost btn-md" onclick="pickeoBuscarManual()">Agregar</button>
+      </div>
+      ${armar && p.buscando?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Buscando…</div>`:""}
+      ${armar && (p.resultados||[]).length?`
+      <div class="card" style="position:absolute;left:0;right:0;top:70px;z-index:30;max-height:260px;overflow-y:auto;padding:6px;box-shadow:0 12px 32px #000a">
+        ${p.resultados.map(r=>`
+          <div class="pk-res" onclick='pickeoElegirResultado(${JSON.stringify(r).replace(/'/g,"&apos;")})'>
+            <div style="font-size:14px;font-weight:600">${escH(r.descripcion)}</div>
+            <div style="font-size:11.5px;color:var(--faint)">${r.codigoBarras?`EAN ${escH(r.codigoBarras)}`:""}${r.codigoBarras&&r.codigoInterno?" · ":""}${r.codigoInterno?`Int. ${escH(r.codigoInterno)}`:""}</div>
+          </div>`).join("")}
+      </div>`:""}
+      ${armar && p.query && !p.buscando && !(p.resultados||[]).length && p.query.trim().length>=2?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sin resultados — probá con otra palabra</div>`:""}
+    </div>`;
+
+  if(armar){
+    const totalU=p.lineas.reduce((a,l)=>a+(+l.cantidad||0),0);
+    const haySobre=p.lineas.some(l=>esSobrestock(l.motivo));
+    const sinDni = !(S.user?.rol==="logistica"||S.user?.rol==="admin");
+    return `
+    <div class="alert-info" style="margin-bottom:12px;font-size:13px">📦 <strong>${escH(S.user?.area||"")}</strong> · Devolución de <strong>Secos</strong>. Escaneá cada producto: cada lectura suma 1 unidad.</div>
+    ${camara}
+    ${ultimo}
+    ${buscador}
+    <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+      ${p.lineas.length===0?`<div class="pk-vacio">Todavía no pickeaste ningún producto.</div>`:p.lineas.map((l,i)=>`
+      <div class="pk-line ${esSobrestock(l.motivo)?"sobre":""}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="min-width:0">
+            <div class="pk-name">${escH(l.producto.descripcion)}</div>
+            <div class="pk-code">${l.producto.codigoBarras?`EAN ${escH(l.producto.codigoBarras)}`:""}${l.producto.codigoBarras&&l.producto.codigoInterno?" · ":""}${l.producto.codigoInterno?`Int. ${escH(l.producto.codigoInterno)}`:""}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="pickeoQuitar(${i})" title="Quitar">✕</button>
+        </div>
+        <div class="pk-row">
+          <div class="pk-stepper">
+            <button onclick="pickeoCambiarCant(${i},-1)">−</button>
+            <input id="pk-cant-${i}" type="number" min="0" step="1" value="${escH(String(l.cantidad))}" oninput="pickeoSetCant(${i},this.value)"/>
+            <button onclick="pickeoCambiarCant(${i},1)">+</button>
+          </div>
+          <select id="pk-uni-${i}" class="inp" style="max-width:130px" onchange="pickeoSetUnidad(${i},this.value)">
+            ${UNIDADES.map(un=>`<option ${l.unidad===un?"selected":""}>${un}</option>`).join("")}
+          </select>
+        </div>
+        <select id="pk-mot-${i}" class="inp ${!l.motivo&&p.err?"err":""}" style="margin-top:8px" onchange="pickeoSetMotivo(${i},this.value)">
+          <option value="">— Motivo de la devolución —</option>
+          ${MOTIVOS_POR_TIPO_DEVOLUCION.Secos.map(m=>`<option ${l.motivo===m?"selected":""}>${m}</option>`).join("")}
+        </select>
+        ${esSobrestock(l.motivo)?`<div class="pk-nota">🔎 El sobrestock se evalúa: Logística decide si vuelve a fábrica.</div>`:""}
+      </div>`).join("")}
+    </div>
+    <div class="pk-cierre">
+      <div class="field" style="margin-bottom:12px">
+        <label>Foto del ticket <span class="req">*</span></label>
+        <input id="pk-foto" type="file" accept="image/*" style="font-size:12px"/>
+      </div>
+      ${sinDni?`<div class="field" style="margin-bottom:0">
+        <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+        <input id="pk-dni" class="inp" type="number" placeholder="Ej: 30123456" value="${escH(p.dni||"")}" oninput="S.pickeo.dni=this.value"/>
+      </div>`:""}
+      ${p.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(p.err)}</div>`:""}
+    </div>
+    <div class="pk-foot">
+      <div class="pk-resumen">
+        ${p.lineas.length
+          ? `<strong>${p.lineas.length}</strong> producto${p.lineas.length!==1?"s":""} · <strong>${fmtNum(totalU)}</strong> en total${haySobre?`<br><span style="color:#fda4af">pasa por evaluación</span>`:""}`
+          : `<span style="color:var(--faint)">Sin productos todavía</span>`}
+      </div>
+      <button class="btn btn-warn btn-md" onclick="pickeoEnviar()" ${p.loading||!p.lineas.length?"disabled":""}>
+        ${p.loading?`<span class="spinner"></span> Enviando…`:"Enviar devolución"}
+      </button>
+    </div>`;
+  }
+
+  // ── Control en fábrica ──
+  const completos=p.lineas.filter(l=>+l.recibido===+l.esperado).length;
+  const conDif=p.lineas.filter(l=>+l.recibido!==+l.esperado);
+  const sinDni = !(S.user?.rol==="logistica"||S.user?.rol==="admin");
+  return `
+  <div class="alert-info" style="margin-bottom:12px;font-size:13px">🔎 Controlando la devolución de <strong>${escH(p.sucursal||"")}</strong>. Escaneá cada producto que llegó, o tocá + / escribí la cantidad.</div>
+  ${camara}
+  ${ultimo}
+  ${buscador}
+  <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+    ${p.lineas.map((l,i)=>{
+      const rec=+l.recibido||0, esp=+l.esperado||0;
+      const estado = rec===esp ? "ok" : rec>esp ? "mas" : rec>0 ? "parcial" : "falta";
+      const pct = esp? Math.min(100,Math.round(rec/esp*100)) : 0;
+      const color = {ok:"var(--green)",mas:"var(--red)",parcial:"var(--amber)",falta:"var(--border2)"}[estado];
+      return `
+      <div class="pk-line ctrl ${estado}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="min-width:0">
+            <div class="pk-name">${escH(l.descripcion)}</div>
+            <div class="pk-code">${l.codigoBarras?`EAN ${escH(l.codigoBarras)}`:""}${l.codigoBarras&&l.codigoInterno?" · ":""}${l.codigoInterno?`Int. ${escH(l.codigoInterno)}`:""}${l.motivo?` · ${escH(l.motivo.split(" — ")[0])}`:""}</div>
+          </div>
+          <div class="pk-prog-num" style="color:${color}">${fmtNum(rec)} <span style="color:var(--muted);font-weight:500">/ ${fmtNum(esp)} ${escH(l.unidad)}</span></div>
+        </div>
+        <div class="pk-bar"><div style="width:${pct}%;background:${color}"></div></div>
+        <div class="pk-row" style="margin-top:10px">
+          <div class="pk-stepper">
+            <button onclick="pickeoCtrlCambiar(${i},-1)">−</button>
+            <input type="number" min="0" step="1" value="${escH(String(rec))}" oninput="pickeoCtrlSet(${i},this.value)"/>
+            <button onclick="pickeoCtrlCambiar(${i},1)">+</button>
+          </div>
+          <button class="btn ${estado==="ok"?"btn-success":"btn-ghost"} btn-sm" onclick="pickeoCtrlTodoOk(${i})">✓ Llegó todo</button>
+        </div>
+        ${estado==="mas"?`<div class="pk-nota mal">⚠️ Contaste ${fmtNum(rec-esp)} de más que lo declarado.</div>`:""}
+      </div>`; }).join("")}
+  </div>
+  <div class="pk-cierre">
+    ${sinDni?`<div class="field" style="margin-bottom:0">
+      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
+      <input id="pk-dni" class="inp" type="number" placeholder="Ej: 30123456" value="${escH(p.dni||"")}" oninput="S.pickeo.dni=this.value"/>
+    </div>`:`<p style="font-size:12.5px;color:var(--muted)">👤 Confirmando como <strong style="color:var(--text)">${escH(S.user.nombre||"")}</strong></p>`}
+    <p style="font-size:12px;color:var(--faint);margin-top:10px">Podés cerrar y seguir después: lo que contaste queda guardado.</p>
+    ${p.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(p.err)}</div>`:""}
+  </div>
+  <div class="pk-foot">
+    <div class="pk-resumen">
+      <strong>${completos}</strong> de ${p.lineas.length} completos${conDif.length?`<br><span style="color:var(--amber);font-weight:700">${conDif.length} con diferencia</span>`:""}
+    </div>
+    <button class="btn ${conDif.length?"btn-warn":"btn-success"} btn-md" onclick="pickeoConfirmarControl()" ${p.loading?"disabled":""}>
+      ${p.loading?`<span class="spinner"></span> Guardando…`:(conDif.length?"Confirmar":"✅ Confirmar")}
+    </button>
+  </div>`;
+}
+
+// ── Firma: DNI de quien confirma (Logística/Admin ya están identificados) ──
+function pickeoFirmante(){
+  if(S.user?.rol==="logistica"||S.user?.rol==="admin") return {ok:true,nombre:S.user.nombre||S.user.area,dni:S.user.dni||""};
+  const dni=String($("pk-dni")?.value||S.pickeo?.dni||"").replace(/\D/g,"");
+  if(!dni) return {ok:false,msg:"Ingresá tu DNI."};
+  const chk=validarDNI(dni);
+  if(!chk.ok) return {ok:false,msg:chk.msg};
+  return {ok:true,nombre:chk.nombre,dni};
+}
+
+// ── Enviar la devolución armada ──
+async function pickeoEnviar(){
+  const p=S.pickeo; if(!p||p.loading||p.modo!=="armar") return;
+  p.lineas.forEach((l,i)=>{ const c=$(`pk-cant-${i}`); if(c) l.cantidad=c.value; const u=$(`pk-uni-${i}`); if(u) l.unidad=u.value; const m=$(`pk-mot-${i}`); if(m) l.motivo=m.value; });
+  if(!p.lineas.length){ p.err="Pickeá al menos un producto."; render(); return; }
+  for(const l of p.lineas){
+    if(!(+l.cantidad>0)){ p.err=`Ingresá la cantidad de "${l.producto.descripcion}".`; render(); return; }
+    if(!l.motivo){ p.err=`Elegí el motivo de "${l.producto.descripcion}".`; render(); return; }
+  }
+  const foto=$("pk-foto")?.files?.[0]||null;
+  if(!foto){ p.err="La foto del ticket es obligatoria."; render(); return; }
+  const firma=pickeoFirmante();
+  if(!firma.ok){ p.err=firma.msg; render(); return; }
+
+  p.loading=true; p.err=""; renderNow();
+  const u=S.user;
+  try{
+    const fotoUrl=await subirArchivo(foto,"devoluciones");
+    const productosJson=p.lineas.map(l=>{
+      const sobre=esSobrestock(l.motivo);
+      return {
+        productoId:l.producto.id, descripcion:l.producto.descripcion,
+        codigoInterno:l.producto.codigoInterno||"", codigoBarras:l.producto.codigoBarras||"",
+        cantidad:+l.cantidad, unidad:l.unidad, motivo:l.motivo,
+        // el sobrestock espera evaluación; el resto se acepta solo
+        evaluacion: sobre?"pendiente":"aceptada",
+        cantidadAceptada: sobre?null:+l.cantidad,
+      };
+    });
+    const haySobre=productosJson.some(x=>x.evaluacion==="pendiente");
+    const motivoResumen=productosJson.length===1?productosJson[0].motivo:`${productosJson.length} productos: `+productosJson.map(x=>x.descripcion).join(", ");
+    const payload=toSnakeRow({
+      sucursal:u.area||"", motivo:motivoResumen, fotoUrl,
+      estado: haySobre?"En evaluación":"Pendiente",
+      creadoPor:firma.nombre, productosJson:JSON.stringify(productosJson), tipoDevolucion:"Secos",
+    });
+    const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
+    if(error) throw error;
+    const creada=toCamelRow(data);
+    S.devoluciones=[creada,...S.devoluciones];
+    await pickeoCerrarCamara(true);
+    S.pickeo=null; S.modal=null;
+    S.devolucionForm={tipo:"",items:[],loading:false,err:"",productoQuery:"",productoResultados:[],productoBuscando:false};
+    toast(haySobre?"📦 Devolución enviada — Logística evalúa el sobrestock":"📦 Devolución de Secos enviada");
+    if(haySobre) crearNotificacion("LOGISTICA",`📦 Devolución de Secos con sobrestock para evaluar — ${u.area||""}`,null);
+  }catch(e){
+    console.warn("Enviar pickeo:",e);
+    p.loading=false; p.err="No se pudo enviar — probá de nuevo.";
+  }
+  render();
+}
+
+// ── Confirmar el control en fábrica ──
+async function pickeoConfirmarControl(){
+  const p=S.pickeo; if(!p||p.loading||p.modo!=="controlar") return;
+  const d=S.devoluciones.find(x=>String(x.id)===String(p.devId)); if(!d) return;
+  const firma=pickeoFirmante();
+  if(!firma.ok){ p.err=firma.msg; render(); return; }
+  p.loading=true; p.err=""; renderNow();
+
+  const recMap=new Map(p.lineas.map(l=>[l.k,+l.recibido||0]));
+  const productosConfirmados=productosDeDevolucion(d).map(x=>{
+    const k=String(x.productoId??x.descripcion);
+    return recMap.has(k) ? {...x,cantidadRecibida:recMap.get(k)} : x;
+  });
+  const difs=p.lineas.filter(l=>(+l.recibido||0)!==(+l.esperado||0));
+  const nota=difs.length ? "⚠️ Diferencia en cantidad recibida vs. declarada: "+difs.map(l=>`${l.descripcion} (declarado ${fmtNum(l.esperado)}${l.unidad?" "+l.unidad:""}, recibido ${fmtNum(+l.recibido||0)}${l.unidad?" "+l.unidad:""})`).join("; ") : "";
+  const changes={
+    estado:"Confirmada",
+    respuesta:(difs.length?"Controlada por pickeo, con diferencias.":"Controlada por pickeo: llegó todo lo declarado.")+(nota?" · "+nota:""),
+    respondidoPor:firma.nombre, productosJson:JSON.stringify(productosConfirmados), updatedAt:now(),
+  };
+  try{
+    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+    if(error) throw error;
+    S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
+    try{ localStorage.removeItem("tl_ctrl_"+d.id); }catch(e){}
+    await pickeoCerrarCamara(true);
+    S.pickeo=null; S.modal=null;
+    toast(difs.length?"✅ Confirmada — quedaron marcadas las diferencias":"✅ Devolución confirmada: llegó todo");
+  }catch(e){
+    console.warn("Confirmar control:",e);
+    p.loading=false; p.err="No se pudo guardar — probá de nuevo.";
+  }
+  render();
+}
+
+// ── Evaluación del sobrestock (Logística / Admin) ──
+function setDecisionEval(id,idx,v){ S.evalSecos=S.evalSecos||{}; const m=(S.evalSecos[id]=S.evalSecos[id]||{}); m[idx]={...(m[idx]||{}),decision:v}; render(); }
+function setCantEval(id,idx,v){ S.evalSecos=S.evalSecos||{}; const m=(S.evalSecos[id]=S.evalSecos[id]||{}); m[idx]={...(m[idx]||{}),cantidad:v}; }
+async function confirmarEvaluacionSecos(id){
+  const d=S.devoluciones.find(x=>String(x.id)===String(id)); if(!d||!puedeEvaluarSecos()) return;
+  const prods=productosDeDevolucion(d); const dec=(S.evalSecos||{})[id]||{};
+  const ahora=now(), quien=S.user.nombre||S.user.area||"";
+  const resumen=[]; let alguna=false;
+  for(let i=0;i<prods.length;i++){
+    const x=prods[i]; if(x.evaluacion!=="pendiente") continue;
+    const e=dec[i]||{};
+    if(!e.decision){ toast(`Decidí qué pasa con "${x.descripcion}"`,"warn"); return; }
+    if(e.decision==="aceptar"){
+      const cant=e.cantidad===undefined||e.cantidad===""?+x.cantidad:+e.cantidad;
+      if(!(cant>0) || cant>+x.cantidad){ toast(`La cantidad de "${x.descripcion}" tiene que estar entre 1 y ${x.cantidad}`,"warn"); return; }
+      prods[i]={...x,evaluacion:"aceptada",cantidadAceptada:cant,evaluadoPor:quien,evaluadoAt:ahora};
+      resumen.push(`vuelve ${fmtNum(cant)} de ${fmtNum(x.cantidad)} ${x.unidad||""} de ${x.descripcion}`.replace(/\s+/g," ")); alguna=true;
+    } else {
+      prods[i]={...x,evaluacion:"rechazada",cantidadAceptada:0,evaluadoPor:quien,evaluadoAt:ahora};
+      resumen.push(`NO vuelve ${x.descripcion}`);
+    }
+  }
+  const viaja=prods.some(x=>x.cantidadAceptada===undefined||x.cantidadAceptada===null||+x.cantidadAceptada>0);
+  const changes={
+    estado: viaja?"Pendiente":"Rechazada",
+    productosJson:JSON.stringify(prods),
+    respuesta:`Evaluación de sobrestock: ${resumen.join("; ")}.`,
+    respondidoPor:quien, updatedAt:ahora,
+  };
+  try{
+    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+    if(error) throw error;
+    S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
+    if(S.evalSecos) delete S.evalSecos[id];
+    toast(viaja?"✅ Evaluada — queda lista para que el repartidor la lleve":"Evaluada — no vuelve nada, queda cerrada");
+    crearNotificacion(String(d.sucursal||"").toUpperCase(), viaja?`✅ Evaluaron tu devolución de Secos: ${resumen.join("; ")}.`:`Tu devolución de Secos no fue aceptada (sobrestock): queda en la sucursal.`, null);
+  }catch(e){ console.warn("Evaluar:",e); toast("⚠️ No se pudo guardar la evaluación","warn"); }
+  render();
+}
+
+// ── Cómo se ve una devolución de Secos en la lista ──
+function renderSecosBloque(d){
+  const prods=productosDeDevolucion(d);
+  const evaluando=d.estado==="En evaluación";
+  const puedeEval=evaluando && puedeEvaluarSecos();
+  const dec=(S.evalSecos||{})[d.id]||{};
+  const hayPendientes=prods.some(x=>x.evaluacion==="pendiente");
+  return `
+  <div class="sk-lista">
+    ${prods.map((x,i)=>{
+      const mot=String(x.motivo||"").split(" — ")[0];
+      const col=colorMotivoCalidad(mot,0);
+      let chip="";
+      if(x.evaluacion==="pendiente") chip=`<span class="sk-chip amber">⏳ a evaluar</span>`;
+      else if(x.evaluacion==="rechazada") chip=`<span class="sk-chip red">✕ No vuelve</span>`;
+      else if(esSobrestock(mot) && x.evaluacion==="aceptada") chip=`<span class="sk-chip green">✅ Vuelve ${fmtNum(+x.cantidadAceptada)} de ${fmtNum(+x.cantidad)}</span>`;
+      const rec = x.cantidadRecibida!==undefined
+        ? `<span class="sk-chip ${+x.cantidadRecibida===+(x.cantidadAceptada??x.cantidad)?"green":"red"}">recibido ${fmtNum(+x.cantidadRecibida)}</span>` : "";
+      const e=dec[i]||{};
+      return `
+      <div class="sk-item">
+        <div style="min-width:0;flex:1">
+          <div class="sk-nombre">${escH(x.descripcion)}</div>
+          <div class="sk-meta"><strong>${fmtNum(+x.cantidad)} ${escH(x.unidad||"")}</strong> · <span style="color:${col};font-weight:700">${escH(mot)}</span> ${chip} ${rec}</div>
+        </div>
+        ${puedeEval && x.evaluacion==="pendiente"?`
+        <div class="sk-eval">
+          <select class="inp" onchange="setDecisionEval('${escH(d.id)}',${i},this.value)">
+            <option value="">— Decidí —</option>
+            <option value="aceptar" ${e.decision==="aceptar"?"selected":""}>✅ Vuelve</option>
+            <option value="rechazar" ${e.decision==="rechazar"?"selected":""}>✕ No vuelve</option>
+          </select>
+          ${e.decision==="aceptar"?`<input class="inp" type="number" min="1" max="${escH(String(x.cantidad))}" step="1" style="width:84px" value="${escH(String(e.cantidad===undefined?x.cantidad:e.cantidad))}" oninput="setCantEval('${escH(d.id)}',${i},this.value)" title="Cuántas vuelven"/>`:""}
+        </div>`:""}
+      </div>`; }).join("")}
+  </div>
+  ${evaluando && !puedeEval ? `<p class="sk-aviso">⏳ En evaluación: Logística decide qué productos de sobrestock vuelven a fábrica.</p>` : ""}
+  ${puedeEval && hayPendientes ? `<div style="margin-top:10px;display:flex;justify-content:flex-end"><button class="btn btn-success btn-sm" onclick="confirmarEvaluacionSecos('${escH(d.id)}')">✅ Confirmar evaluación</button></div>`:""}`;
+}
+function renderAccionesSecos(d){
+  if(["Confirmada","No confirmada","Rechazada"].includes(d.estado)) return "";
+  if(S.devolucionAccionId===d.id && S.devolucionAccionTipo==="noConfirmar"){
+    return `
+    <div class="field" style="margin-top:10px">
+      <textarea id="devol-accion-texto" rows="2" placeholder="¿Qué faltó? (obligatorio)" oninput="S.devolucionAccionTexto=this.value">${escH(S.devolucionAccionTexto||"")}</textarea>
+      <div style="display:flex;gap:8px;margin-top:6px;justify-content:flex-end">
+        <button class="btn btn-ghost btn-sm" onclick="cancelarAccionDevolucion()">Cancelar</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmarAccionDevolucion()">✕ No confirmar y cerrar</button>
+      </div>
+    </div>`;
+  }
+  const botones=[];
+  if(d.estado==="En fábrica" && puedeControlarSecos())
+    botones.push(`<button class="btn btn-success btn-sm" onclick="abrirPickeoControl('${escH(d.id)}')">🔎 Controlar con pickeo</button>`);
+  if((d.estado==="En fábrica" && puedeControlarSecos()) || ((S.user?.rol==="logistica"||S.user?.rol==="admin") && ["Pendiente","En camino"].includes(d.estado)))
+    botones.push(`<button class="btn btn-danger btn-sm" onclick="abrirAccionDevolucion('${escH(d.id)}','noConfirmar')">✕ No confirmar</button>`);
+  return botones.length?`<div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">${botones.join("")}</div>`:"";
+}
+// Lo que ve la sucursal al elegir "Secos" en el formulario
+function pickeoLauncherHtml(){
+  return `
+  <div class="pk-launcher">
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">📷 Devolución de Secos</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Se arma escaneando cada producto con la cámara del celular (o escribiendo el código). Elegís cantidad y motivo de cada uno.</p>
+    <button class="btn btn-warn btn-md btn-full" onclick="abrirPickeoArmar()">Abrir pickeo de Secos</button>
+  </div>`;
+}
+
 // "Mal olor o color" y "Mal estado" eran lo mismo: quedó solo "Mal estado".
 // Las devoluciones viejas todavía guardan el nombre anterior, así que se
 // unifica al leerlas (y el SQL devoluciones_04 lo corrige en la base).
@@ -2336,8 +2942,8 @@ function renderDevoluciones(){
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
     lista = S.tabDevGestor==="historial"
-      ? S.devoluciones.filter(d=>["Confirmada","No confirmada"].includes(d.estado))
-      : S.devoluciones.filter(d=>!["Confirmada","No confirmada"].includes(d.estado));
+      ? S.devoluciones.filter(d=>["Confirmada","No confirmada","Rechazada"].includes(d.estado))
+      : S.devoluciones.filter(d=>!["Confirmada","No confirmada","Rechazada"].includes(d.estado));
     // Calidad solo ve Fresco, Depósito solo ve Secos — es su alcance fijo,
     // no un filtro que puedan sacar. Logística/Admin ven todo, con un
     // filtro de categoría normal que sí pueden cambiar.
@@ -2353,7 +2959,7 @@ function renderDevoluciones(){
     }
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
-  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : e==="No confirmada" ? "var(--red)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
+  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : (e==="No confirmada"||e==="Rechazada") ? "var(--red)" : e==="En evaluación" ? "var(--purple)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
 
   return `
   <div style="animation:fadeUp .3s ease">
@@ -2381,6 +2987,7 @@ function renderDevoluciones(){
           ${tiposDevolucionDisponibles(u.area).map(t=>`<option ${S.devolucionForm.tipo===t?"selected":""}>${t}</option>`).join("")}
         </select>
       </div>
+      ${S.devolucionForm.tipo==="Secos" ? pickeoLauncherHtml() : `
       <div class="field" style="position:relative;margin-top:14px;${!S.devolucionForm.tipo?"opacity:.5;pointer-events:none":""}">
         <label>Buscar producto</label>
         <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
@@ -2453,6 +3060,7 @@ function renderDevoluciones(){
           </button>
         </div>
       </div>
+      `}
     </div>`:(!esGestor && !esRepartidor?`
     <div class="card" style="margin-bottom:20px;border-left:3px solid var(--amber)">
       <h3 style="font-size:14px;font-weight:700;margin-bottom:6px">🛠️ Carga de devoluciones en mantenimiento</h3>
@@ -2481,11 +3089,13 @@ function renderDevoluciones(){
       ${esGestor?`
       <select class="inp" style="width:180px" onchange="S.devolucionFiltroEstado=this.value;render()">
         <option value="">Todos los estados</option>
+        <option ${S.devolucionFiltroEstado==="En evaluación"?"selected":""}>En evaluación</option>
         <option ${S.devolucionFiltroEstado==="Pendiente"?"selected":""}>Pendiente</option>
         <option ${S.devolucionFiltroEstado==="En camino"?"selected":""}>En camino</option>
         <option ${S.devolucionFiltroEstado==="En fábrica"?"selected":""}>En fábrica</option>
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
+        <option ${S.devolucionFiltroEstado==="Rechazada"?"selected":""}>Rechazada</option>
       </select>
       <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>
       ${(()=>{
@@ -2520,7 +3130,8 @@ function renderDevoluciones(){
             </div>
           </div>
           ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?"":`<p style="margin-top:8px;font-size:14px">${escH(unificarMotivoDevol(d.motivo))}</p>`; })()}
-          ${(()=>{ const prods = productosDeDevolucion(d); return prods.length?`
+          ${d.tipoDevolucion==="Secos" ? renderSecosBloque(d) : ""}
+          ${(()=>{ const prods = productosDeDevolucion(d); return (prods.length && d.tipoDevolucion!=="Secos")?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
             ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
@@ -2528,9 +3139,10 @@ function renderDevoluciones(){
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
           ${d.nombreRepartidor?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">📦 Dejada en fábrica por ${escH(d.nombreRepartidor)}</p>`:""}
           ${d.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(d.respondidoPor||"—")}):</strong> ${escH(d.respuesta)}</div>`:""}
-          ${!d.respuesta && !["Pendiente","En camino","En fábrica"].includes(d.estado)?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
+          ${!d.respuesta && !["Pendiente","En camino","En fábrica","En evaluación"].includes(d.estado)?`<div class="alert-info" style="margin-top:10px"><strong>${escH(d.respondidoPor||"—")}</strong> cerró esta devolución.</div>`:""}
           ${!esGestor && !esRepartidor && d.estado==="No confirmada"?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">Si hace falta, comunicate con logística por otro medio para resolverlo.</p>`:""}
-          ${esGestor && !["Confirmada","No confirmada"].includes(d.estado)?`
+          ${esGestor && d.tipoDevolucion==="Secos" ? renderAccionesSecos(d) : ""}
+          ${esGestor && d.tipoDevolucion!=="Secos" && !["Confirmada","No confirmada","Rechazada"].includes(d.estado)?`
             ${S.devolucionAccionId===d.id?`
             ${S.devolucionAccionTipo==="confirmar" && (S.devolucionAccionCantidades||[]).length?`
             <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px">
@@ -2715,6 +3327,13 @@ function morphSeguro(el, html){
   // (evita perder foco/cursor si un cambio de fondo llega mientras tipea).
   morphdom(el, html, {
     onBeforeElUpdated: (fromEl, toEl) => {
+      // El visor de la cámara (pickeo) lo maneja la librería del lector: si se
+      // lo parchea se corta el video.
+      if(fromEl.id==="pickeo-reader" && toEl.id==="pickeo-reader") return false;
+      // Un <input type=file> ya elegido: si se lo parchea, el navegador borra la
+      // foto elegida cada vez que la pantalla se redibuja (por ejemplo al
+      // aparecer un error de validación).
+      if(fromEl.tagName==="INPUT" && fromEl.type==="file" && toEl.tagName==="INPUT" && toEl.type==="file") return false;
       // Conservar la posición del indicador de pestañas para que se deslice
       // (si no, cada render lo borra y vuelve a empezar de cero)
       if(fromEl.classList && fromEl.classList.contains("vt-content") && fromEl.classList.contains("enter")) toEl.classList.add("enter");
@@ -3075,7 +3694,7 @@ function renderCalidad(){
 const PALETA_CALIDAD = ["#4f9eff","#2de0c4","#f5a623","#9b8ff7","#f05252","#2ecc7a","#f472b6","#38bdf8"];
 const COLOR_MOTIVO_CALIDAD = {
   "Mal estado":"#f05252","Pérdida de vacío":"#4f9eff","Vencido":"#f5a623","Roto":"#9b8ff7",
-  "Pérdida de frío":"#38bdf8","Roto con cambio":"#f472b6","Vencido con cambio":"#2ecc7a","Vencido sin cambio":"#2de0c4",
+  "Pérdida de frío":"#38bdf8","Roto con cambio":"#f472b6","Vencido con cambio":"#2ecc7a","Vencido sin cambio":"#2de0c4","Roto sin cambio":"#c084fc","Sobrestock":"#fb7185",
 };
 function colorMotivoCalidad(m,i){ return COLOR_MOTIVO_CALIDAD[m] || PALETA_CALIDAD[i%PALETA_CALIDAD.length]; }
 // Los colores de estado vienen como var(--x): para pintar SVG de forma
@@ -4316,7 +4935,10 @@ function accesosRapidosHtml(){
   if(u.rol==="repartidor") return ""; // el repartidor no maneja quejas ni devoluciones desde acá
   const ag=areaGestionadaPorUsuario();
   const nq=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;
-  const nd=esGestorDevolucion()?S.devoluciones.filter(d=>d.estado==="Pendiente").length:0;
+  // Pendientes + lo que está esperando una decisión mía (evaluar sobrestock / controlar Secos en fábrica)
+  const nd=esGestorDevolucion()?S.devoluciones.filter(d=>d.estado==="Pendiente"
+      || (d.estado==="En evaluación" && puedeEvaluarSecos())
+      || (d.estado==="En fábrica" && d.tipoDevolucion==="Secos" && puedeControlarSecos())).length:0;
   // En Logística, Quejas va en la barra de arriba, junto a las notificaciones
   const botonQuejas = u.rol==="logistica" ? "" :
     `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-purple"} btn-md" onclick="abrirQuejas()">💬 Quejas${nq>0?`<span class="nbadge">${nq}</span>`:""}</button>`;
@@ -5986,7 +6608,7 @@ function renderRepartidor(){
         const categoria = esParaTomar
           ? {color:"var(--amber)", texto:"🔄📥 Devolución para tomar"}
           : {color:"var(--teal)", texto:"🔄📤 Devolución para dejar en fábrica"};
-        const prods = productosDeDevolucion(d);
+        const prods = lineasQueViajan(d);
         return `
         <div class="del-card">
           <div class="del-stripe" style="background:${categoria.color}"></div>
@@ -6191,6 +6813,7 @@ function renderModals(){
       </div>
     </div>`;
 
+  if(S.modal==="pickeo")    return wrapModal("m",S.pickeo?.modo==="controlar"?"🔎 Control de devolución":"📷 Pickeo de Secos",renderPickeoModal(),720);
   if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
   if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
@@ -7841,7 +8464,14 @@ async function submitCambioEstadoMasivo(){
   }
   render();
 }
-function closeModal(){ S.modal=null; S.selId=null; render(); }
+function closeModal(){
+  if(S.modal==="pickeo"){
+    const p=S.pickeo;
+    if(p && p.modo==="armar" && p.lineas.length && !confirm("¿Cerrar? Se pierde lo que pickeaste.")) return;
+    pickeoCerrarCamara(true); S.pickeo=null;
+  }
+  S.modal=null; S.selId=null; render();
+}
 function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
 function openModal(m){ S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
 function openDetalle(id){ S.selId=id; S.modal="detalle"; render(); }
