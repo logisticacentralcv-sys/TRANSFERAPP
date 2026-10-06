@@ -476,6 +476,30 @@ tr[onclick]:active td{background:var(--s3)}
 .sk-eval select{min-width:130px}
 .sk-aviso{margin-top:8px;font-size:13px;color:#d8b4fe;background:#9b8ff714;border-radius:8px;padding:8px 12px}
 
+
+/* ── Pickeo como pantalla ── */
+.pk-bloque{padding:18px}
+.pk-actual{padding:18px;border:1px solid #4f9eff66;background:linear-gradient(180deg,#4f9eff12,var(--s1));box-shadow:0 10px 30px #4f9eff1f;animation:cardIn .25s ease backwards;margin-top:14px}
+.pk-etiqueta{font-size:11.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--blue);margin-bottom:4px}
+.pk-lista-head{display:flex;justify-content:space-between;align-items:center;margin:22px 2px 10px;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#a9b8d0}
+.pk-lista-n{background:var(--s3);color:var(--text);border-radius:999px;padding:2px 11px;font-family:var(--mono);font-size:13px}
+.pk-orden{display:flex;flex-direction:column;gap:8px}
+.pk-item{display:flex;align-items:center;gap:10px;background:var(--s1);border:1px solid var(--border);border-left:4px solid var(--blue);border-radius:12px;padding:12px 14px;animation:cardIn .25s ease backwards}
+.pk-item.sobre{border-left-color:#fb7185}
+.pk-item-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:5px;font-size:13.5px;color:#c3cfe2}
+.pk-motivo{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12.5px;font-weight:700;border:1px solid}
+.pk-eval{font-size:12px;color:#fda4af}
+.pk-item-btns{display:flex;gap:6px;flex-shrink:0}
+.pk-page .pk-foot{position:sticky;bottom:0;margin:20px -12px 0;padding:12px;background:rgba(14,19,32,.94);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--border);z-index:8;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pk-page .pk-cierre{margin-top:22px;padding-top:18px;border-top:1px solid var(--border)}
+.pk-page .pk-row .inp{width:auto;flex:1 1 110px}
+@media(max-width:640px){
+  .pk-page .page-head{margin-bottom:14px;flex-wrap:nowrap;align-items:flex-start}
+  .pk-page .page-title{font-size:20px}
+  .pk-page .actions-bar{width:auto;flex:0 0 auto}
+  .pk-page .actions-bar .btn{flex:0 0 auto;min-height:38px;padding:6px 12px}
+}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -2450,19 +2474,36 @@ function pickeoEstadoBase(extra){
   return {camara:false,errCamara:"",query:"",resultados:[],buscando:false,ultimo:null,err:"",loading:false,dni:"",...extra};
 }
 function abrirPickeoArmar(){
-  S.pickeo=pickeoEstadoBase({modo:"armar",lineas:[]});
-  S.modal="pickeo"; render();
+  S.pickeo=pickeoEstadoBase({modo:"armar",lineas:[],actual:null});
+  S.vista="pickeo"; render();
+  window.scrollTo({top:0,behavior:"instant"});
 }
 function abrirPickeoControl(id){
   const d=S.devoluciones.find(x=>String(x.id)===String(id)); if(!d) return;
   let guardado={}; try{ guardado=JSON.parse(localStorage.getItem("tl_ctrl_"+id)||"{}"); }catch(e){}
-  const lineas=lineasQueViajan(d).map(p=>{
+  // En el depósito se cuenta el PRODUCTO: si vino en dos líneas (por ejemplo una
+  // rota y otra vencida) se controla como una sola fila con el total esperado.
+  const grupos=new Map();
+  lineasQueViajan(d).forEach(p=>{
     const k=String(p.productoId??p.descripcion);
-    return {k, productoId:p.productoId, descripcion:p.descripcion, codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||"",
-            unidad:p.unidad||"Unidades", esperado:+p.cantidad||0, recibido:+(guardado[k]||0), motivo:p.motivo||""};
+    const g=grupos.get(k)||{k, productoId:p.productoId, descripcion:p.descripcion, codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||"",
+                            unidad:p.unidad||"Unidades", esperado:0, recibido:+(guardado[k]||0), motivos:[]};
+    g.esperado+=+p.cantidad||0;
+    const m=String(p.motivo||"").split(" — ")[0]; if(m && !g.motivos.includes(m)) g.motivos.push(m);
+    grupos.set(k,g);
   });
+  const lineas=[...grupos.values()].map(g=>({...g, motivo:g.motivos.join(" + ")}));
   S.pickeo=pickeoEstadoBase({modo:"controlar",devId:id,sucursal:d.sucursal,lineas});
-  S.modal="pickeo"; render();
+  S.vista="pickeo"; render();
+  window.scrollTo({top:0,behavior:"instant"});
+}
+// Salir del pickeo. Al armar, avisa si se perdería lo pickeado; al controlar, el
+// avance queda guardado y se puede retomar.
+async function salirPickeo(forzar){
+  const p=S.pickeo;
+  if(p && p.modo==="armar" && (p.lineas.length||p.actual) && !forzar && !confirm("¿Salir? Se pierde la orden que estabas armando.")) return;
+  await pickeoCerrarCamara(true);
+  S.pickeo=null; S.vista="devoluciones"; render();
 }
 function pickeoGuardarProgreso(){
   const p=S.pickeo; if(!p||p.modo!=="controlar") return;
@@ -2480,13 +2521,17 @@ async function pickeoCodigoLeido(code, manual){
   if(navigator.vibrate) navigator.vibrate(60);
 
   if(p.modo==="armar"){
+    // Como en el armador: al leer un producto se apaga la cámara y se completa
+    // su ficha (cantidad, unidad, motivo). Para el siguiente, se vuelve a escanear.
+    if(p.actual){ p.ultimo={ok:false,txt:`Primero terminá con "${p.actual.producto.descripcion}": elegí el motivo y tocá Devolver (o Cancelar).`}; render(); return; }
     const prod=await buscarProductoPorCodigo(code);
     if(!S.pickeo) return;
     if(!prod){ p.ultimo={ok:false,txt:`El código ${code} no está en el catálogo. Probá buscarlo por nombre.`}; render(); return; }
-    pickeoAgregarProducto(prod);
+    if(p.camara) await pickeoCerrarCamara(true);
+    pickeoSeleccionarProducto(prod);
     return;
   }
-  // control
+  // control en fábrica: la cámara sigue abierta y cada lectura suma 1
   let idx=p.lineas.findIndex(l=>l.codigoBarras && mismosCodigos(code,l.codigoBarras));
   if(idx<0 && /^\d+$/.test(code)) idx=p.lineas.findIndex(l=>l.codigoInterno && String(l.codigoInterno)===code);
   let prod=null;
@@ -2509,13 +2554,13 @@ async function pickeoCodigoLeido(code, manual){
 function pickeoBuscarManual(){
   const el=$("pk-busqueda"); const v=(el?.value||S.pickeo?.query||"").trim();
   if(!v) return;
-  if(/^[\dA-Za-z\-]{6,}$/.test(v) && /\d{6,}/.test(v)){
+  if(/\d{6,}/.test(v) && /^[\dA-Za-z\-]+$/.test(v)){
     if(el) el.value=""; S.pickeo.query=""; S.pickeo.resultados=[];
     pickeoCodigoLeido(v,true);
   }
 }
 
-// ── Armar: buscar por nombre, agregar, editar líneas ──
+// ── Armar la orden: buscar por nombre ──
 let _timerPickeoBusq=null;
 function pickeoBuscar(q){
   const p=S.pickeo; if(!p) return;
@@ -2534,25 +2579,54 @@ function pickeoBuscar(q){
     if(S.pickeo){ S.pickeo.buscando=false; render(); }
   },280);
 }
-function pickeoAgregarProducto(prod){
+function pickeoElegirResultado(prod){ if(S.pickeo?.camara) pickeoCerrarCamara(true); pickeoSeleccionarProducto(prod); }
+
+// La "ficha" del producto que se está pickeando ahora: cantidad, unidad y
+// motivo. Al tocar Devolver pasa a la lista de abajo y la ficha desaparece.
+function pickeoSeleccionarProducto(prod){
   const p=S.pickeo; if(!p) return;
-  const ex=p.lineas.find(l=>String(l.producto.id)===String(prod.id));
-  if(ex){ ex.cantidad=(+ex.cantidad||0)+1; p.ultimo={ok:true,txt:`${prod.descripcion} · ahora ${ex.cantidad}`}; }
-  else { p.lineas.unshift({producto:prod,cantidad:1,unidad:"Unidades",motivo:""}); p.ultimo={ok:true,txt:`${prod.descripcion} agregado`}; }
   p.query=""; p.resultados=[]; p.err="";
   const el=$("pk-busqueda"); if(el) el.value="";
+  if(p.actual){
+    if(String(p.actual.producto.id)===String(prod.id)){ p.actual.cantidad=(+p.actual.cantidad||0)+1; p.ultimo={ok:true,txt:`${prod.descripcion} · ${p.actual.cantidad}`}; }
+    else p.ultimo={ok:false,txt:`Primero terminá con "${p.actual.producto.descripcion}": elegí el motivo y tocá Devolver (o Cancelar).`};
+    render(); return;
+  }
+  p.actual={producto:prod,cantidad:1,unidad:"Unidades",motivo:"",err:""};
+  p.ultimo=null;
+  render();
+  setTimeout(()=>{ document.getElementById("pk-actual")?.scrollIntoView({behavior:"smooth",block:"center"}); },80);
+}
+function pickeoActualCant(delta){ const a=S.pickeo?.actual; if(a){ a.cantidad=Math.max(1,(+a.cantidad||0)+delta); a.err=""; render(); } }
+function pickeoActualSet(campo,v){ const a=S.pickeo?.actual; if(a){ a[campo]=v; a.err=""; if(campo!=="cantidad") render(); } }
+function pickeoCancelarActual(){
+  const p=S.pickeo; if(!p||!p.actual) return;
+  if(p.actual.volverA) p.lineas.unshift(p.actual.volverA);   // venía de "editar": vuelve a la lista como estaba
+  p.actual=null; p.ultimo=null; render();
+}
+function pickeoDevolver(){
+  const p=S.pickeo; if(!p||!p.actual) return;
+  const a=p.actual;
+  const c=$("pk-a-cant"); if(c) a.cantidad=c.value;
+  if(!(+a.cantidad>0)){ a.err="Poné la cantidad (mínimo 1)."; render(); return; }
+  if(!a.motivo){ a.err="Elegí el motivo de la devolución."; render(); return; }
+  const cant=+a.cantidad;
+  const ex=p.lineas.find(l=>String(l.producto.id)===String(a.producto.id)&&l.motivo===a.motivo&&l.unidad===a.unidad);
+  if(ex) ex.cantidad=(+ex.cantidad||0)+cant;
+  else p.lineas.unshift({producto:a.producto,cantidad:cant,unidad:a.unidad,motivo:a.motivo});
+  p.ultimo={ok:true,txt:`${a.producto.descripcion} · ${fmtNum(cant)} ${a.unidad} — ${a.motivo}`};
+  p.actual=null; p.err="";
   render();
 }
-function pickeoElegirResultado(prod){ pickeoAgregarProducto(prod); }
-function pickeoQuitar(i){ S.pickeo.lineas.splice(i,1); render(); }
-function pickeoCambiarCant(i,delta){
-  const l=S.pickeo.lineas[i]; if(!l) return;
-  const v=Math.max(0,(+l.cantidad||0)+delta);
-  l.cantidad=v; render();
+function pickeoEditarLinea(i){
+  const p=S.pickeo; if(!p) return;
+  if(p.actual){ p.ultimo={ok:false,txt:`Primero terminá con "${p.actual.producto.descripcion}".`}; render(); return; }
+  const l=p.lineas.splice(i,1)[0]; if(!l) return;
+  p.actual={...l,err:"",volverA:l}; p.ultimo=null; render();
+  setTimeout(()=>{ document.getElementById("pk-actual")?.scrollIntoView({behavior:"smooth",block:"center"}); },80);
 }
-function pickeoSetCant(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.cantidad=v; render(); } }
-function pickeoSetUnidad(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.unidad=v; render(); } }
-function pickeoSetMotivo(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.motivo=v; render(); } }
+function pickeoQuitar(i){ S.pickeo.lineas.splice(i,1); render(); }
+
 // Control: sumar/restar/escribir lo recibido
 function pickeoCtrlCambiar(i,delta){
   const l=S.pickeo.lineas[i]; if(!l) return;
@@ -2561,30 +2635,30 @@ function pickeoCtrlCambiar(i,delta){
 function pickeoCtrlSet(i,v){ const l=S.pickeo.lineas[i]; if(l){ l.recibido=Math.max(0,+v||0); pickeoGuardarProgreso(); render(); } }
 function pickeoCtrlTodoOk(i){ const l=S.pickeo.lineas[i]; if(l){ l.recibido=l.esperado; pickeoGuardarProgreso(); render(); } }
 
-// ── Ventana ──
-function renderPickeoModal(){
+// ── Pantalla del pickeo (no es una ventana: no se cierra tocando afuera) ──
+function renderPickeoPagina(){
   const p=S.pickeo; if(!p) return "";
   const armar=p.modo==="armar";
   const camara=`
     ${p.camara
       ? `<div id="pickeo-reader" class="pk-reader"></div>
          <button class="btn btn-ghost btn-md btn-full" style="margin-top:8px" onclick="pickeoCerrarCamara()">✕ Cerrar cámara</button>`
-      : `<button class="btn btn-primary btn-md btn-full" onclick="pickeoAbrirCamara()">📷 Escanear código de barras</button>`}
+      : `<button class="btn btn-primary btn-md btn-full" onclick="pickeoAbrirCamara()" ${armar&&p.actual?"disabled":""}>📷 Escanear código de barras</button>`}
     ${p.errCamara?`<div class="err-msg" style="display:block;margin-top:8px">${escH(p.errCamara)}</div>`:""}`;
-  const ultimo = p.ultimo ? `<div class="pk-ultimo ${p.ultimo.ok===false?"mal":p.ultimo.ok===null?"":"bien"}">${p.ultimo.ok===false?"⚠️":"✓"} ${escH(p.ultimo.txt)}</div>` : "";
+  const ultimo = p.ultimo ? `<div class="pk-ultimo ${p.ultimo.ok===false?"mal":"bien"}">${p.ultimo.ok===false?"⚠️":"✓"} ${escH(p.ultimo.txt)}</div>` : "";
   const buscador=`
-    <div class="field" style="position:relative;margin:12px 0 0">
+    <div class="field" style="position:relative;margin:14px 0 0">
       <label>${armar?"Código de barras o nombre del producto":"¿No lee? Escribí el código de barras"}</label>
       <div style="display:flex;gap:8px">
-        <input id="pk-busqueda" class="inp" type="text" inputmode="${armar?"text":"numeric"}" autocomplete="off" placeholder="${armar?"Escaneá, escribí el código o buscá por nombre…":"Código de barras"}"
-          value="${escH(p.query||"")}"
+        <input id="pk-busqueda" class="inp" type="text" inputmode="text" autocomplete="off" placeholder="${armar?"Escribí el código o buscá por nombre…":"Código de barras"}"
+          value="${escH(p.query||"")}" ${armar&&p.actual?"disabled":""}
           oninput="${armar?"pickeoBuscar(this.value)":"S.pickeo.query=this.value"}"
           onkeydown="if(event.key==='Enter'){event.preventDefault();pickeoBuscarManual()}"/>
-        <button class="btn btn-ghost btn-md" onclick="pickeoBuscarManual()">Agregar</button>
+        <button class="btn btn-ghost btn-md" onclick="pickeoBuscarManual()" ${armar&&p.actual?"disabled":""}>Agregar</button>
       </div>
       ${armar && p.buscando?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Buscando…</div>`:""}
       ${armar && (p.resultados||[]).length?`
-      <div class="card" style="position:absolute;left:0;right:0;top:70px;z-index:30;max-height:260px;overflow-y:auto;padding:6px;box-shadow:0 12px 32px #000a">
+      <div class="card" style="position:absolute;left:0;right:0;top:72px;z-index:30;max-height:260px;overflow-y:auto;padding:6px;box-shadow:0 12px 32px #000a">
         ${p.resultados.map(r=>`
           <div class="pk-res" onclick='pickeoElegirResultado(${JSON.stringify(r).replace(/'/g,"&apos;")})'>
             <div style="font-size:14px;font-weight:600">${escH(r.descripcion)}</div>
@@ -2593,72 +2667,117 @@ function renderPickeoModal(){
       </div>`:""}
       ${armar && p.query && !p.buscando && !(p.resultados||[]).length && p.query.trim().length>=2?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Sin resultados — probá con otra palabra</div>`:""}
     </div>`;
-
-  if(armar){
-    const totalU=p.lineas.reduce((a,l)=>a+(+l.cantidad||0),0);
-    const haySobre=p.lineas.some(l=>esSobrestock(l.motivo));
-    const sinDni = !(S.user?.rol==="logistica"||S.user?.rol==="admin");
-    return `
-    <div class="alert-info" style="margin-bottom:12px;font-size:13px">📦 <strong>${escH(S.user?.area||"")}</strong> · Devolución de <strong>Secos</strong>. Escaneá cada producto: cada lectura suma 1 unidad.</div>
-    ${camara}
-    ${ultimo}
-    ${buscador}
-    <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
-      ${p.lineas.length===0?`<div class="pk-vacio">Todavía no pickeaste ningún producto.</div>`:p.lineas.map((l,i)=>`
-      <div class="pk-line ${esSobrestock(l.motivo)?"sobre":""}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-          <div style="min-width:0">
-            <div class="pk-name">${escH(l.producto.descripcion)}</div>
-            <div class="pk-code">${l.producto.codigoBarras?`EAN ${escH(l.producto.codigoBarras)}`:""}${l.producto.codigoBarras&&l.producto.codigoInterno?" · ":""}${l.producto.codigoInterno?`Int. ${escH(l.producto.codigoInterno)}`:""}</div>
-          </div>
-          <button class="btn btn-ghost btn-sm" onclick="pickeoQuitar(${i})" title="Quitar">✕</button>
-        </div>
-        <div class="pk-row">
-          <div class="pk-stepper">
-            <button onclick="pickeoCambiarCant(${i},-1)">−</button>
-            <input id="pk-cant-${i}" type="number" min="0" step="1" value="${escH(String(l.cantidad))}" oninput="pickeoSetCant(${i},this.value)"/>
-            <button onclick="pickeoCambiarCant(${i},1)">+</button>
-          </div>
-          <select id="pk-uni-${i}" class="inp" style="max-width:130px" onchange="pickeoSetUnidad(${i},this.value)">
-            ${UNIDADES.map(un=>`<option ${l.unidad===un?"selected":""}>${un}</option>`).join("")}
-          </select>
-        </div>
-        <select id="pk-mot-${i}" class="inp ${!l.motivo&&p.err?"err":""}" style="margin-top:8px" onchange="pickeoSetMotivo(${i},this.value)">
-          <option value="">— Motivo de la devolución —</option>
-          ${MOTIVOS_POR_TIPO_DEVOLUCION.Secos.map(m=>`<option ${l.motivo===m?"selected":""}>${m}</option>`).join("")}
-        </select>
-        ${esSobrestock(l.motivo)?`<div class="pk-nota">🔎 El sobrestock se evalúa: Logística decide si vuelve a fábrica.</div>`:""}
-      </div>`).join("")}
-    </div>
-    <div class="pk-cierre">
-      ${sinDni?`<div class="field" style="margin-bottom:0">
+  const sinDni = !(S.user?.rol==="logistica"||S.user?.rol==="admin");
+  const campoDni = sinDni
+    ? `<div class="field" style="margin-bottom:0">
         <label>Tu DNI (sin puntos) <span class="req">*</span></label>
         <input id="pk-dni" class="inp" type="number" placeholder="Ej: 30123456" value="${escH(p.dni||"")}" oninput="S.pickeo.dni=this.value"/>
-      </div>`:""}
-      ${p.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(p.err)}</div>`:""}
-    </div>
-    <div class="pk-foot">
-      <div class="pk-resumen">
-        ${p.lineas.length
-          ? `<strong>${p.lineas.length}</strong> producto${p.lineas.length!==1?"s":""} · <strong>${fmtNum(totalU)}</strong> en total${haySobre?`<br><span style="color:#fda4af">pasa por evaluación</span>`:""}`
-          : `<span style="color:var(--faint)">Sin productos todavía</span>`}
+      </div>`
+    : `<p style="font-size:12.5px;color:var(--muted)">👤 Confirmando como <strong style="color:var(--text)">${escH(S.user.nombre||"")}</strong></p>`;
+
+  if(armar){
+    const a=p.actual;
+    const totalU=p.lineas.reduce((x,l)=>x+(+l.cantidad||0),0);
+    const haySobre=p.lineas.some(l=>esSobrestock(l.motivo));
+    return `
+    <div style="animation:fadeUp .3s ease" class="pk-page">
+      ${pageHead("📦 Orden de devolución", `${escH(S.user?.area||"")} · <strong style="color:var(--amber)">Secos</strong> · ${fd(new Date().toISOString())}`,
+        `<button class="btn btn-ghost btn-md" onclick="salirPickeo()">← Volver</button>`)}
+
+      <div class="card pk-bloque">
+        ${camara}
+        ${buscador}
+        ${ultimo}
       </div>
-      <button class="btn btn-warn btn-md" onclick="pickeoEnviar()" ${p.loading||!p.lineas.length?"disabled":""}>
-        ${p.loading?`<span class="spinner"></span> Enviando…`:"Enviar devolución"}
-      </button>
+
+      ${a?`
+      <div id="pk-actual" class="card pk-actual">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+          <div style="min-width:0">
+            <div class="pk-etiqueta">Producto escaneado</div>
+            <div class="pk-name" style="font-size:17px">${escH(a.producto.descripcion)}</div>
+            <div class="pk-code">${a.producto.codigoBarras?`EAN ${escH(a.producto.codigoBarras)}`:""}${a.producto.codigoBarras&&a.producto.codigoInterno?" · ":""}${a.producto.codigoInterno?`Int. ${escH(a.producto.codigoInterno)}`:""}</div>
+          </div>
+        </div>
+        <div class="pk-row" style="margin-top:14px">
+          <div class="pk-stepper">
+            <button onclick="pickeoActualCant(-1)">−</button>
+            <input id="pk-a-cant" type="number" min="1" step="1" value="${escH(String(a.cantidad))}" oninput="pickeoActualSet('cantidad',this.value)"/>
+            <button onclick="pickeoActualCant(1)">+</button>
+          </div>
+          <select id="pk-a-uni" class="inp" onchange="pickeoActualSet('unidad',this.value)">
+            ${UNIDADES.map(un=>`<option ${a.unidad===un?"selected":""}>${un}</option>`).join("")}
+          </select>
+        </div>
+        <select id="pk-a-mot" class="inp ${a.err&&!a.motivo?"err":""}" style="margin-top:10px" onchange="pickeoActualSet('motivo',this.value)">
+          <option value="">— Motivo de la devolución —</option>
+          ${MOTIVOS_POR_TIPO_DEVOLUCION.Secos.map(m=>`<option ${a.motivo===m?"selected":""}>${m}</option>`).join("")}
+        </select>
+        ${esSobrestock(a.motivo)?`<div class="pk-nota">🔎 El sobrestock se evalúa: Logística decide si vuelve a fábrica.</div>`:""}
+        ${a.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(a.err)}</div>`:""}
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-ghost btn-md" onclick="pickeoCancelarActual()">Cancelar</button>
+          <button class="btn btn-success btn-md" style="flex:1;justify-content:center" onclick="pickeoDevolver()">✔ Devolver</button>
+        </div>
+      </div>`:""}
+
+      <div class="pk-lista-head">
+        <span>Productos de la orden</span>
+        <span class="pk-lista-n">${p.lineas.length}</span>
+      </div>
+      <div class="pk-orden">
+        ${p.lineas.length===0
+          ? `<div class="pk-vacio">Todavía no hay productos. Escaneá el primero y tocá <strong>Devolver</strong>.</div>`
+          : p.lineas.map((l,i)=>{
+              const col=colorMotivoCalidad(l.motivo,0);
+              return `
+              <div class="pk-item ${esSobrestock(l.motivo)?"sobre":""}">
+                <div style="min-width:0;flex:1">
+                  <div class="pk-name">${escH(l.producto.descripcion)}</div>
+                  <div class="pk-item-meta">
+                    <strong>${fmtNum(+l.cantidad)} ${escH(l.unidad)}</strong>
+                    <span class="pk-motivo" style="color:${col};border-color:${col}55;background:${col}14">${escH(l.motivo)}</span>
+                    ${esSobrestock(l.motivo)?`<span class="pk-eval">⏳ se evalúa</span>`:""}
+                  </div>
+                </div>
+                <div class="pk-item-btns">
+                  <button class="btn btn-ghost btn-sm" onclick="pickeoEditarLinea(${i})" title="Editar">✎</button>
+                  <button class="btn btn-ghost btn-sm" onclick="pickeoQuitar(${i})" title="Quitar">✕</button>
+                </div>
+              </div>`; }).join("")}
+      </div>
+
+      <div class="pk-cierre">
+        ${campoDni}
+        ${p.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(p.err)}</div>`:""}
+      </div>
+      <div class="pk-foot">
+        <div class="pk-resumen">
+          ${p.lineas.length
+            ? `<strong>${p.lineas.length}</strong> producto${p.lineas.length!==1?"s":""} · <strong>${fmtNum(totalU)}</strong> en total${haySobre?`<br><span style="color:#fda4af">pasa por evaluación</span>`:""}`
+            : `<span style="color:var(--faint)">Sin productos todavía</span>`}
+        </div>
+        <button class="btn btn-warn btn-md" onclick="pickeoEnviar()" ${p.loading||!p.lineas.length||a?"disabled":""} title="${a?"Terminá el producto de arriba primero":""}">
+          ${p.loading?`<span class="spinner"></span> Enviando…`:"Enviar orden"}
+        </button>
+      </div>
     </div>`;
   }
 
   // ── Control en fábrica ──
   const completos=p.lineas.filter(l=>+l.recibido===+l.esperado).length;
   const conDif=p.lineas.filter(l=>+l.recibido!==+l.esperado);
-  const sinDni = !(S.user?.rol==="logistica"||S.user?.rol==="admin");
   return `
-  <div class="alert-info" style="margin-bottom:12px;font-size:13px">🔎 Controlando la devolución de <strong>${escH(p.sucursal||"")}</strong>. Escaneá cada producto que llegó, o tocá + / escribí la cantidad.</div>
-  ${camara}
-  ${ultimo}
-  ${buscador}
-  <div style="display:flex;flex-direction:column;gap:10px;margin-top:16px">
+  <div style="animation:fadeUp .3s ease" class="pk-page">
+    ${pageHead("🔎 Control de devolución", `${escH(p.sucursal||"")} · <strong style="color:var(--amber)">Secos</strong>`,
+      `<button class="btn btn-ghost btn-md" onclick="salirPickeo()">← Seguir después</button>`)}
+    <div class="card pk-bloque">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:12px">Escaneá cada producto que llegó (cada lectura suma 1) o tocá + / escribí la cantidad.</div>
+      ${camara}
+      ${buscador}
+      ${ultimo}
+    </div>
+    <div class="pk-orden" style="margin-top:16px">
     ${p.lineas.map((l,i)=>{
       const rec=+l.recibido||0, esp=+l.esperado||0;
       const estado = rec===esp ? "ok" : rec>esp ? "mas" : rec>0 ? "parcial" : "falta";
@@ -2684,22 +2803,20 @@ function renderPickeoModal(){
         </div>
         ${estado==="mas"?`<div class="pk-nota mal">⚠️ Contaste ${fmtNum(rec-esp)} de más que lo declarado.</div>`:""}
       </div>`; }).join("")}
-  </div>
-  <div class="pk-cierre">
-    ${sinDni?`<div class="field" style="margin-bottom:0">
-      <label>Tu DNI (sin puntos) <span class="req">*</span></label>
-      <input id="pk-dni" class="inp" type="number" placeholder="Ej: 30123456" value="${escH(p.dni||"")}" oninput="S.pickeo.dni=this.value"/>
-    </div>`:`<p style="font-size:12.5px;color:var(--muted)">👤 Confirmando como <strong style="color:var(--text)">${escH(S.user.nombre||"")}</strong></p>`}
-    <p style="font-size:12px;color:var(--faint);margin-top:10px">Podés cerrar y seguir después: lo que contaste queda guardado.</p>
-    ${p.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(p.err)}</div>`:""}
-  </div>
-  <div class="pk-foot">
-    <div class="pk-resumen">
-      <strong>${completos}</strong> de ${p.lineas.length} completos${conDif.length?`<br><span style="color:var(--amber);font-weight:700">${conDif.length} con diferencia</span>`:""}
     </div>
-    <button class="btn ${conDif.length?"btn-warn":"btn-success"} btn-md" onclick="pickeoConfirmarControl()" ${p.loading?"disabled":""}>
-      ${p.loading?`<span class="spinner"></span> Guardando…`:(conDif.length?"Confirmar":"✅ Confirmar")}
-    </button>
+    <div class="pk-cierre">
+      ${campoDni}
+      <p style="font-size:12px;color:var(--faint);margin-top:10px">Podés salir y seguir después: lo que contaste queda guardado.</p>
+      ${p.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(p.err)}</div>`:""}
+    </div>
+    <div class="pk-foot">
+      <div class="pk-resumen">
+        <strong>${completos}</strong> de ${p.lineas.length} completos${conDif.length?`<br><span style="color:var(--amber);font-weight:700">${conDif.length} con diferencia</span>`:""}
+      </div>
+      <button class="btn ${conDif.length?"btn-warn":"btn-success"} btn-md" onclick="pickeoConfirmarControl()" ${p.loading?"disabled":""}>
+        ${p.loading?`<span class="spinner"></span> Guardando…`:"✅ Confirmar"}
+      </button>
+    </div>
   </div>`;
 }
 
@@ -2716,12 +2833,8 @@ function pickeoFirmante(){
 // ── Enviar la devolución armada ──
 async function pickeoEnviar(){
   const p=S.pickeo; if(!p||p.loading||p.modo!=="armar") return;
-  p.lineas.forEach((l,i)=>{ const c=$(`pk-cant-${i}`); if(c) l.cantidad=c.value; const u=$(`pk-uni-${i}`); if(u) l.unidad=u.value; const m=$(`pk-mot-${i}`); if(m) l.motivo=m.value; });
+  if(p.actual){ p.err="Terminá el producto que tenés abierto (Devolver o Cancelar) antes de enviar."; render(); return; }
   if(!p.lineas.length){ p.err="Pickeá al menos un producto."; render(); return; }
-  for(const l of p.lineas){
-    if(!(+l.cantidad>0)){ p.err=`Ingresá la cantidad de "${l.producto.descripcion}".`; render(); return; }
-    if(!l.motivo){ p.err=`Elegí el motivo de "${l.producto.descripcion}".`; render(); return; }
-  }
   const firma=pickeoFirmante();
   if(!firma.ok){ p.err=firma.msg; render(); return; }
 
@@ -2751,8 +2864,9 @@ async function pickeoEnviar(){
     const creada=toCamelRow(data);
     S.devoluciones=[creada,...S.devoluciones];
     await pickeoCerrarCamara(true);
-    S.pickeo=null; S.modal=null;
+    S.pickeo=null; S.vista="devoluciones";
     S.devolucionForm={tipo:"",items:[],loading:false,err:"",productoQuery:"",productoResultados:[],productoBuscando:false};
+    window.scrollTo({top:0,behavior:"instant"});
     toast(haySobre?"📦 Devolución enviada — Logística evalúa el sobrestock":"📦 Devolución de Secos enviada");
     if(haySobre) crearNotificacion("LOGISTICA",`📦 Devolución de Secos con sobrestock para evaluar — ${u.area||""}`,null);
   }catch(e){
@@ -2770,10 +2884,17 @@ async function pickeoConfirmarControl(){
   if(!firma.ok){ p.err=firma.msg; render(); return; }
   p.loading=true; p.err=""; renderNow();
 
-  const recMap=new Map(p.lineas.map(l=>[l.k,+l.recibido||0]));
-  const productosConfirmados=productosDeDevolucion(d).map(x=>{
-    const k=String(x.productoId??x.descripcion);
-    return recMap.has(k) ? {...x,cantidadRecibida:recMap.get(k)} : x;
+  // Lo contado de cada producto se reparte entre sus líneas (en orden) hasta
+  // cubrir lo esperado de cada una; lo que sobre queda en la última.
+  const productosConfirmados=productosDeDevolucion(d).map(x=>({...x}));
+  const esperadoDe=x=>(x.cantidadAceptada===undefined||x.cantidadAceptada===null)?(+x.cantidad||0):(+x.cantidadAceptada||0);
+  p.lineas.forEach(l=>{
+    const idxs=[]; productosConfirmados.forEach((x,i)=>{ if(String(x.productoId??x.descripcion)===l.k && esperadoDe(x)>0) idxs.push(i); });
+    let resto=+l.recibido||0;
+    idxs.forEach((ix,j)=>{
+      const asignado = j===idxs.length-1 ? resto : Math.min(esperadoDe(productosConfirmados[ix]),resto);
+      productosConfirmados[ix].cantidadRecibida=asignado; resto-=asignado;
+    });
   });
   const difs=p.lineas.filter(l=>(+l.recibido||0)!==(+l.esperado||0));
   const nota=difs.length ? "⚠️ Diferencia en cantidad recibida vs. declarada: "+difs.map(l=>`${l.descripcion} (declarado ${fmtNum(l.esperado)}${l.unidad?" "+l.unidad:""}, recibido ${fmtNum(+l.recibido||0)}${l.unidad?" "+l.unidad:""})`).join("; ") : "";
@@ -2788,7 +2909,8 @@ async function pickeoConfirmarControl(){
     S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
     try{ localStorage.removeItem("tl_ctrl_"+d.id); }catch(e){}
     await pickeoCerrarCamara(true);
-    S.pickeo=null; S.modal=null;
+    S.pickeo=null; S.vista="devoluciones";
+    window.scrollTo({top:0,behavior:"instant"});
     toast(difs.length?"✅ Confirmada — quedaron marcadas las diferencias":"✅ Devolución confirmada: llegó todo");
   }catch(e){
     console.warn("Confirmar control:",e);
@@ -2899,9 +3021,9 @@ function renderAccionesSecos(d){
 function pickeoLauncherHtml(){
   return `
   <div class="pk-launcher">
-    <div style="font-size:15px;font-weight:700;margin-bottom:4px">📷 Devolución de Secos</div>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Se arma escaneando cada producto con la cámara del celular (o escribiendo el código). Elegís cantidad y motivo de cada uno.</p>
-    <button class="btn btn-warn btn-md btn-full" onclick="abrirPickeoArmar()">Abrir pickeo de Secos</button>
+    <div style="font-size:15px;font-weight:700;margin-bottom:4px">📷 Orden de devolución de Secos</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Se arma escaneando cada producto con la cámara (o escribiendo el código): elegís cantidad y motivo, tocás Devolver y el producto pasa a la orden.</p>
+    <button class="btn btn-warn btn-md btn-full" onclick="abrirPickeoArmar()">Armar orden de devolución</button>
   </div>`;
 }
 
@@ -3352,7 +3474,7 @@ let _navAnim = false;   // false | "tab" | "page"
 document.addEventListener("click", e=>{
   const el = e.target.closest("[onclick]"); if(!el) return;
   const oc = el.getAttribute("onclick")||"";
-  if(/S\.vista\s*=|abrir(Quejas|Devoluciones)\(/.test(oc)) _navAnim = "page";
+  if(/S\.vista\s*=|abrir(Quejas|Devoluciones|PickeoArmar|PickeoControl)\(|salirPickeo\(/.test(oc)) _navAnim = "page";
   else if(/S\.(tab\w*|subTab\w*|adminTab)\s*=/.test(oc)) _navAnim = "tab";
 }, true);
 function aplicarRenderDOM(){
@@ -3542,6 +3664,7 @@ function renderApp(){
   const mainContent = S.loading ? `<div class="loading-center"><div class="spin-circle"></div><span>Cargando datos...</span></div>`
     : S.vista==="quejas"         ? renderQuejas()
     : S.vista==="devoluciones"   ? renderDevoluciones()
+    : S.vista==="pickeo"         ? renderPickeoPagina()
     : u.rol==="logistica"      ? renderLogistica()
     : u.rol==="repartidor"     ? renderRepartidor()
     : u.rol==="planificacion"  ? renderPlanificacion()
@@ -6806,7 +6929,6 @@ function renderModals(){
       </div>
     </div>`;
 
-  if(S.modal==="pickeo")    return wrapModal("m",S.pickeo?.modo==="controlar"?"🔎 Control de devolución":"📷 Pickeo de Secos",renderPickeoModal(),720);
   if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
   if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
@@ -8458,11 +8580,6 @@ async function submitCambioEstadoMasivo(){
   render();
 }
 function closeModal(){
-  if(S.modal==="pickeo"){
-    const p=S.pickeo;
-    if(p && p.modo==="armar" && p.lineas.length && !confirm("¿Cerrar? Se pierde lo que pickeaste.")) return;
-    pickeoCerrarCamara(true); S.pickeo=null;
-  }
   S.modal=null; S.selId=null; render();
 }
 function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
