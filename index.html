@@ -525,6 +525,39 @@ tr[onclick]:active td{background:var(--s3)}
 .cl-tot{display:flex;gap:14px;font-size:15px}
 .cl-tot strong{font-family:var(--mono)}
 
+
+/* ── Reclamo a proveedor ── */
+.rc-barra{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+.rc-barra .tabs{margin-bottom:0}
+.rc-sel{width:240px;max-width:100%}
+.rc-busq{flex:1 1 220px;min-width:180px}
+.rc-resumen{font-size:13px;color:#a9b8d0;margin:2px 2px 12px;font-weight:600}
+.rc-grupo{background:var(--s1);border:1px solid var(--border);border-left:4px solid var(--blue);border-radius:14px;padding:16px 18px;margin-bottom:14px}
+.rc-grupo.sin{border-left-color:var(--amber)}
+.rc-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.rc-prov{font-size:18px;font-weight:800;letter-spacing:-.01em}
+.rc-sub{font-size:13px;color:#a9b8d0;margin-top:3px}
+.rc-acc{display:flex;gap:8px;flex-wrap:wrap}
+.rc-aviso{font-size:13px;color:var(--amber);background:#f5a62314;border-radius:8px;padding:8px 12px;margin-bottom:10px}
+.rc-filas{display:flex;flex-direction:column}
+.rc-fila{display:flex;align-items:center;gap:12px;padding:11px 8px;border-top:1px solid var(--border);cursor:pointer;border-radius:8px;transition:background .15s}
+.rc-fila:hover{background:var(--s2)}
+.rc-cod{font-family:var(--mono);font-size:13px;color:#8ea2c4;min-width:58px}
+.rc-desc{flex:1;min-width:0;font-size:15px;font-weight:600}
+.rc-desc small{display:block;font-size:12.5px;font-weight:400;color:#8ea2c4;margin-top:2px}
+.rc-cant{font-size:14px;color:#c3cfe2;white-space:nowrap}
+.rc-cant strong{font-family:var(--mono);font-size:18px;color:var(--text)}
+.rc-detalle{margin:0 0 6px 70px;padding:8px 12px;background:var(--s2);border-radius:8px;font-size:13px;display:flex;flex-direction:column;gap:6px;animation:fadeIn .2s ease}
+.rc-detalle>div{display:flex;justify-content:space-between;gap:10px;color:#c3cfe2}
+@media(max-width:640px){
+  .rc-sel{width:100%}
+  .rc-acc{width:100%}
+  .rc-acc .btn{flex:1 1 auto;justify-content:center}
+  .rc-fila{flex-wrap:wrap}
+  .rc-cod{min-width:0}
+  .rc-detalle{margin-left:8px}
+}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -907,7 +940,7 @@ let S = {
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
   devolucionFiltroProducto: "",
-  devolucionFiltroTipo: "", pickeoDni: null, pickeo: null, evalSecos: {},
+  devolucionFiltroTipo: "", pickeoDni: null, reclamoVista: "pendientes", reclamoProveedor: "", reclamoQuery: "", reclamoAbierto: {}, reclamoPend: null, provPorProducto: {}, provFalta: false, provCargando: false, pickeo: null, evalSecos: {},
   tabCalidad: "metricas", calidadDesde: "", calidadHasta: "", calidadProducto: "", calidadMetrica: "devs", calidadProdAbierto: false, calidadMotivoSel: "", calidadDiaSel: "", calidadSucursal: "", devMetCategoria: "",
   tabDevGestor: "activas",
   devolucionAccionId: "", // id de la devolución que se está confirmando/rechazando
@@ -2897,11 +2930,11 @@ async function pickeoConfirmarConDni(){
   if(!chk.ok){ d.err=chk.msg; render(); return; }
   d.loading=true; renderNow();
   const firma={ok:true,nombre:chk.nombre,dni};
-  const ok = d.modo==="armar" ? await pickeoEnviar(firma) : d.modo==="controlar" ? await pickeoConfirmarControl(firma) : await clasifGuardar(firma);
+  const ok = d.modo==="armar" ? await pickeoEnviar(firma) : d.modo==="controlar" ? await pickeoConfirmarControl(firma) : d.modo==="reclamar" ? await reclamoGuardar(firma) : await clasifGuardar(firma);
   if(ok){ S.modal=null; S.pickeoDni=null; }
   else {
     d.loading=false;
-    const o=d.modo==="clasificar"?S.clasif:S.pickeo;
+    const o=d.modo==="clasificar"?S.clasif:d.modo==="reclamar"?S.reclamoPend:S.pickeo;
     d.err=(o&&o.err)||"No se pudo guardar — probá de nuevo."; if(o) o.err="";
   }
   render();
@@ -3287,6 +3320,244 @@ function resumenClasificacion(d){
   return t;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  RECLAMO A PROVEEDOR
+//  Lo que Depósito clasificó como "Cambio" se junta acá, agrupado por el
+//  proveedor del producto (columna productos.proveedor), para saber qué
+//  cantidad hay que reclamarle a cada uno. Al reclamarlo se marca, y deja
+//  de figurar como pendiente.
+// ═══════════════════════════════════════════════════════════════════
+function puedeVerReclamos(){
+  const u=S.user; if(!u) return false;
+  if(u.rol==="logistica"||u.rol==="admin") return true;
+  if(esDeposito(u)) return true;
+  if(u.rol==="planificacion"){
+    const t=String(u.tipoReal||"").toUpperCase(), a=normSinTildes(u.area||"");
+    return t==="COMPRAS"||a==="compras";
+  }
+  return false;
+}
+const SIN_PROVEEDOR="Sin proveedor asignado";
+function proveedorDe(x){
+  const p=(S.provPorProducto||{})[String(x.productoId)];
+  return (p&&String(p).trim())||"";
+}
+// Una fila por línea de devolución Clasificada con cantidad a cambio
+function lineasReclamo(){
+  const out=[];
+  S.devoluciones.forEach(d=>{
+    if(d.tipoDevolucion!=="Secos"||d.estado!=="Clasificada") return;
+    productosDeDevolucion(d).forEach((x,idx)=>{
+      const cant=+(x.clasificacion&&x.clasificacion.cambio)||0;
+      if(cant<=0) return;
+      out.push({devId:d.id,idx,sucursal:d.sucursal||"—",fecha:d.createdAt,productoId:x.productoId,
+        codigoInterno:x.codigoInterno||"",codigoBarras:x.codigoBarras||"",descripcion:x.descripcion||"",
+        unidad:x.unidad||"Unidades",motivo:String(x.motivo||"").split(" — ")[0],cantidad:cant,
+        proveedor:proveedorDe(x),reclamo:x.reclamo||null});
+    });
+  });
+  return out;
+}
+// Trae el proveedor de los productos que lo necesitan (una consulta por tandas)
+async function cargarProveedoresReclamo(){
+  if(S.provCargando) return;
+  S.provPorProducto=S.provPorProducto||{};
+  const ids=[...new Set(lineasReclamo().map(l=>l.productoId).filter(v=>v!==undefined&&v!==null&&v!==""))]
+    .filter(id=>!(String(id) in S.provPorProducto));
+  if(!ids.length) return;
+  S.provCargando=true;
+  try{
+    for(let i=0;i<ids.length;i+=150){
+      const chunk=ids.slice(i,i+150);
+      const { data, error } = await sb.from("productos").select("id,proveedor").in("id",chunk);
+      if(error) throw error;
+      const vistos=new Set();
+      (data||[]).forEach(r=>{ S.provPorProducto[String(r.id)]=r.proveedor||""; vistos.add(String(r.id)); });
+      chunk.forEach(id=>{ if(!vistos.has(String(id))) S.provPorProducto[String(id)]=""; });
+    }
+    S.provFalta=false;
+  }catch(e){
+    console.warn("Proveedores:",e);
+    if(/proveedor/i.test(String(e&&(e.message||e.details||"")))) S.provFalta=true;
+    ids.forEach(id=>{ S.provPorProducto[String(id)]=""; });     // no reintentar en bucle
+  }
+  S.provCargando=false; render();
+}
+function reclamoRefrescarProveedores(){ S.provPorProducto={}; S.provFalta=false; cargarProveedoresReclamo(); render(); }
+
+// Agrupa (proveedor → producto) aplicando los filtros de pantalla
+function reclamoGrupos(){
+  const vista=S.reclamoVista||"pendientes";
+  let filas=lineasReclamo().filter(l=>vista==="pendientes"?!l.reclamo:!!l.reclamo);
+  const total=filas.length;
+  const q=normNotif(S.reclamoQuery||"");
+  const provSel=S.reclamoProveedor||"";
+  const conteoProv={};
+  filas.forEach(l=>{ const k=l.proveedor||SIN_PROVEEDOR; conteoProv[k]=(conteoProv[k]||0)+1; });
+  if(provSel) filas=filas.filter(l=>(l.proveedor||SIN_PROVEEDOR)===provSel);
+  if(q) filas=filas.filter(l=>normNotif(l.descripcion).includes(q)||normNotif(l.codigoInterno).includes(q)||normNotif(l.codigoBarras).includes(q)||normNotif(l.proveedor).includes(q));
+  const gm=new Map();
+  filas.forEach(l=>{
+    const nombre=l.proveedor||SIN_PROVEEDOR;
+    const g=gm.get(nombre)||{nombre,sin:!l.proveedor,prods:new Map()};
+    const pk=`${l.productoId??l.codigoInterno??l.descripcion}|${l.unidad}`;
+    const p=g.prods.get(pk)||{k:pk,codigoInterno:l.codigoInterno,codigoBarras:l.codigoBarras,descripcion:l.descripcion,unidad:l.unidad,cantidad:0,refs:[],origenes:[],reclamo:l.reclamo};
+    p.cantidad+=l.cantidad; p.refs.push({devId:l.devId,idx:l.idx});
+    p.origenes.push({sucursal:l.sucursal,fecha:l.fecha,cantidad:l.cantidad,motivo:l.motivo,reclamo:l.reclamo});
+    if(!p.codigoInterno&&l.codigoInterno) p.codigoInterno=l.codigoInterno;
+    g.prods.set(pk,p); gm.set(nombre,g);
+  });
+  const grupos=[...gm.values()].map(g=>{
+    const filasG=[...g.prods.values()].sort((a,b)=>String(a.descripcion).localeCompare(String(b.descripcion),"es"));
+    const porUnidad={}; filasG.forEach(p=>{ porUnidad[p.unidad]=(porUnidad[p.unidad]||0)+p.cantidad; });
+    return {nombre:g.nombre,sin:g.sin,filas:filasG,totalTxt:Object.entries(porUnidad).map(([u,n])=>`${fmtNum(Math.round(n*1000)/1000)} ${u}`).join(" · ")};
+  }).sort((a,b)=> a.sin-b.sin || a.nombre.localeCompare(b.nombre,"es"));
+  return {grupos,conteoProv,total,vista};
+}
+function reclamoToggle(k){ S.reclamoAbierto=S.reclamoAbierto||{}; S.reclamoAbierto[k]=!S.reclamoAbierto[k]; render(); }
+function reclamoTexto(g){
+  const hoy=new Date().toLocaleDateString("es-AR");
+  return [`RECLAMO A PROVEEDOR${g.sin?"":` — ${g.nombre}`}`,`Fecha: ${hoy}`,"",
+    ...g.filas.map(p=>`• ${p.codigoInterno?p.codigoInterno+" · ":""}${p.descripcion} — ${fmtNum(Math.round(p.cantidad*1000)/1000)} ${p.unidad}`),
+    "",`Total: ${g.filas.length} producto${g.filas.length!==1?"s":""} (${g.totalTxt})`].join("\n");
+}
+function reclamoCsv(g){
+  const esc=v=>`"${String(v??"").replace(/"/g,'""')}"`;
+  const filas=[["proveedor","codigo_interno","codigo_barras","descripcion","cantidad","unidad","sucursales"]];
+  g.filas.forEach(p=>filas.push([g.sin?"":g.nombre,p.codigoInterno,p.codigoBarras,p.descripcion,Math.round(p.cantidad*1000)/1000,p.unidad,[...new Set(p.origenes.map(o=>o.sucursal))].join(" / ")]));
+  return "\ufeff"+filas.map(f=>f.map(esc).join(",")).join("\r\n");
+}
+async function copiarTexto(t){
+  try{ await navigator.clipboard.writeText(t); return true; }
+  catch(e){
+    const ta=document.createElement("textarea"); ta.value=t; ta.style.cssText="position:fixed;opacity:0;top:0;left:0";
+    document.body.appendChild(ta); ta.select(); let ok=false;
+    try{ ok=document.execCommand("copy"); }catch(_){}
+    ta.remove(); return ok;
+  }
+}
+async function reclamoCopiar(nombre){
+  const g=reclamoGrupos().grupos.find(x=>x.nombre===nombre); if(!g) return;
+  const ok=await copiarTexto(reclamoTexto(g));
+  if(ok) toast("📋 Copiado: pegalo en el mail o WhatsApp del proveedor"); else toast("No se pudo copiar","warn");
+}
+function reclamoDescargar(nombre){
+  const g=reclamoGrupos().grupos.find(x=>x.nombre===nombre); if(!g) return;
+  const blob=new Blob([reclamoCsv(g)],{type:"text/csv;charset=utf-8;"});
+  const url=URL.createObjectURL(blob), a=document.createElement("a");
+  a.href=url; a.download=`reclamo_${(g.sin?"sin_proveedor":g.nombre).replace(/[^\w\-]+/g,"_")}_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+}
+// Marcar / deshacer "reclamado" para todo lo visible de un proveedor
+function reclamoMarcar(nombre,accion){
+  const g=reclamoGrupos().grupos.find(x=>x.nombre===nombre); if(!g) return;
+  const refs=[]; g.filas.forEach(p=>p.refs.forEach(r=>refs.push(r)));
+  if(!refs.length) return;
+  S.reclamoPend={proveedor:g.nombre,refs,accion,err:"",n:g.filas.length,totalTxt:g.totalTxt};
+  if(S.user?.rol==="logistica"||S.user?.rol==="admin"){
+    if(!confirm(accion==="marcar"?`¿Marcar como reclamado a ${g.nombre}? (${g.filas.length} productos)`:`¿Volver a "para reclamar" lo de ${g.nombre}?`)){ S.reclamoPend=null; return; }
+    reclamoGuardar(); return;
+  }
+  S.pickeoDni={modo:"reclamar",dni:"",err:"",loading:false,
+    titulo:accion==="marcar"?"Marcar como reclamado":"Deshacer el reclamo",
+    boton:accion==="marcar"?"✅ Marcar reclamado":"↩ Deshacer",
+    resumen:`<strong>${escH(g.nombre)}</strong> · ${g.filas.length} producto${g.filas.length!==1?"s":""} · ${escH(g.totalTxt)}`};
+  S.modal="pickeoDni"; render();
+  setTimeout(()=>$("pk-dni")?.focus(),120);
+}
+async function reclamoGuardar(firmaParam){
+  const r=S.reclamoPend; if(!r) return false;
+  const firma=firmaParam||pickeoFirmante();
+  if(!firma.ok){ r.err=firma.msg; render(); return false; }
+  const porDev={}; r.refs.forEach(({devId,idx})=>{ (porDev[devId]=porDev[devId]||[]).push(idx); });
+  const ahora=now(), hechas={}; let fallos=0;
+  await Promise.all(Object.entries(porDev).map(async([devId,idxs])=>{
+    const d=S.devoluciones.find(x=>String(x.id)===String(devId)); if(!d){ fallos++; return; }
+    const prods=productosDeDevolucion(d).map(x=>({...x}));
+    idxs.forEach(i=>{
+      if(!prods[i]) return;
+      if(r.accion==="marcar") prods[i].reclamo={at:ahora,por:firma.nombre,proveedor:r.proveedor===SIN_PROVEEDOR?"":r.proveedor};
+      else delete prods[i].reclamo;
+    });
+    const changes={productosJson:JSON.stringify(prods),updatedAt:ahora};
+    try{
+      const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+      if(error) throw error;
+      hechas[String(devId)]=changes;
+    }catch(e){ console.warn("Reclamo:",e); fallos++; }
+  }));
+  S.devoluciones=S.devoluciones.map(x=>hechas[String(x.id)]?{...x,...hechas[String(x.id)]}:x);
+  if(fallos){ r.err=`No se pudo guardar en ${fallos} devolución${fallos!==1?"es":""} — probá de nuevo.`; render(); return false; }
+  toast(r.accion==="marcar"?`✅ Marcado como reclamado: ${r.proveedor}`:`↩ Vuelve a "para reclamar": ${r.proveedor}`);
+  S.reclamoPend=null; render(); return true;
+}
+
+function renderReclamoProveedor(){
+  // Pide los proveedores que falten (una sola vez por producto)
+  if(!S.provCargando){
+    const faltan=lineasReclamo().some(l=>l.productoId!==undefined&&l.productoId!==null&&l.productoId!==""&&!((S.provPorProducto||{}).hasOwnProperty(String(l.productoId))));
+    if(faltan) setTimeout(cargarProveedoresReclamo,0);
+  }
+  const { grupos, conteoProv, total, vista } = reclamoGrupos();
+  const provs=Object.keys(conteoProv).sort((a,b)=>(a===SIN_PROVEEDOR)-(b===SIN_PROVEEDOR)||a.localeCompare(b,"es"));
+  const hayFiltro=!!(S.reclamoProveedor||S.reclamoQuery);
+  const nProd=grupos.reduce((a,g)=>a+g.filas.length,0);
+  return `
+  ${S.provFalta?`<div class="alert-info" style="margin-bottom:14px;border-left-color:var(--amber)">⚠️ Todavía no está cargado el proveedor de los productos. Cuando lo cargues en Supabase (<code>productos.proveedor</code>), tocá ↻ para actualizar.</div>`:""}
+  <div class="rc-barra">
+    <div class="tabs rc-vista">
+      <button class="tab ${vista==="pendientes"?"active":""}" onclick="S.reclamoVista='pendientes';render()">Para reclamar</button>
+      <button class="tab ${vista==="reclamados"?"active":""}" onclick="S.reclamoVista='reclamados';render()">Ya reclamados</button>
+    </div>
+    <select class="inp rc-sel" onchange="S.reclamoProveedor=this.value;render()">
+      <option value="">Todos los proveedores</option>
+      ${provs.map(p=>`<option value="${escH(p)}" ${S.reclamoProveedor===p?"selected":""}>${escH(p)} (${conteoProv[p]})</option>`).join("")}
+    </select>
+    <input class="inp rc-busq" type="text" placeholder="🔎 Producto o código interno" value="${escH(S.reclamoQuery||"")}" oninput="S.reclamoQuery=this.value;render()"/>
+    <button class="btn btn-ghost btn-md" onclick="reclamoRefrescarProveedores()" title="Volver a leer los proveedores">↻</button>
+    ${hayFiltro?`<button class="btn btn-ghost btn-md" onclick="S.reclamoProveedor='';S.reclamoQuery='';render()">✕ Limpiar</button>`:""}
+  </div>
+  ${grupos.length===0
+    ? `<div class="pk-vacio" style="margin-top:6px">${total===0
+        ? (vista==="pendientes"?"No hay nada para reclamar. Lo que Depósito clasifique como Cambio aparece acá.":"Todavía no marcaste ningún reclamo.")
+        : "Ningún producto coincide con ese filtro."}</div>`
+    : `<div class="rc-resumen">${nProd} producto${nProd!==1?"s":""} · ${grupos.length} proveedor${grupos.length!==1?"es":""}</div>
+    ${grupos.map(g=>`
+    <div class="rc-grupo ${g.sin?"sin":""}">
+      <div class="rc-head">
+        <div style="min-width:0">
+          <div class="rc-prov">${escH(g.nombre)}</div>
+          <div class="rc-sub">${g.filas.length} producto${g.filas.length!==1?"s":""} · ${escH(g.totalTxt)}</div>
+        </div>
+        <div class="rc-acc">
+          <button class="btn btn-ghost btn-sm" onclick="reclamoCopiar('${escH(g.nombre).replace(/'/g,"&#39;")}')" title="Copiar para pegar en un mail o WhatsApp">📋 Copiar</button>
+          <button class="btn btn-ghost btn-sm" onclick="reclamoDescargar('${escH(g.nombre).replace(/'/g,"&#39;")}')" title="Descargar planilla">⬇ CSV</button>
+          ${g.sin?"":(vista==="pendientes"
+            ? `<button class="btn btn-success btn-sm" onclick="reclamoMarcar('${escH(g.nombre).replace(/'/g,"&#39;")}','marcar')">✅ Marcar reclamado</button>`
+            : `<button class="btn btn-ghost btn-sm" onclick="reclamoMarcar('${escH(g.nombre).replace(/'/g,"&#39;")}','deshacer')">↩ Deshacer</button>`)}
+        </div>
+      </div>
+      ${g.sin?`<div class="rc-aviso">Estos productos no tienen proveedor cargado, así que no se pueden marcar como reclamados todavía.</div>`:""}
+      <div class="rc-filas">
+        ${g.filas.map(p=>{
+          const abierto=!!(S.reclamoAbierto||{})[g.nombre+"|"+p.k];
+          const suc=[...new Set(p.origenes.map(o=>o.sucursal))];
+          return `
+          <div class="rc-fila ${abierto?"abierta":""}" onclick="reclamoToggle('${escH(g.nombre+"|"+p.k).replace(/'/g,"&#39;")}')">
+            <div class="rc-cod">${p.codigoInterno?escH(p.codigoInterno):"—"}</div>
+            <div class="rc-desc">
+              <div>${escH(p.descripcion)}</div>
+              <small>${p.origenes.length} devolución${p.origenes.length!==1?"es":""} · ${escH(suc.join(", "))}${p.reclamo&&vista==="reclamados"?` · reclamado ${fd(p.reclamo.at)} por ${escH(p.reclamo.por||"—")}`:""}</small>
+            </div>
+            <div class="rc-cant"><strong>${fmtNum(Math.round(p.cantidad*1000)/1000)}</strong> ${escH(p.unidad)}</div>
+          </div>
+          ${abierto?`<div class="rc-detalle">${p.origenes.map(o=>`<div><span>${escH(o.sucursal)} · ${fd(o.fecha)}</span><span>${escH(o.motivo)}</span><strong>${fmtNum(o.cantidad)} ${escH(p.unidad)}</strong></div>`).join("")}</div>`:""}`;
+        }).join("")}
+      </div>
+    </div>`).join("")}`}
+  `;
+}
+
 // "Mal olor o color" y "Mal estado" eran lo mismo: quedó solo "Mal estado".
 // Las devoluciones viejas todavía guardan el nombre anterior, así que se
 // unifica al leerlas (y el SQL devoluciones_04 lo corrige en la base).
@@ -3333,6 +3604,7 @@ function renderDevoluciones(){
       lista = lista.filter(d=>productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp) || normNotif(p.codigoBarras).includes(qp)));
     }
   }
+  const enReclamo = esGestor && S.tabDevGestor==="reclamo" && puedeVerReclamos();
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
   const colorEstado = e => e==="Clasificada" ? "var(--green)" : e==="Confirmada" ? "#1fa86a" : (e==="No confirmada"||e==="Rechazada") ? "var(--red)" : e==="En evaluación" ? "var(--purple)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
 
@@ -3350,6 +3622,7 @@ function renderDevoluciones(){
     <div class="tabs" style="margin-bottom:16px">
       <button class="tab ${S.tabDevGestor==="activas"?"active":""}" onclick="S.tabDevGestor='activas';render()">📋 Activas</button>
       ${puedeClasificarSecos()?`<button class="tab ${S.tabDevGestor==="clasificar"?"active":""}" onclick="S.tabDevGestor='clasificar';render()">🗂️ Para clasificar<span class="tab-n">${S.devoluciones.filter(esSecosParaClasificar).length}</span></button>`:""}
+      ${puedeVerReclamos()?`<button class="tab ${S.tabDevGestor==="reclamo"?"active":""}" onclick="S.tabDevGestor='reclamo';render()">🔁 Reclamo a proveedor</button>`:""}
       <button class="tab ${S.tabDevGestor==="historial"?"active":""}" onclick="S.tabDevGestor='historial';render()">📚 Historial</button>
     </div>`:""}
 
@@ -3455,7 +3728,7 @@ function renderDevoluciones(){
       <button class="btn btn-ghost btn-sm" onclick="S.devolSeleccion=new Set();render()">✕</button>`:""}
     </div>`:""}
 
-    ${esGestor||esRepartidor?`
+    ${(esGestor||esRepartidor) && !enReclamo?`
     <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap">
       <select class="inp" style="width:200px" onchange="S.devolucionFiltroSucursal=this.value;render()">
         <option value="">Todas las sucursales</option>
@@ -3487,6 +3760,7 @@ function renderDevoluciones(){
       })()}`:""}
     </div>`:""}
 
+    ${enReclamo ? `<div class="vt-content">${renderReclamoProveedor()}</div>` : `
     <div class="vt-content" style="display:flex;flex-direction:column;gap:10px">
       ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay devoluciones${S.devolucionFiltroSucursal||S.devolucionFiltroEstado||S.devolucionFiltroProducto?" con ese filtro":""}.</p>`:""}
       ${lista.map(d=>`
@@ -3550,7 +3824,7 @@ function renderDevoluciones(){
             </div>
             `}`:""}
         </div>`).join("")}
-    </div>
+    </div>`}
   </div>`;
 }
 
@@ -3975,6 +4249,7 @@ function renderApp(){
 // ── PLANIFICACIÓN VIEW ───────────────────────────────────
 function renderPlanificacion(){
   const verMetDev = S.tabSuc==="devmet" && puedeVerMetricasDevoluciones();
+  const verReclamo = S.tabSuc==="reclamo" && puedeVerReclamos();
   const u     = S.user;
   // Ignora mayúsculas/minúsculas y tildes al comparar áreas (ej. "Compras" == "COMPRAS")
   const norm2 = s=>(s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
@@ -4035,10 +4310,11 @@ function renderPlanificacion(){
         <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas<span class="tab-n">${open.length}</span></button>
         <button class="tab ${S.tabSuc==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial<span class="tab-n">${hist.length}</span></button>
         ${puedeVerMetricasDevoluciones()?`<button class="tab ${verMetDev?"active":""}" onclick="S.tabSuc='devmet';render()">📉 Métricas de devoluciones</button>`:""}
+        ${puedeVerReclamos()?`<button class="tab ${verReclamo?"active":""}" onclick="S.tabSuc='reclamo';render()">🔁 Reclamos</button>`:""}
       </div>
-      ${verMetDev?"":datePill(S.fPlanFecha,"fPlanFecha")}
+      ${(verMetDev||verReclamo)?"":datePill(S.fPlanFecha,"fPlanFecha")}
     </div>
-    ${verMetDev ? `<div class="vt-content">${renderMetricasDevoluciones()}</div>` : solicitudesLista(listF,"plan-"+(S.tabSuc||"abiertas"),r=>{
+    ${verMetDev ? `<div class="vt-content">${renderMetricasDevoluciones()}</div>` : verReclamo ? `<div class="vt-content">${renderReclamoProveedor()}</div>` : solicitudesLista(listF,"plan-"+(S.tabSuc||"abiertas"),r=>{
       // Planificación/RRHH/etc puede confirmar recepción cuando destino es fábrica/depósito
       const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
       const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
