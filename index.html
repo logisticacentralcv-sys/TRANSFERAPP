@@ -500,6 +500,31 @@ tr[onclick]:active td{background:var(--s3)}
   .pk-page .actions-bar .btn{flex:0 0 auto;min-height:38px;padding:6px 12px}
 }
 
+
+/* ── Clasificación de Secos ── */
+.sk-cod{font-family:var(--mono);font-size:11.5px;color:#8ea2c4}
+.cl-line{background:var(--s1);border:1px solid var(--border);border-left:4px solid var(--amber);border-radius:12px;padding:14px;animation:cardIn .25s ease backwards}
+.cl-line.ok{border-left-color:var(--green)}
+.cl-rec{font-size:15px;white-space:nowrap;color:#c3cfe2}
+.cl-rec strong{font-family:var(--mono);font-size:19px;color:var(--text)}
+.cl-dest-row{display:flex;gap:8px;margin-top:12px}
+.cl-dest{position:relative;flex:1;min-height:46px;border-radius:10px;border:1.5px solid var(--border2);background:var(--s2);color:#c3cfe2;font-family:var(--font);font-size:14px;font-weight:700;cursor:pointer;transition:background .18s,border-color .18s,color .18s,transform .15s}
+.cl-dest:active{transform:scale(.96)}
+.cl-dest.on{background:color-mix(in srgb,var(--c) 18%,transparent);border-color:var(--c);color:var(--c)}
+.cl-sug{position:absolute;top:5px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--c);opacity:.65}
+.cl-split{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.cl-split-item{background:var(--s2);border:1px solid var(--border);border-top:3px solid var(--c);border-radius:10px;padding:8px 5px;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.cl-split-lbl{font-size:12.5px;font-weight:700;color:var(--c)}
+.cl-split .pk-stepper{width:100%}
+.cl-split .pk-stepper button{flex:0 0 28px;width:28px;font-size:18px}
+.cl-split .pk-stepper input{flex:1 1 auto;width:100%;min-width:0;font-size:15px;padding:8px 0}
+.cl-foot{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:12px;font-size:13px}
+.cl-link{background:none;border:0;color:var(--blue);font-family:var(--font);font-size:13px;font-weight:700;cursor:pointer;padding:4px 0}
+.cl-ok{color:#4ade80;font-weight:700}
+.cl-falta{color:var(--amber);font-weight:700}
+.cl-tot{display:flex;gap:14px;font-size:15px}
+.cl-tot strong{font-family:var(--mono)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -2027,6 +2052,7 @@ async function submitDevolucion(){
     productoId: it.producto.id,
     descripcion: it.producto.descripcion,
     codigoInterno: it.producto.codigoInterno||"",
+    codigoBarras: it.producto.codigoBarras||"",
     cantidad: +it.cantidad,
     unidad: it.unidad,
     motivo: it.detalle ? `${it.motivo} — ${it.detalle}` : it.motivo,
@@ -2736,6 +2762,7 @@ function renderPickeoPagina(){
               <div class="pk-item ${esSobrestock(l.motivo)?"sobre":""}">
                 <div style="min-width:0;flex:1">
                   <div class="pk-name">${escH(l.producto.descripcion)}</div>
+                  ${l.producto.codigoInterno?`<div class="pk-code">Int. ${escH(l.producto.codigoInterno)}</div>`:""}
                   <div class="pk-item-meta">
                     <strong>${fmtNum(+l.cantidad)} ${escH(l.unidad)}</strong>
                     <span class="pk-motivo" style="color:${col};border-color:${col}55;background:${col}14">${escH(l.motivo)}</span>
@@ -2786,7 +2813,7 @@ function renderPickeoPagina(){
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
           <div style="min-width:0">
             <div class="pk-name">${escH(l.descripcion)}</div>
-            ${l.motivo?`<div class="pk-code">${escH(l.motivo)}</div>`:""}
+            <div class="pk-code">${l.codigoInterno?`Int. ${escH(l.codigoInterno)}`:""}${l.codigoInterno&&l.motivo?" · ":""}${l.motivo?escH(l.motivo):""}</div>
           </div>
           <div class="pk-prog-num" style="color:${color}">${fmtNum(rec)} <span style="color:var(--muted);font-weight:500">/ ${fmtNum(esp)} ${escH(l.unidad)}</span></div>
         </div>
@@ -2834,19 +2861,20 @@ function pickeoPedirConfirmacion(){
   p.err="";
   // Logística y Admin ya se identificaron al entrar
   if(S.user?.rol==="logistica"||S.user?.rol==="admin"){ p.modo==="armar" ? pickeoEnviar() : pickeoConfirmarControl(); return; }
-  S.pickeoDni={dni:"",err:"",loading:false};
-  S.modal="pickeoDni"; render();
-  setTimeout(()=>$("pk-dni")?.focus(),120);
-}
-function renderPickeoDniModal(){
-  const p=S.pickeo, d=S.pickeoDni||{};
-  if(!p) return "";
   const n=p.lineas.length;
   const resumen = p.modo==="armar"
     ? `<strong>${n}</strong> producto${n!==1?"s":""} · <strong>${fmtNum(p.lineas.reduce((x,l)=>x+(+l.cantidad||0),0))}</strong> en total`
     : (()=>{ const dif=p.lineas.filter(l=>(+l.recibido||0)!==(+l.esperado||0)).length; return `<strong>${n-dif}</strong> de ${n} completos${dif?` · <span style="color:var(--amber);font-weight:700">${dif} con diferencia</span>`:""}`; })();
+  S.pickeoDni={modo:p.modo,dni:"",err:"",loading:false,resumen,
+    titulo:p.modo==="armar"?"Enviar la orden":"Confirmar el control",
+    boton:p.modo==="armar"?"Enviar orden":"✅ Confirmar"};
+  S.modal="pickeoDni"; render();
+  setTimeout(()=>$("pk-dni")?.focus(),120);
+}
+function renderPickeoDniModal(){
+  const d=S.pickeoDni; if(!d) return "";
   return `
-  <p style="font-size:14px;color:var(--muted);margin-bottom:14px">${resumen}</p>
+  <p style="font-size:14px;color:var(--muted);margin-bottom:14px">${d.resumen||""}</p>
   <div class="field">
     <label>Tu DNI (sin puntos) <span class="req">*</span></label>
     <input id="pk-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Ej: 30123456" value="${escH(d.dni||"")}"
@@ -2856,22 +2884,26 @@ function renderPickeoDniModal(){
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
-    <button class="btn ${p.modo==="armar"?"btn-warn":"btn-success"} btn-md" onclick="pickeoConfirmarConDni()" ${d.loading?"disabled":""}>
-      ${d.loading?`<span class="spinner"></span> Guardando…`:(p.modo==="armar"?"Enviar orden":"✅ Confirmar")}
+    <button class="btn ${d.modo==="armar"?"btn-warn":"btn-success"} btn-md" onclick="pickeoConfirmarConDni()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Guardando…`:escH(d.boton||"Confirmar")}
     </button>
   </div>`;
 }
 async function pickeoConfirmarConDni(){
-  const d=S.pickeoDni; if(!d||d.loading||!S.pickeo) return;
+  const d=S.pickeoDni; if(!d||d.loading) return;
   const dni=String($("pk-dni")?.value||d.dni||"").replace(/\D/g,"");
   if(!dni){ d.err="Ingresá tu DNI."; render(); return; }
   const chk=validarDNI(dni);
   if(!chk.ok){ d.err=chk.msg; render(); return; }
   d.loading=true; renderNow();
   const firma={ok:true,nombre:chk.nombre,dni};
-  const ok = S.pickeo.modo==="armar" ? await pickeoEnviar(firma) : await pickeoConfirmarControl(firma);
+  const ok = d.modo==="armar" ? await pickeoEnviar(firma) : d.modo==="controlar" ? await pickeoConfirmarControl(firma) : await clasifGuardar(firma);
   if(ok){ S.modal=null; S.pickeoDni=null; }
-  else { d.loading=false; d.err=(S.pickeo&&S.pickeo.err)||"No se pudo guardar — probá de nuevo."; if(S.pickeo) S.pickeo.err=""; }
+  else {
+    d.loading=false;
+    const o=d.modo==="clasificar"?S.clasif:S.pickeo;
+    d.err=(o&&o.err)||"No se pudo guardar — probá de nuevo."; if(o) o.err="";
+  }
   render();
 }
 
@@ -2956,8 +2988,9 @@ async function pickeoConfirmarControl(firmaParam){
     try{ localStorage.removeItem("tl_ctrl_"+d.id); }catch(e){}
     await pickeoCerrarCamara(true);
     S.pickeo=null; S.vista="devoluciones";
+    if(puedeClasificarSecos()) S.tabDevGestor="clasificar";   // lo que sigue es clasificarla
     window.scrollTo({top:0,behavior:"instant"});
-    toast(difs.length?"✅ Confirmada — quedaron marcadas las diferencias":"✅ Devolución confirmada: llegó todo");
+    toast((difs.length?"✅ Confirmada con diferencias":"✅ Confirmada: llegó todo")+(puedeClasificarSecos()?" · ahora clasificala":""));
     render(); return true;
   }catch(e){
     console.warn("Confirmar control:",e);
@@ -3013,7 +3046,9 @@ function renderSecosBloque(d){
   const puedeEval=evaluando && puedeEvaluarSecos();
   const dec=(S.evalSecos||{})[d.id]||{};
   const hayPendientes=prods.some(x=>x.evaluacion==="pendiente");
+  const resumen = d.estado==="Clasificada" ? resumenClasificacion(d) : null;
   return `
+  ${resumen?`<div class="sk-meta" style="margin-top:8px;gap:8px">${DESTINOS_SECOS.filter(t=>resumen[t.k]>0).map(t=>`<span class="sk-chip" style="color:${t.color};border-color:${t.color}55;background:${t.color}14;font-size:13px">${t.icon} ${t.label} ${fmtNum(resumen[t.k])}</span>`).join(" ")}</div>`:""}
   <div class="sk-lista">
     ${prods.map((x,i)=>{
       const mot=String(x.motivo||"").split(" — ")[0];
@@ -3029,7 +3064,8 @@ function renderSecosBloque(d){
       <div class="sk-item">
         <div style="min-width:0;flex:1">
           <div class="sk-nombre">${escH(x.descripcion)}</div>
-          <div class="sk-meta"><strong>${fmtNum(+x.cantidad)} ${escH(x.unidad||"")}</strong> · <span style="color:${col};font-weight:700">${escH(mot)}</span> ${chip} ${rec}</div>
+          <div class="sk-meta"><strong>${fmtNum(+x.cantidad)} ${escH(x.unidad||"")}</strong> · <span style="color:${col};font-weight:700">${escH(mot)}</span> ${chip} ${rec}${x.codigoInterno?` <span class="sk-cod">Int. ${escH(x.codigoInterno)}</span>`:""}</div>
+          ${x.clasificacion?`<div class="sk-meta" style="margin-top:5px">${renderClasificacionChips(x)}</div>`:""}
         </div>
         ${puedeEval && x.evaluacion==="pendiente"?`
         <div class="sk-eval">
@@ -3046,7 +3082,9 @@ function renderSecosBloque(d){
   ${puedeEval && hayPendientes ? `<div style="margin-top:10px;display:flex;justify-content:flex-end"><button class="btn btn-success btn-sm" onclick="confirmarEvaluacionSecos('${escH(d.id)}')">✅ Confirmar evaluación</button></div>`:""}`;
 }
 function renderAccionesSecos(d){
-  if(["Confirmada","No confirmada","Rechazada"].includes(d.estado)) return "";
+  if(esSecosParaClasificar(d))
+    return `<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-primary btn-sm" onclick="abrirClasificar('${escH(d.id)}')">🗂️ Clasificar</button></div>`;
+  if(["Confirmada","No confirmada","Rechazada","Clasificada"].includes(d.estado)) return "";
   if(S.devolucionAccionId===d.id && S.devolucionAccionTipo==="noConfirmar"){
     return `
     <div class="field" style="margin-top:10px">
@@ -3073,6 +3111,180 @@ function pickeoLauncherHtml(){
     <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Se arma escaneando cada producto con la cámara (o escribiendo el código): elegís cantidad y motivo, tocás Devolver y el producto pasa a la orden.</p>
     <button class="btn btn-warn btn-md btn-full" onclick="abrirPickeoArmar()">Armar orden de devolución</button>
   </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  CLASIFICACIÓN (después del control en fábrica)
+//  Una vez confirmado que llegó lo declarado, Depósito decide el destino
+//  de lo recibido, producto por producto:
+//     🔁 Cambio  → tiene cambio con el proveedor
+//     🍽️ Comedor → no tiene cambio: va al comedor
+//     📦 Stock   → sobrestock aceptado: vuelve a stock
+//  Se hace en una pestaña y pantalla aparte ("Para clasificar") para no
+//  mezclarlo con lo que todavía está en camino o en control.
+// ═══════════════════════════════════════════════════════════════════
+const DESTINOS_SECOS=[
+  {k:"cambio", label:"Cambio",  icon:"🔁", color:"#4f9eff"},
+  {k:"comedor",label:"Comedor", icon:"🍽️", color:"#f5a623"},
+  {k:"stock",  label:"Stock",   icon:"📦", color:"#2ecc7a"},
+];
+// Lo que sugiere el motivo declarado (Depósito lo confirma o lo cambia)
+function destinoSugerido(motivo){
+  const m=normNotif(String(motivo||"").split(" — ")[0]);
+  if(m==="sobrestock") return "stock";
+  if(m.includes("con cambio")) return "cambio";
+  return "comedor";
+}
+function puedeClasificarSecos(){ return puedeControlarSecos(); }
+function esSecosParaClasificar(d){ return d.tipoDevolucion==="Secos" && d.estado==="Confirmada" && puedeClasificarSecos(); }
+// "Final" = ya no hay nada más que hacer. Un Secos controlado todavía espera
+// su clasificación (solo para quien puede clasificarlo).
+function devolucionFinal(d){
+  if(["No confirmada","Rechazada","Clasificada"].includes(d.estado)) return true;
+  if(d.estado==="Confirmada") return !(d.tipoDevolucion==="Secos" && puedeClasificarSecos());
+  return false;
+}
+const clasifAsignado=l=>(+l.cambio||0)+(+l.comedor||0)+(+l.stock||0);
+const clasifDif=l=>Math.round((l.recibido-clasifAsignado(l))*1000)/1000;
+
+function abrirClasificar(id){
+  const d=S.devoluciones.find(x=>String(x.id)===String(id)); if(!d||!puedeClasificarSecos()) return;
+  const lineas=[];
+  productosDeDevolucion(d).forEach((x,i)=>{
+    const esp=(x.cantidadAceptada===undefined||x.cantidadAceptada===null)?(+x.cantidad||0):(+x.cantidadAceptada||0);
+    if(esp<=0) return;                                                      // no viajó (rechazada en evaluación)
+    const rec=(x.cantidadRecibida!==undefined&&x.cantidadRecibida!==null)?+x.cantidadRecibida:esp;
+    if(rec<=0) return;                                                      // no llegó
+    const sug=destinoSugerido(x.motivo), ya=x.clasificacion||null;
+    const l={i, productoId:x.productoId, descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", codigoBarras:x.codigoBarras||"",
+             unidad:x.unidad||"Unidades", motivo:x.motivo||"", recibido:rec, sugerido:sug,
+             cambio:ya?(+ya.cambio||0):(sug==="cambio"?rec:0), comedor:ya?(+ya.comedor||0):(sug==="comedor"?rec:0), stock:ya?(+ya.stock||0):(sug==="stock"?rec:0)};
+    l.dividir=DESTINOS_SECOS.filter(t=>l[t.k.replace("-","")]>0).length>1;
+    lineas.push(l);
+  });
+  S.clasif={devId:id,sucursal:d.sucursal,lineas,err:"",loading:false};
+  S.vista="clasificar"; render();
+  window.scrollTo({top:0,behavior:"instant"});
+}
+function salirClasificar(){ S.clasif=null; S.vista="devoluciones"; render(); }
+function clasifTodo(i,k){
+  const l=S.clasif.lineas[i]; if(!l) return;
+  l.cambio=0; l.comedor=0; l.stock=0; l[k]=l.recibido; l.dividir=false; S.clasif.err=""; render();
+}
+function clasifDividir(i){ const l=S.clasif.lineas[i]; if(l){ l.dividir=!l.dividir; render(); } }
+function clasifStep(i,k,delta){ const l=S.clasif.lineas[i]; if(l){ l[k]=Math.max(0,Math.round(((+l[k]||0)+delta)*1000)/1000); S.clasif.err=""; render(); } }
+function clasifSet(i,k,v){ const l=S.clasif.lineas[i]; if(l){ l[k]=Math.max(0,+v||0); S.clasif.err=""; } }
+function clasifResumen(){
+  const t={cambio:0,comedor:0,stock:0};
+  (S.clasif?.lineas||[]).forEach(l=>{ t.cambio+=+l.cambio||0; t.comedor+=+l.comedor||0; t.stock+=+l.stock||0; });
+  return t;
+}
+function renderClasificar(){
+  const c=S.clasif; if(!c) return "";
+  const sinAsignar=c.lineas.filter(l=>Math.abs(clasifDif(l))>0.0005).length;
+  const tot=clasifResumen();
+  return `
+  <div style="animation:fadeUp .3s ease" class="pk-page">
+    ${pageHead("🗂️ Clasificar devolución", `${escH(c.sucursal||"")} · <strong style="color:var(--amber)">Secos</strong>`,
+      `<button class="btn btn-ghost btn-md" onclick="salirClasificar()">← Volver</button>`)}
+    ${c.lineas.length===0 ? `<div class="pk-vacio">No llegó ningún producto para clasificar.</div>` : `
+    <div class="pk-orden">
+      ${c.lineas.map((l,i)=>{
+        const dif=clasifDif(l), ok=Math.abs(dif)<=0.0005;
+        const unico=DESTINOS_SECOS.find(t=>Math.abs((+l[t.k]||0)-l.recibido)<=0.0005);
+        const colM=colorMotivoCalidad(String(l.motivo).split(" — ")[0],0);
+        return `
+        <div class="cl-line ${ok?"ok":"falta"}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div class="pk-name">${escH(l.descripcion)}</div>
+              <div class="pk-code">${l.codigoInterno?`Int. ${escH(l.codigoInterno)} · `:""}<span style="color:${colM};font-weight:700">${escH(String(l.motivo).split(" — ")[0])}</span></div>
+            </div>
+            <div class="cl-rec"><strong>${fmtNum(l.recibido)}</strong> ${escH(l.unidad)}</div>
+          </div>
+          <div class="cl-dest-row">
+            ${DESTINOS_SECOS.map(t=>`
+              <button class="cl-dest ${!l.dividir&&unico&&unico.k===t.k?"on":""}" style="--c:${t.color}" onclick="clasifTodo(${i},'${t.k}')">${t.icon} ${t.label}${l.sugerido===t.k?`<span class="cl-sug" title="Sugerido por el motivo"></span>`:""}</button>`).join("")}
+          </div>
+          ${l.dividir?`
+          <div class="cl-split">
+            ${DESTINOS_SECOS.map(t=>`
+              <div class="cl-split-item" style="--c:${t.color}">
+                <div class="cl-split-lbl">${t.icon} ${t.label}</div>
+                <div class="pk-stepper">
+                  <button onclick="clasifStep(${i},'${t.k}',-1)">−</button>
+                  <input type="number" min="0" step="any" value="${escH(String(+l[t.k]||0))}" oninput="clasifSet(${i},'${t.k}',this.value)" onchange="render()"/>
+                  <button onclick="clasifStep(${i},'${t.k}',1)">+</button>
+                </div>
+              </div>`).join("")}
+          </div>`:""}
+          <div class="cl-foot">
+            <button class="cl-link" onclick="clasifDividir(${i})">${l.dividir?"Volver a un solo destino":"✂ Dividir entre destinos"}</button>
+            ${ok?`<span class="cl-ok">✓ asignado</span>`:`<span class="cl-falta">${dif>0?`Faltan ${fmtNum(dif)} por asignar`:`Te pasaste por ${fmtNum(-dif)}`}</span>`}
+          </div>
+        </div>`; }).join("")}
+    </div>
+    ${c.err?`<div class="err-msg" style="display:block;margin-top:12px">${escH(c.err)}</div>`:""}
+    <div class="pk-foot">
+      <div class="pk-resumen cl-tot">
+        ${DESTINOS_SECOS.map(t=>`<span style="color:${t.color}">${t.icon} <strong>${fmtNum(tot[t.k])}</strong></span>`).join("")}
+      </div>
+      <button class="btn btn-success btn-md" onclick="clasifPedirConfirmacion()" ${c.loading||sinAsignar?"disabled":""} title="${sinAsignar?"Falta asignar el destino de "+sinAsignar+" producto"+(sinAsignar!==1?"s":""):""}">
+        ${c.loading?`<span class="spinner"></span> Guardando…`:(sinAsignar?`Faltan ${sinAsignar}`:"Confirmar")}
+      </button>
+    </div>`}
+  </div>`;
+}
+function clasifPedirConfirmacion(){
+  const c=S.clasif; if(!c||c.loading) return;
+  if(c.lineas.some(l=>Math.abs(clasifDif(l))>0.0005)){ c.err="Asigná todo lo recibido antes de confirmar."; render(); return; }
+  c.err="";
+  if(S.user?.rol==="logistica"||S.user?.rol==="admin"){ clasifGuardar(); return; }
+  const t=clasifResumen();
+  S.pickeoDni={modo:"clasificar",dni:"",err:"",loading:false,titulo:"Confirmar la clasificación",boton:"✅ Confirmar",
+    resumen:DESTINOS_SECOS.map(x=>`${x.icon} <strong>${fmtNum(t[x.k])}</strong> ${x.label.toLowerCase()}`).join(" · ")};
+  S.modal="pickeoDni"; render();
+  setTimeout(()=>$("pk-dni")?.focus(),120);
+}
+async function clasifGuardar(firmaParam){
+  const c=S.clasif; if(!c||c.loading) return false;
+  const d=S.devoluciones.find(x=>String(x.id)===String(c.devId)); if(!d) return false;
+  const firma=firmaParam||pickeoFirmante();
+  if(!firma.ok){ c.err=firma.msg; render(); return false; }
+  c.loading=true; c.err=""; renderNow();
+  const ahora=now();
+  const prods=productosDeDevolucion(d).map(x=>({...x}));
+  c.lineas.forEach(l=>{
+    prods[l.i]={...prods[l.i],
+      clasificacion:{cambio:+l.cambio||0,comedor:+l.comedor||0,stock:+l.stock||0},
+      clasificadoPor:firma.nombre, clasificadoAt:ahora};
+  });
+  const changes={estado:"Clasificada", productosJson:JSON.stringify(prods), updatedAt:ahora};
+  try{
+    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+    if(error) throw error;
+    S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
+    const t=clasifResumen();
+    S.clasif=null; S.vista="devoluciones"; S.tabDevGestor="clasificar";
+    window.scrollTo({top:0,behavior:"instant"});
+    toast(`🗂️ Clasificada · ${DESTINOS_SECOS.filter(x=>t[x.k]>0).map(x=>`${x.icon} ${fmtNum(t[x.k])}`).join("  ")}`);
+    render(); return true;
+  }catch(e){
+    console.warn("Clasificar:",e);
+    c.loading=false; c.err="No se pudo guardar — probá de nuevo.";
+  }
+  render(); return false;
+}
+// Cómo queda la clasificación en la lista
+function renderClasificacionChips(x){
+  const cl=x.clasificacion; if(!cl) return "";
+  return DESTINOS_SECOS.filter(t=>(+cl[t.k]||0)>0)
+    .map(t=>`<span class="sk-chip" style="color:${t.color};border-color:${t.color}55;background:${t.color}14">${t.icon} ${t.label} ${fmtNum(+cl[t.k])}</span>`).join(" ");
+}
+function resumenClasificacion(d){
+  const t={cambio:0,comedor:0,stock:0};
+  productosDeDevolucion(d).forEach(x=>{ if(x.clasificacion) DESTINOS_SECOS.forEach(k=>{ t[k.k]+=+x.clasificacion[k.k]||0; }); });
+  return t;
 }
 
 // "Mal olor o color" y "Mal estado" eran lo mismo: quedó solo "Mal estado".
@@ -3104,9 +3316,9 @@ function renderDevoluciones(){
     const norm = s=>normNotif(s);
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
-    lista = S.tabDevGestor==="historial"
-      ? S.devoluciones.filter(d=>["Confirmada","No confirmada","Rechazada"].includes(d.estado))
-      : S.devoluciones.filter(d=>!["Confirmada","No confirmada","Rechazada"].includes(d.estado));
+    lista = S.tabDevGestor==="historial" ? S.devoluciones.filter(devolucionFinal)
+          : (S.tabDevGestor==="clasificar" && puedeClasificarSecos()) ? S.devoluciones.filter(esSecosParaClasificar)
+          : S.devoluciones.filter(d=>!devolucionFinal(d) && !esSecosParaClasificar(d));
     // Calidad solo ve Fresco, Depósito solo ve Secos — es su alcance fijo,
     // no un filtro que puedan sacar. Logística/Admin ven todo, con un
     // filtro de categoría normal que sí pueden cambiar.
@@ -3118,11 +3330,11 @@ function renderDevoluciones(){
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
     if(S.devolucionFiltroProducto){
       const qp = normNotif(S.devolucionFiltroProducto);
-      lista = lista.filter(d=>productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp)));
+      lista = lista.filter(d=>productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp) || normNotif(p.codigoBarras).includes(qp)));
     }
   }
   const sucursalesUnicas = [...new Set(S.devoluciones.map(d=>d.sucursal).filter(Boolean))].sort();
-  const colorEstado = e => e==="Confirmada" ? "#1fa86a" : (e==="No confirmada"||e==="Rechazada") ? "var(--red)" : e==="En evaluación" ? "var(--purple)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
+  const colorEstado = e => e==="Clasificada" ? "var(--green)" : e==="Confirmada" ? "#1fa86a" : (e==="No confirmada"||e==="Rechazada") ? "var(--red)" : e==="En evaluación" ? "var(--purple)" : e==="En fábrica" ? "var(--teal)" : e==="En camino" ? "var(--blue)" : "var(--amber)";
 
   return `
   <div style="animation:fadeUp .3s ease">
@@ -3137,7 +3349,8 @@ function renderDevoluciones(){
     ${esGestor?`
     <div class="tabs" style="margin-bottom:16px">
       <button class="tab ${S.tabDevGestor==="activas"?"active":""}" onclick="S.tabDevGestor='activas';render()">📋 Activas</button>
-      <button class="tab ${S.tabDevGestor==="historial"?"active":""}" onclick="S.tabDevGestor='historial';render()">🗂️ Historial</button>
+      ${puedeClasificarSecos()?`<button class="tab ${S.tabDevGestor==="clasificar"?"active":""}" onclick="S.tabDevGestor='clasificar';render()">🗂️ Para clasificar<span class="tab-n">${S.devoluciones.filter(esSecosParaClasificar).length}</span></button>`:""}
+      <button class="tab ${S.tabDevGestor==="historial"?"active":""}" onclick="S.tabDevGestor='historial';render()">📚 Historial</button>
     </div>`:""}
 
     ${!esGestor && !esRepartidor && DEVOLUCIONES_NUEVAS_HABILITADAS?`
@@ -3259,8 +3472,9 @@ function renderDevoluciones(){
         <option ${S.devolucionFiltroEstado==="Confirmada"?"selected":""}>Confirmada</option>
         <option ${S.devolucionFiltroEstado==="No confirmada"?"selected":""}>No confirmada</option>
         <option ${S.devolucionFiltroEstado==="Rechazada"?"selected":""}>Rechazada</option>
+        <option ${S.devolucionFiltroEstado==="Clasificada"?"selected":""}>Clasificada</option>
       </select>
-      <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>
+      <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código interno..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>
       ${(()=>{
         const catFija = categoriaDevolucionFija();
         if(catFija) return `<span class="btn btn-ghost btn-md" style="pointer-events:none;opacity:.8" title="Tu alcance es fijo">🔒 ${catFija}</span>`;
@@ -3522,7 +3736,7 @@ let _navAnim = false;   // false | "tab" | "page"
 document.addEventListener("click", e=>{
   const el = e.target.closest("[onclick]"); if(!el) return;
   const oc = el.getAttribute("onclick")||"";
-  if(/S\.vista\s*=|abrir(Quejas|Devoluciones|PickeoArmar|PickeoControl)\(|salirPickeo\(/.test(oc)) _navAnim = "page";
+  if(/S\.vista\s*=|abrir(Quejas|Devoluciones|PickeoArmar|PickeoControl|Clasificar)\(|salirPickeo\(|salirClasificar\(/.test(oc)) _navAnim = "page";
   else if(/S\.(tab\w*|subTab\w*|adminTab)\s*=/.test(oc)) _navAnim = "tab";
 }, true);
 function aplicarRenderDOM(){
@@ -3713,6 +3927,7 @@ function renderApp(){
     : S.vista==="quejas"         ? renderQuejas()
     : S.vista==="devoluciones"   ? renderDevoluciones()
     : S.vista==="pickeo"         ? renderPickeoPagina()
+    : S.vista==="clasificar"     ? renderClasificar()
     : u.rol==="logistica"      ? renderLogistica()
     : u.rol==="repartidor"     ? renderRepartidor()
     : u.rol==="planificacion"  ? renderPlanificacion()
@@ -5102,7 +5317,8 @@ function accesosRapidosHtml(){
   // Pendientes + lo que está esperando una decisión mía (evaluar sobrestock / controlar Secos en fábrica)
   const nd=esGestorDevolucion()?S.devoluciones.filter(d=>d.estado==="Pendiente"
       || (d.estado==="En evaluación" && puedeEvaluarSecos())
-      || (["En camino","En fábrica"].includes(d.estado) && d.tipoDevolucion==="Secos" && puedeControlarSecos())).length:0;
+      || (["En camino","En fábrica"].includes(d.estado) && d.tipoDevolucion==="Secos" && puedeControlarSecos())
+      || esSecosParaClasificar(d)).length:0;
   // En Logística, Quejas va en la barra de arriba, junto a las notificaciones
   const botonQuejas = u.rol==="logistica" ? "" :
     `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-purple"} btn-md" onclick="abrirQuejas()">💬 Quejas${nq>0?`<span class="nbadge">${nq}</span>`:""}</button>`;
@@ -6977,7 +7193,7 @@ function renderModals(){
       </div>
     </div>`;
 
-  if(S.modal==="pickeoDni") return wrapModal("m",S.pickeo?.modo==="controlar"?"Confirmar el control":"Enviar la orden",renderPickeoDniModal(),400);
+  if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
   if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
