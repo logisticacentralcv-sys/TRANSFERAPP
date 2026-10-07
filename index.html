@@ -558,6 +558,18 @@ tr[onclick]:active td{background:var(--s3)}
   .rc-detalle{margin-left:8px}
 }
 
+
+/* ── Admin: editar cantidades de una devolución ── */
+.ed-prods{margin-top:16px;padding-top:14px;border-top:1px solid var(--border)}
+.ed-prods-t{font-size:12.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#a9b8d0;margin-bottom:10px}
+.ed-prod{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.ed-prod-n{font-size:14.5px;font-weight:700}
+.ed-prod-c{font-size:12px;color:#8ea2c4;font-family:var(--mono);margin:2px 0 10px}
+.ed-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px}
+.ed-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#a9b8d0}
+.ed-cl{margin-top:10px;padding-top:10px;border-top:1px dashed var(--border2)}
+.ed-nota{font-size:12px;color:var(--faint);margin-top:4px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -2182,7 +2194,16 @@ async function confirmarAccionDevolucion(){
 function openEditarDevolucion(id){
   const d = S.devoluciones.find(x=>String(x.id)===String(id));
   if(!d) return;
-  S.editarDevolucionModal = {id, sucursal:d.sucursal||"", motivo:unificarMotivoDevol(d.motivo||""), estado:d.estado||"Pendiente", err:"", loading:false};
+  const vacio=v=>(v===undefined||v===null)?"":v;
+  // Solo se editan las cantidades si la devolución guarda sus productos (las muy viejas, de un solo producto, no tienen cantidad)
+  const lineas = d.productosJson ? productosDeDevolucion(d).map(x=>({
+    descripcion:x.descripcion||"", codigoInterno:x.codigoInterno||"", motivo:String(x.motivo||"").split(" — ")[0],
+    cantidad:vacio(x.cantidad), unidad:x.unidad||"Unidades",
+    aceptada:vacio(x.cantidadAceptada), recibida:vacio(x.cantidadRecibida),
+    cl:x.clasificacion?{cambio:+x.clasificacion.cambio||0,comedor:+x.clasificacion.comedor||0,stock:+x.clasificacion.stock||0}:null,
+    orig:{cantidad:x.cantidad, aceptada:vacio(x.cantidadAceptada)},
+  })) : [];
+  S.editarDevolucionModal = {id, sucursal:d.sucursal||"", motivo:unificarMotivoDevol(d.motivo||""), estado:d.estado||"Pendiente", lineas, err:"", loading:false};
   S.modal = "editarDevolucion";
   render();
 }
@@ -2203,13 +2224,44 @@ function renderEditarDevolucionModal(){
   <div class="field" style="margin-top:12px">
     <label>Estado</label>
     <select id="ed-dev-estado" class="inp" onchange="S.editarDevolucionModal.estado=this.value">
-      ${["Pendiente","En camino","En fábrica","Confirmada","No confirmada"].map(e=>`<option ${d.estado===e?"selected":""}>${e}</option>`).join("")}
+      ${["En evaluación","Pendiente","En camino","En fábrica","Confirmada","Clasificada","No confirmada","Rechazada"].map(e=>`<option ${d.estado===e?"selected":""}>${e}</option>`).join("")}
     </select>
   </div>
+  ${(d.lineas||[]).length?`
+  <div class="ed-prods">
+    <div class="ed-prods-t">Productos y cantidades</div>
+    ${d.lineas.map((l,i)=>`
+    <div class="ed-prod">
+      <div class="ed-prod-n">${escH(l.descripcion)}</div>
+      <div class="ed-prod-c">${l.codigoInterno?`Int. ${escH(l.codigoInterno)}`:""}${l.codigoInterno&&l.motivo?" · ":""}${escH(l.motivo)}</div>
+      <div class="ed-grid">
+        <label>Cantidad
+          <input class="inp" type="number" min="0" step="any" value="${escH(String(l.cantidad))}" oninput="S.editarDevolucionModal.lineas[${i}].cantidad=this.value"/>
+        </label>
+        <label>Unidad
+          <select class="inp" onchange="S.editarDevolucionModal.lineas[${i}].unidad=this.value">
+            ${UNIDADES.map(un=>`<option ${l.unidad===un?"selected":""}>${un}</option>`).join("")}
+          </select>
+        </label>
+        ${l.aceptada!==""?`<label>Aceptada
+          <input class="inp" type="number" min="0" step="any" value="${escH(String(l.aceptada))}" oninput="S.editarDevolucionModal.lineas[${i}].aceptada=this.value"/>
+        </label>`:""}
+        ${l.recibida!==""?`<label>Recibida
+          <input class="inp" type="number" min="0" step="any" value="${escH(String(l.recibida))}" oninput="S.editarDevolucionModal.lineas[${i}].recibida=this.value"/>
+        </label>`:""}
+      </div>
+      ${l.cl?`<div class="ed-grid ed-cl">
+        ${DESTINOS_SECOS.map(t=>`<label style="color:${t.color}">${t.icon} ${t.label}
+          <input class="inp" type="number" min="0" step="any" value="${escH(String(l.cl[t.k]))}" oninput="S.editarDevolucionModal.lineas[${i}].cl['${t.k}']=+this.value||0"/>
+        </label>`).join("")}
+      </div>`:""}
+    </div>`).join("")}
+    <p class="ed-nota">Aceptada, recibida y clasificada aparecen solo si la devolución ya pasó por esa etapa. Si cambiás la cantidad cargada, "aceptada" se ajusta sola cuando era igual.</p>
+  </div>`:""}
   ${d.err?`<div class="alert-err" style="margin-top:12px">⚠️ ${escH(d.err)}</div>`:""}
-  <div style="display:flex;gap:10px;justify-content:space-between;margin-top:16px">
+  <div style="display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-top:16px">
     <button class="btn btn-danger btn-md" onclick="eliminarDevolucion('${escH(d.id)}')">🗑️ Eliminar</button>
-    <div style="display:flex;gap:10px">
+    <div style="display:flex;gap:10px;flex:1 1 230px;justify-content:flex-end">
       <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-success btn-md" onclick="submitEditarDevolucion()" ${d.loading?"disabled":""}>
         ${d.loading?`<span class="spinner"></span> Guardando...`:"Guardar cambios"}
@@ -2225,8 +2277,51 @@ async function submitEditarDevolucion(){
   const estado   = $("ed-dev-estado")?.value || d.estado;
   if(!motivo){ S.editarDevolucionModal.err="El motivo no puede quedar vacío."; render(); return; }
 
+  // ── Productos: validar y armar lo que se guarda ──
+  const dev = S.devoluciones.find(x=>String(x.id)===String(d.id));
+  const num = v => (v===""||v===null||v===undefined) ? NaN : +v;
+  const tol = 0.0005, err = m => { S.editarDevolucionModal.err=m; render(); };
+  let productosJson = null;
+  if((d.lineas||[]).length && dev){
+    const base = productosDeDevolucion(dev);
+    const nuevos = [];
+    for(let i=0;i<d.lineas.length;i++){
+      const l=d.lineas[i], x=base[i], nom=l.descripcion||`producto ${i+1}`;
+      const cant=num(l.cantidad);
+      if(!(cant>0)) return err(`"${nom}": la cantidad tiene que ser mayor a 0.`);
+      const y={...x, cantidad:cant, unidad:l.unidad};
+      let tocada = cant!==+x.cantidad || l.unidad!==(x.unidad||"Unidades");
+      if(cant!==+x.cantidad) y.cantidadOriginal = (x.cantidadOriginal!==undefined ? x.cantidadOriginal : x.cantidad);
+      if(l.aceptada!==""){
+        let ac=num(l.aceptada);
+        // lo que se aceptó entero acompaña a la cantidad corregida
+        if(+l.orig.aceptada===+l.orig.cantidad && ac===+l.orig.aceptada && cant!==+l.orig.cantidad) ac=cant;
+        if(!(ac>=0) || ac>cant+tol) return err(`"${nom}": lo aceptado (${l.aceptada}) no puede ser más que la cantidad (${cant}).`);
+        if(ac!==+x.cantidadAceptada) tocada=true;
+        y.cantidadAceptada=ac;
+      }
+      if(l.recibida!==""){
+        const rc=num(l.recibida);
+        if(!(rc>=0)) return err(`"${nom}": revisá la cantidad recibida.`);
+        if(rc!==+x.cantidadRecibida) tocada=true;
+        y.cantidadRecibida=rc;
+      }
+      if(l.cl){
+        const sum=(+l.cl.cambio||0)+(+l.cl.comedor||0)+(+l.cl.stock||0);
+        const ref = y.cantidadRecibida!==undefined ? y.cantidadRecibida : (y.cantidadAceptada!==undefined ? y.cantidadAceptada : cant);
+        if(Math.abs(sum-ref)>tol) return err(`"${nom}": la clasificación suma ${fmtNum(sum)} pero lo recibido es ${fmtNum(ref)}. Corregí los destinos para que coincidan.`);
+        const o=x.clasificacion||{};
+        if((+l.cl.cambio||0)!==(+o.cambio||0)||(+l.cl.comedor||0)!==(+o.comedor||0)||(+l.cl.stock||0)!==(+o.stock||0)) tocada=true;
+        y.clasificacion={cambio:+l.cl.cambio||0,comedor:+l.cl.comedor||0,stock:+l.cl.stock||0};
+      }
+      if(tocada){ y.editadoPor=S.user.nombre||"Admin"; y.editadoAt=now(); }
+      nuevos.push(y);
+    }
+    productosJson = JSON.stringify(nuevos);
+  }
+
   d.loading = true; renderNow();
-  const changes = {sucursal, motivo, estado, updatedAt:now()};
+  const changes = {sucursal, motivo, estado, ...(productosJson?{productosJson}:{}), updatedAt:now()};
   try{
     const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id", d.id);
     if(error) throw error;
@@ -3097,7 +3192,7 @@ function renderSecosBloque(d){
       <div class="sk-item">
         <div style="min-width:0;flex:1">
           <div class="sk-nombre">${escH(x.descripcion)}</div>
-          <div class="sk-meta"><strong>${fmtNum(+x.cantidad)} ${escH(x.unidad||"")}</strong> · <span style="color:${col};font-weight:700">${escH(mot)}</span> ${chip} ${rec}${x.codigoInterno?` <span class="sk-cod">Int. ${escH(x.codigoInterno)}</span>`:""}</div>
+          <div class="sk-meta"><strong>${fmtNum(+x.cantidad)} ${escH(x.unidad||"")}</strong> · <span style="color:${col};font-weight:700">${escH(mot)}</span> ${chip} ${rec}${x.codigoInterno?` <span class="sk-cod">Int. ${escH(x.codigoInterno)}</span>`:""}${(x.cantidadOriginal!==undefined&&+x.cantidadOriginal!==+x.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(x.editadoPor||"Admin")}">✏️ era ${fmtNum(+x.cantidadOriginal)}</span>`:""}</div>
           ${x.clasificacion?`<div class="sk-meta" style="margin-top:5px">${renderClasificacionChips(x)}</div>`:""}
         </div>
         ${puedeEval && x.evaluacion==="pendiente"?`
@@ -3784,7 +3879,7 @@ function renderDevoluciones(){
           ${d.tipoDevolucion==="Secos" ? renderSecosBloque(d) : ""}
           ${(()=>{ const prods = productosDeDevolucion(d); return (prods.length && d.tipoDevolucion!=="Secos")?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
           ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
@@ -7499,7 +7594,7 @@ function renderModals(){
   if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
   if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
   if(S.modal==="entregarVarias") return wrapModal("m","✅ Entregar varias",renderEntregarVariasModal(),480);
-  if(S.modal==="editarDevolucion") return wrapModal("m","✏️ Editar devolución",renderEditarDevolucionModal(),480);
+  if(S.modal==="editarDevolucion") return wrapModal("m","✏️ Editar devolución",renderEditarDevolucionModal(),640);
   if(S.modal==="enviarBolsin")  return wrapModal("m","Enviar bolsín",renderEnviarBolsinModal(),420);
   if(S.modal==="pedidoTesoreria")return wrapModal("m",escH(S.pedidoTesoreriaModal.accion==="aprobar"?"Aprobar pedido":"Rechazar pedido"),renderPedidoTesoreriaModal(),420);
   if(S.modal==="nuevoLote")     return wrapModal("m","Nuevo lote de bolsines",renderNuevoLoteModal(),680);
