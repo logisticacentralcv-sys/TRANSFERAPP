@@ -607,6 +607,9 @@ tr[onclick]:active td{background:var(--s3)}
   .bp-grid .bp-l-prec{grid-column:1/-1}
 }
 
+
+.ver-app{margin-top:14px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--faint)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -626,6 +629,35 @@ const SUPABASE_URL = "https://lrwwpulunfcavmvmwotd.supabase.co";
 const SUPABASE_KEY = "sb_publishable_SrUcYrDVBIOvZgF-DSPcyg_qV0LXEDQ";
 const VAPID_PUBLIC_KEY = "BFqxEOootxcEIHMXModP4iZIpclbqsVnEHGjcwcaPbiikWu9VPkEl-iPoHKG-P1oo6ssoH4x0CTFVvIc652_9hE";
 const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatibilidad con el resto del código
+// ── Versión de la app y actualización automática ───────────────────────────
+// APP_VERSION se actualiza en cada publicación (junto con version.json). La app consulta
+// version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
+// más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
+// Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
+const APP_VERSION = "20261007-0908";
+let _ultimoChequeoVersion = 0;
+async function chequearVersion(){
+  if(Date.now()-_ultimoChequeoVersion < 60000) return;
+  _ultimoChequeoVersion = Date.now();
+  try{
+    const r = await fetch("version.json?t="+Date.now(), {cache:"no-store"});
+    if(!r.ok) return;
+    const v = await r.json();
+    if(!v || !v.version || v.version===APP_VERSION) return;
+    const ocupado = !!(S.modal || S.pickeo || S.clasif || S.saving || S.dniModal?.cb);
+    const clave = "tl_recarga_"+v.version;
+    let yaIntento = false; try{ yaIntento = !!sessionStorage.getItem(clave); }catch(e){}
+    if(!ocupado && !yaIntento){ try{ sessionStorage.setItem(clave,"1"); }catch(e){} location.reload(); return; }
+    if(document.getElementById("upd-banner")) return;
+    const b=document.createElement("div"); b.id="upd-banner";
+    b.style.cssText="position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;background:#1d4ed8;color:#fff;border-radius:12px;padding:12px 16px;font:600 14px var(--font,sans-serif);box-shadow:0 8px 24px #000a;display:flex;align-items:center;justify-content:space-between;gap:12px";
+    b.innerHTML='<span>🔄 Hay una versión nueva de TransferLog</span><button style="background:#fff;color:#1d4ed8;border:0;border-radius:8px;padding:8px 14px;font:700 13px var(--font,sans-serif);cursor:pointer" onclick="location.reload()">Actualizar</button>';
+    document.body.appendChild(b);
+  }catch(e){ /* sin conexión: se reintenta la próxima vez */ }
+}
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") chequearVersion(); });
+setTimeout(chequearVersion, 4000);
+
 // QR de cada sucursal: llega como ?s=Sucursal (y opcionalmente &v=ViajeID). Se
 // guarda enseguida —antes del login y de la identificación por DNI— y se
 // limpia la dirección para que al recargar no se repita.
@@ -807,7 +839,8 @@ function renderNotificacionesModal(){
         <p style="font-size:13px">${escH(n.mensaje)}</p>
         <p style="font-size:11px;color:var(--faint);margin-top:4px">${fdt(n.createdAt)} · tocá para marcar como leída</p>
       </div>`).join("")}
-  </div>`}`;
+  </div>`}
+  <p class="ver-app">Versión ${APP_VERSION}</p>`;
 }
 // Busca el mail de quien pidió una solicitud (por sucursal/área de origen)
 // en los usuarios ya cargados en memoria — no hace falta ir a buscarlo.
@@ -5296,6 +5329,11 @@ function renderAdmin(){
 function renderAdminConfig(){
   const activo = bolsinesActivo();
   return `
+  <div class="card" style="max-width:520px;margin-bottom:16px">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🔄 Versión de la app</h3>
+    <p style="color:var(--muted);font-size:13px">Esta pantalla corre la versión <strong style="font-family:var(--mono);color:var(--text)">${APP_VERSION}</strong>.
+      Para ver cuál está publicada, abrí <code>/version.json</code> en el navegador. La app se actualiza sola al abrirla o al volver a ella.</p>
+  </div>
   <div class="card" style="max-width:520px">
     <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🎒 Módulo de Bolsines</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
