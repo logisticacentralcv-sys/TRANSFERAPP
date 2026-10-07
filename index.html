@@ -671,7 +671,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261007-0951";
+const APP_VERSION = "20261007-1052";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1266,7 +1266,10 @@ function badge(label,color){
 function estadoBadges(r){
   const esRepro = r.reprogramada===true||r.reprogramada==="true"||r.reprogramada==="si";
   const label = (r.tipoPedido==="bolsin" && r.estado==="Entregada (sin confirmar)") ? "📫 En el buzón" : r.estado;
-  return badge(label,S_COLOR[r.estado]) + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"");
+  // "Entregada" que no pasó un repartidor sino una persona a mano: se aclara en todas las listas
+  const manual = (r.estado==="Entregada" && r.cambioManualEstado==="Entregada")
+    ? ` <span class="badge" style="color:var(--amber);background:#f5a62314;border-color:#f5a62355" title="Cambiado a Entregada por ${escH(r.cambioManualPor||"—")}">✎ por ${escH(String(r.cambioManualPor||"—").split(",")[0].split(" ")[0])}</span>` : "";
+  return badge(label,S_COLOR[r.estado]) + manual + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"");
 }
 function escH(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function toast(msg,type="success"){
@@ -4151,7 +4154,19 @@ async function sheetsUpdate(id,data){
     const { error } = await sb.from("solicitudes").update(toSnakeRow(data)).eq("id",id);
     if(error) throw error;
   }
-  catch(e){console.warn("Supabase update:",e);}
+  catch(e){
+    console.warn("Supabase update:",e);
+    // Las columnas de "cambiado a mano" son nuevas: si todavía no se corrió el SQL, no se pierde el
+    // cambio de estado — se guarda sin ese dato y se avisa qué falta.
+    if(/cambio_manual/i.test(String(e&&(e.message||e.details||"")))){
+      const resto={...data}; delete resto.cambioManualEstado; delete resto.cambioManualPor; delete resto.cambioManualAt;
+      try{
+        const { error:e2 } = await sb.from("solicitudes").update(toSnakeRow(resto)).eq("id",id);
+        if(e2) throw e2;
+        toast("⚠️ Se guardó el cambio, pero falta correr solicitudes_01_cambio_manual.sql en Supabase para registrar quién lo hizo","warn");
+      }catch(e3){ console.warn("Supabase update (sin columnas nuevas):",e3); }
+    }
+  }
 }
 
 // ──────────────────────────────────────────────────────────
@@ -8324,7 +8339,16 @@ function renderDetalle(){
   }
 
   // ── PASO 5d: Entregada ──────────────────────────────────
-  if(r.estado==="Entregada"){
+  if(r.estado==="Entregada" && r.cambioManualEstado==="Entregada"){
+    // No la entregó un repartidor: alguien la pasó a "Entregada" a mano
+    const metaManual = verHoraTomaEntrega
+      ? `${fdt(r.cambioManualAt||r.deliveredAt)} · cambio manual${r.comentario?" · "+r.comentario:""}`
+      : "Cambio manual";
+    steps.push({dot:S_COLOR["Entregada"], title:`✅ Cambiado a Entregada por ${r.cambioManualPor||"—"}`, meta:metaManual});
+    if(r.nombreQuienRecibio){
+      steps.push({dot:"#a371f7", title:"🔑 Confirmado por la sucursal destino", meta:verHoraTomaEntrega?r.nombreQuienRecibio:`Recibido por ${r.nombreQuienRecibio}`});
+    }
+  } else if(r.estado==="Entregada"){
     const quienEntrego = r.nombreQuienEntrego || r.nombreQuienLevanto || "";
     // Si vino del flujo "sucursal cerrada", separamos en dos pasos: cuándo
     // la dejó el repartidor y cuándo la sucursal confirmó que la recibió.
@@ -11941,7 +11965,19 @@ async function aplicarGestionar(dniVal, usuario){
         }
       }
       if(a.estado==="Aprobada"&&!r.approvedAt) changes.approvedAt=now();
-      if(a.estado==="Entregada") changes.deliveredAt=now();
+      if(a.estado==="Entregada"){
+        changes.deliveredAt=now();
+        // Si no la entregó un repartidor sino que alguien la pasó a "Entregada" a mano,
+        // queda dicho en la trazabilidad: "Cambiado a Entregada por …"
+        if(r.estado!=="Entregada"){
+          changes.cambioManualEstado="Entregada";
+          changes.cambioManualPor=nombreFirmante;
+          changes.cambioManualAt=changes.deliveredAt;
+        }
+      } else if(r.cambioManualEstado){
+        // se corrigió de nuevo: el cartel de "cambiado a mano" ya no corresponde
+        changes.cambioManualEstado=null; changes.cambioManualPor=null; changes.cambioManualAt=null;
+      }
       if(r.estado==="En fábrica"&&a.estado!=="En fábrica"){
         changes.nombreQuienLevanto="";
         changes.dniRepartidor="";
