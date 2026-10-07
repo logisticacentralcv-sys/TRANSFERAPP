@@ -580,6 +580,33 @@ tr[onclick]:active td{background:var(--s3)}
 .estoy-tit{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#a9b8d0;margin:0 2px 10px}
 @media(max-width:640px){ .estoy-suc{font-size:22px} .estoy-head .btn{flex:0 0 auto;min-height:38px;padding:6px 12px} }
 
+
+/* ── Bolsines: precintos ── */
+.bp-lista{display:flex;flex-direction:column;gap:10px}
+.bp-fila{background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.bp-fila.err{border-color:var(--red)}
+.bp-grid{display:grid;grid-template-columns:1.4fr 1fr auto;gap:8px;align-items:end}
+.bp-grid.market{grid-template-columns:1.4fr 1fr .9fr auto}
+.bp-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:#a9b8d0;min-width:0}
+.bp-grid .inp{min-width:0}
+.bp-opc{font-weight:400;color:var(--faint)}
+.bp-x{height:42px;align-self:end}
+.bp-resumen{margin-top:12px;padding:10px 14px;background:var(--s2);border-radius:10px;font-size:14px;color:#c3cfe2}
+.bp-resumen strong{color:var(--text);font-family:var(--mono)}
+.bp-det{background:var(--s2);border-radius:8px;padding:8px 12px;font-size:13px}
+.bp-det-top{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.bp-det-n{font-family:var(--mono);font-weight:700;color:var(--text)}
+.bp-det-c{font-size:12px;color:var(--muted);margin-top:3px}
+.bp-mini{font-family:var(--mono);font-size:11.5px;color:#8ea2c4;margin-top:3px}
+.bp-chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.bp-chip{font-family:var(--mono);font-size:12px;background:var(--s2);border:1px solid var(--border);border-radius:999px;padding:3px 10px;color:#c3cfe2}
+@media(max-width:560px){
+  /* celular: el precinto arriba a lo ancho; abajo cierres · caja · quitar */
+  .bp-grid{grid-template-columns:1fr auto}
+  .bp-grid.market{grid-template-columns:1fr 1fr auto}
+  .bp-grid .bp-l-prec{grid-column:1/-1}
+}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -5053,7 +5080,7 @@ function renderTesoreria(){
   if(S.fTesSucursal) bolsinesEnviados = bolsinesEnviados.filter(r=>(r.sucursal||"").toLowerCase().includes(S.fTesSucursal.trim().toLowerCase()));
   if(S.fTesTexto){
     const q = S.fTesTexto.trim().toLowerCase();
-    bolsinesEnviados = bolsinesEnviados.filter(r=>[r.id,r.sucursal,r.descripcion,r.observaciones].map(v=>(v||"").toString().toLowerCase()).some(v=>v.includes(q)));
+    bolsinesEnviados = bolsinesEnviados.filter(r=>[r.id,r.sucursal,r.descripcion,r.observaciones,...filasPrecintoDe(r).map(x=>x.precinto)].map(v=>(v||"").toString().toLowerCase()).some(v=>v.includes(q)));
   }
 
   // Agrupar por loteId (solo lo que tiene tipoPedido="bolsin" y loteId)
@@ -5159,7 +5186,7 @@ function renderTesoreria(){
         <input type="date" class="inp" style="width:160px" value="${escH(S.fTesFecha)}" onchange="S.fTesFecha=this.value;render()"/>
         <input type="text" list="tes-sucursales" class="inp" style="width:200px" placeholder="Sucursal..." value="${escH(S.fTesSucursal)}" oninput="S.fTesSucursal=this.value;render()"/>
         <datalist id="tes-sucursales">${sucursalesTesUnicas.map(s=>`<option value="${escH(s)}">`).join("")}</datalist>
-        <input type="text" class="inp" style="width:220px" placeholder="🔎 Buscar N°, descripción..." value="${escH(S.fTesTexto)}" oninput="S.fTesTexto=this.value;render()"/>
+        <input type="text" class="inp" style="width:220px" placeholder="🔎 Buscar N°, precinto, descripción..." value="${escH(S.fTesTexto)}" oninput="S.fTesTexto=this.value;render()"/>
         ${(S.fTesFecha||S.fTesSucursal||S.fTesTexto)?`<button class="btn btn-ghost btn-sm" onclick="S.fTesFecha='';S.fTesSucursal='';S.fTesTexto='';render()">✕ Limpiar</button>`:""}
       </div>
       ${bolsinesEnviados.length===0?`<p style="color:var(--muted);font-size:13px">${(S.fTesFecha||S.fTesSucursal||S.fTesTexto)?"No hay bolsines con ese filtro.":"Todavía no llegó ningún bolsín."}</p>`:`
@@ -5171,7 +5198,8 @@ function renderTesoreria(){
             <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td>${escH(r.sucursal)}</td>
-              <td><div class="trunc">${escH(r.descripcion)}</div></td>
+              <td><div class="trunc">${escH(r.descripcion)}</div>
+                ${filasPrecintoDe(r).length?`<div class="bp-mini">🔒 ${filasPrecintoDe(r).slice(0,4).map(x=>escH(x.precinto)).join(" · ")}${filasPrecintoDe(r).length>4?` · +${filasPrecintoDe(r).length-4}`:""}</div>`:""}</td>
               <td class="muted-cell">${fdt(r.createdAt)}</td>
               <td class="muted-cell">${r.deliveredAt?fdt(r.deliveredAt):"—"}</td>
               <td>${estadoBadges(r)}</td>
@@ -5282,6 +5310,21 @@ function renderAdminConfig(){
       <button class="btn ${activo?"btn-danger":"btn-success"} btn-md" onclick="toggleBolsinesActivo()">
         ${activo?"Desactivar":"Activar"}
       </button>
+    </div>
+  </div>
+
+  <div class="card" style="max-width:520px;margin-top:16px">
+    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🏪 Sucursales tipo Market</h3>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Tildá cuáles son <strong>Market</strong>; el resto se considera <strong>Granja</strong>. Los Market piden el número de caja al enviar bolsines
+      y pueden hacer devoluciones de Secos; las Granjas no.
+    </p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
+      ${getSucursales().map(s=>`
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;background:var(--s2);border-radius:8px;padding:8px 10px">
+          <input type="checkbox" class="chk-round" ${esSucursalMarket(s)?"checked":""} onchange="toggleSucursalMarket('${escH(s).replace(/'/g,"&#39;")}',this.checked)"/>
+          ${escH(s)} <span style="margin-left:auto;font-size:11px;color:var(--faint)">${esSucursalMarket(s)?"Market":"Granja"}</span>
+        </label>`).join("")}
     </div>
   </div>
 
@@ -7290,9 +7333,33 @@ function aplicarQRPendiente(){
   const esFab=/^f[aá]brica$/i.test(q.s);
   const oficial=esFab ? "Fábrica"
     : ([...getSucursales(),...getDestinos()].find(x=>normNotif(x)===normNotif(q.s)) || q.s);
-  S.estoyEn={sucursal:oficial, fabrica:esFab, viaje:q.v||"", at:Date.now()};
+  S.estoyEn={sucursal:oficial, fabrica:esFab, viaje:q.v||"", at:Date.now(), estado:"verificando", motivo:""};
   S.vista="main"; S.modoSeleccionRep=false;
   if(S.devolucionesLoaded) cargarDevoluciones().then(()=>render()).catch(()=>{});
+  verificarPresenciaEstoyEn();
+}
+// "Estás en…" solo se abre si la persona realmente escaneó el QR ahí: la página del QR deja una
+// LLEGADA o PRESENCIA (con GPS verificado) en el viaje activo de esta persona. Abrir un enlace guardado
+// no alcanza: sin registro reciente se muestra el candado.
+const VENTANA_PRESENCIA_MIN = 60;
+async function verificarPresenciaEstoyEn(){
+  const e=S.estoyEn; if(!e) return;
+  e.estado="verificando"; e.motivo="";
+  try{
+    const dni=String(S.miIdentidadRep?.dni||"").replace(/\D/g,"");
+    if(!dni){ e.estado="bloqueado"; e.motivo="sin-dni"; render(); return; }
+    const { data:viajes, error:e1 } = await sb.from("flota_viajes").select("id,estado")
+      .eq("estado","ACTIVO").or(`dni_rep1.eq.${dni},dni_rep2.eq.${dni}`).limit(5);
+    if(e1) throw e1;
+    if(!viajes||!viajes.length){ e.estado="bloqueado"; e.motivo="sin-viaje"; render(); return; }
+    const { data:regs, error:e2 } = await sb.from("flota_registros_qr").select("ts,id_viaje,sucursal,evento")
+      .in("id_viaje",viajes.map(v=>v.id)).in("evento",["LLEGADA","PRESENCIA"]).order("ts",{ascending:false}).limit(80);
+    if(e2) throw e2;
+    const n=normNotif(e.fabrica?"Fabrica":e.sucursal), desde=Date.now()-VENTANA_PRESENCIA_MIN*60000;
+    const hay=(regs||[]).some(r=>normNotif(r.sucursal)===n && new Date(r.ts).getTime()>=desde);
+    e.estado=hay?"ok":"bloqueado"; e.motivo=hay?"":"sin-presencia";
+  }catch(err){ console.warn("Presencia:",err); e.estado="bloqueado"; e.motivo="error"; }
+  render();
 }
 function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
@@ -7346,7 +7413,31 @@ function cardDevolucionEstoy(d,accion){
     </div>
   </div>`;
 }
+function renderEstoyEnBloqueo(){
+  const e=S.estoyEn, verif=e.estado==="verificando";
+  const msg={
+    "sin-viaje":"No encontramos un viaje activo a tu nombre. Iniciá el recorrido desde el QR de Fábrica y después escaneá el de la sucursal.",
+    "sin-presencia":`No registramos que hayas escaneado el QR de ${escH(e.sucursal)} hace poco. Escaneá el QR que está en la sucursal (con la ubicación activada) y se abre solo.`,
+    "sin-dni":"No pudimos identificarte. Volvé a entrar con tu DNI.",
+    "error":"No pudimos verificar tu presencia (¿sin conexión?). Probá de nuevo."
+  }[e.motivo]||"";
+  return `
+  <div style="animation:fadeUp .3s ease" class="estoy-page">
+    <div class="estoy-head">
+      <div style="min-width:0"><div class="estoy-lbl">📍 ${verif?"Verificando…":"Estás en"}</div><div class="estoy-suc">${escH(e.sucursal)}</div></div>
+      <button class="btn btn-ghost btn-md" onclick="salirEstoyEn()">Ver todo →</button>
+    </div>
+    ${verif?`<div class="pk-vacio"><span class="spinner"></span> Confirmando tu llegada…</div>`:`
+    <div class="card" style="text-align:center;padding:28px 20px">
+      <div style="font-size:34px;margin-bottom:8px">🔒</div>
+      <div style="font-size:17px;font-weight:700;margin-bottom:8px">No pudimos confirmar que estés acá</div>
+      <p style="font-size:14px;color:var(--muted);line-height:1.5;margin-bottom:16px">${msg}</p>
+      <button class="btn btn-primary btn-md" onclick="verificarPresenciaEstoyEn()">🔄 Reintentar</button>
+    </div>`}
+  </div>`;
+}
 function renderEstoyEn(){
+  if(S.estoyEn.estado!=="ok") return renderEstoyEnBloqueo();
   const e=S.estoyEn, L=estoyEnLista();
   const total=L.retirar.length+L.dejar.length+L.devTomar.length+L.devFabrica.length;
   const hora=new Date(e.at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
@@ -7471,6 +7562,7 @@ function cardRepartidorHtml(r){
 
             <!-- Descripción -->
             <div style="font-size:14px;color:var(--muted);margin-bottom:10px">${escH(r.descripcion)}</div>
+            ${filasPrecintoDe(r).length?`<div class="bp-chips">${filasPrecintoDe(r).slice(0,6).map(x=>`<span class="bp-chip">🔒 ${escH(x.precinto)}</span>`).join("")}${filasPrecintoDe(r).length>6?`<span class="bp-chip">+${filasPrecintoDe(r).length-6}</span>`:""}</div>`:""}
 
             <!-- Info chips -->
             <div style="display:grid;grid-template-columns:1fr;gap:6px;font-size:12px;margin-bottom:10px">
@@ -8070,6 +8162,20 @@ function renderDetalle(){
   ${r.detalleCajas?(()=>{
     let cajas=[]; try{ cajas=JSON.parse(r.detalleCajas); }catch(e){}
     if(!Array.isArray(cajas)||!cajas.length) return "";
+    const prec = cajas.filter(x=>x && x.precinto!==undefined);
+    if(prec.length){
+      const tc = prec.reduce((s,x)=>s+(+x.cierres||0),0);
+      return `<div class="field">
+        <label>Precintos · ${prec.length} ${prec.length!==1?"bolsines":"bolsín"} · ${tc} cierre${tc!==1?"s":""}</label>
+        <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+          ${prec.map(x=>`<div class="bp-det">
+            <div class="bp-det-top"><span class="bp-det-n">🔒 ${escH(x.precinto)}</span>
+              <span>${escH(String(x.cierres))} cierre${+x.cierres!==1?"s":""}${x.caja?` · Caja ${escH(x.caja)}`:""}</span></div>
+            ${x.comentario?`<div class="bp-det-c">${escH(x.comentario)}</div>`:""}
+          </div>`).join("")}
+        </div>
+      </div>`;
+    }
     return `<div class="field">
       <label>Detalle por caja</label>
       <div style="display:flex;flex-direction:column;gap:4px;margin-top:4px">
@@ -8608,7 +8714,24 @@ function renderEditarModal(){
     <label>Descripción</label>
     <textarea id="ed-desc" rows="2">${escH(d.descripcion||r?.descripcion||"")}</textarea>
   </div>
-  ${esAdmin && Array.isArray(d.cajas)?`
+  ${esAdmin && Array.isArray(d.cajas) && d.cajas.length && d.cajas[0].precinto!==undefined?`
+  <div class="field">
+    <label>Precintos <span style="color:var(--faint);font-size:12px;font-weight:400">— un bolsín por precinto</span></label>
+    <div class="bp-lista">
+      ${d.cajas.map((x,i)=>`
+      <div class="bp-fila">
+        <div class="bp-grid market">
+          <label>Nº de precinto<input class="inp" type="text" value="${escH(x.precinto)}" oninput="S.editarModal.cajas[${i}].precinto=this.value"/></label>
+          <label>Cierres<input class="inp" type="number" min="1" step="1" value="${escH(String(x.cierres??""))}" oninput="S.editarModal.cajas[${i}].cierres=this.value"/></label>
+          <label>Caja<input class="inp" type="text" value="${escH(x.caja||"")}" oninput="S.editarModal.cajas[${i}].caja=this.value"/></label>
+          <button class="btn btn-ghost btn-sm bp-x" onclick="S.editarModal.cajas.splice(${i},1);render()" ${d.cajas.length<=1?"disabled":""}>✕</button>
+        </div>
+        <input class="inp" type="text" placeholder="Comentario (opcional)" value="${escH(x.comentario||"")}" oninput="S.editarModal.cajas[${i}].comentario=this.value"/>
+      </div>`).join("")}
+    </div>
+    <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="S.editarModal.cajas.push({precinto:'',cierres:'',caja:'',comentario:''});render()">+ Agregar precinto</button>
+    <span style="font-size:12px;color:var(--muted);display:block;margin-top:6px">La cantidad de bolsines se recalcula sola: uno por precinto.</span>
+  </div>`:esAdmin && Array.isArray(d.cajas)?`
   <div class="field">
     <label>Detalle por caja</label>
     <div style="display:flex;flex-direction:column;gap:8px">
@@ -8675,7 +8798,21 @@ async function submitEditar(){
 
   const changes = { descripcion:desc, fechaRequerida:fecha||null, observaciones:obs, updatedAt:now() };
 
-  if(S.user?.rol==="admin" && Array.isArray(d.cajas)){
+  if(S.user?.rol==="admin" && Array.isArray(d.cajas) && d.cajas.length && d.cajas[0].precinto!==undefined){
+    const filas=[], vistos=new Set();
+    for(const x of d.cajas){
+      const precinto=String(x.precinto||"").trim(), cierres=parseInt(x.cierres,10);
+      if(!precinto){ S.editarModal.err="Todos los precintos necesitan su número."; render(); return; }
+      if(!(cierres>0)){ S.editarModal.err=`El precinto ${precinto} necesita su cantidad de cierres (mínimo 1).`; render(); return; }
+      const k=normPrecinto(precinto);
+      if(vistos.has(k)){ S.editarModal.err=`El precinto ${precinto} está repetido.`; render(); return; }
+      vistos.add(k);
+      filas.push({precinto, cierres, caja:String(x.caja||"").trim(), comentario:String(x.comentario||"").trim()});
+    }
+    changes.detalleCajas = JSON.stringify(filas);
+    changes.cantidad = filas.length;
+    changes.descripcion = `Bolsines (${filas.length}) · ${filas.reduce((s,f)=>s+f.cierres,0)} cierres`;
+  } else if(S.user?.rol==="admin" && Array.isArray(d.cajas)){
     const cajasValidas = d.cajas
       .map(c=>({caja:(c.caja||"").trim(), cantidad:+c.cantidad}))
       .filter(c=>c.cantidad>0);
@@ -9818,58 +9955,105 @@ async function submitPedirBolsin(){
 // ══════════════════════════════════════════════════════════
 // Sucursales tipo "market": entregan varios bolsines por caja —
 // se les agrega el campo "N° de caja" al enviar bolsines.
-const SUCURSALES_MARKET = ["independencia","alsina","arenales","paunero"];
-function esSucursalMarket(nombre){ return SUCURSALES_MARKET.includes(normNotif(nombre)); }
+const SUCURSALES_MARKET = ["independencia","alsina","arenales","paunero"];   // valor de origen si Admin nunca lo configuró
+// Admin elige cuáles son market (Admin → Configuración). Eso define: el campo "Caja" al enviar
+// bolsines, y los tipos de devolución que ve cada sucursal (Market: 3 tipos; Granja: Fresco y Congelado).
+function sucursalesMarket(){
+  const guardado = S.config && S.config.sucursalesMarket;
+  if(guardado){
+    try{ const arr=JSON.parse(guardado); if(Array.isArray(arr)) return arr; }catch(e){}
+  }
+  return SUCURSALES_MARKET;
+}
+function esSucursalMarket(nombre){ const n=normNotif(nombre); return !!n && sucursalesMarket().some(x=>normNotif(x)===n); }
+async function toggleSucursalMarket(nombre, marcado){
+  let actuales = sucursalesMarket().filter(x=>normNotif(x)!==normNotif(nombre));
+  if(marcado) actuales.push(nombre);
+  const valor = JSON.stringify(actuales);
+  try{
+    const { error } = await sb.from("config").upsert({clave:"sucursalesMarket", valor});
+    if(error) throw error;
+    S.config = {...S.config, sucursalesMarket: valor};
+  }catch(e){ toast("⚠️ No se pudo guardar","warn"); }
+  render();
+}
 
+// Cada BOLSÍN lleva su número de precinto; adentro tiene varios cierres de caja.
+// En los Market, además, se indica la caja (varios bolsines pueden ser de la misma caja).
+// Se guarda en solicitudes.detalle_cajas: [{precinto, cierres, caja, comentario}].
+const normPrecinto = v => String(v||"").trim().toUpperCase().replace(/\s+/g,"");
+function filasPrecintoDe(r){
+  let arr=[]; try{ arr=JSON.parse(r.detalleCajas||"[]"); }catch(e){}
+  return Array.isArray(arr) ? arr.filter(x=>x && x.precinto!==undefined) : [];
+}
 function openEnviarBolsin(){
   const esMarket = esSucursalMarket(S.user?.area);
-  S.enviarBolsinModal = {cantidad:"", comentario:"", err:"", loading:false, esMarket, cajas:[{caja:"",cantidad:""}]};
+  S.enviarBolsinModal = {comentario:"", err:{}, loading:false, esMarket, filas:[{precinto:"",cierres:"",caja:"",comentario:""}]};
   S.modal = "enviarBolsin";
   render();
 }
-function agregarFilaCajaBolsin(){
-  S.enviarBolsinModal.cajas.push({caja:"", cantidad:""});
+function agregarPrecinto(){
+  const d=S.enviarBolsinModal; const ult=d.filas[d.filas.length-1]||{};
+  // la caja suele repetirse en el bolsín siguiente: se sugiere la misma
+  d.filas.push({precinto:"",cierres:"",caja:d.esMarket?(ult.caja||""):"",comentario:""});
   render();
+  setTimeout(()=>$(`bp-p-${d.filas.length-1}`)?.focus(),60);
 }
-function quitarFilaCajaBolsin(idx){
-  if(S.enviarBolsinModal.cajas.length<=1) return;
-  S.enviarBolsinModal.cajas.splice(idx,1);
-  render();
+function quitarPrecinto(i){
+  const d=S.enviarBolsinModal; if(d.filas.length<=1) return;
+  d.filas.splice(i,1); d.err={}; render();
 }
-function actualizarFilaCajaBolsin(idx, campo, valor){
-  S.enviarBolsinModal.cajas[idx][campo] = valor;
+function actualizarPrecinto(i,campo,valor,conRender){
+  const d=S.enviarBolsinModal; if(!d.filas[i]) return;
+  d.filas[i][campo]=valor;
+  if(d.err&&d.err.filas) delete d.err.filas[i];
+  if(conRender) render();
+}
+function resumenBolsinModal(){
+  const d=S.enviarBolsinModal;
+  const llenas=d.filas.filter(f=>String(f.precinto||"").trim());
+  return {bolsines:llenas.length, cierres:llenas.reduce((s,f)=>s+(parseInt(f.cierres,10)||0),0)};
 }
 
 function renderEnviarBolsinModal(){
-  const d = S.enviarBolsinModal;
+  const d = S.enviarBolsinModal, e = d.err||{};
+  const res = resumenBolsinModal();
   return `
   <div style="background:#2de0c418;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--teal)">
     📤 Este bolsín va directo a Tesorería, ya queda listo para que el repartidor lo levante — no necesita aprobación previa ni palabra clave.
   </div>
-  ${d.esMarket?`
   <div class="field">
-    <label>Cajas y cantidad de bolsines por caja <span class="req">*</span></label>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      ${d.cajas.map((c,i)=>`
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="text" class="inp" style="flex:1" placeholder="N° de caja (ej: 12)" value="${escH(c.caja)}"
-            oninput="actualizarFilaCajaBolsin(${i},'caja',this.value)"/>
-          <input type="number" min="1" class="inp" style="width:110px" placeholder="Cantidad" value="${escH(c.cantidad)}"
-            oninput="actualizarFilaCajaBolsin(${i},'cantidad',this.value)"/>
-          <button class="btn btn-ghost btn-sm" onclick="quitarFilaCajaBolsin(${i})" ${d.cajas.length<=1?"disabled":""}>✕</button>
-        </div>`).join("")}
+    <label>Precintos <span class="req">*</span> <span style="color:var(--faint);font-size:12px;font-weight:400">— un precinto por bolsín</span></label>
+    <div class="bp-lista">
+      ${d.filas.map((f,i)=>`
+      <div class="bp-fila ${e.filas&&e.filas[i]?"err":""}">
+        <div class="bp-grid ${d.esMarket?"market":""}">
+          <label class="bp-l-prec"><span>Nº de precinto</span>
+            <input id="bp-p-${i}" class="inp" type="text" autocomplete="off" placeholder="Ej: A-004512" value="${escH(f.precinto)}"
+              oninput="actualizarPrecinto(${i},'precinto',this.value)"/>
+          </label>
+          <label><span>Cant. de cierres</span>
+            <input id="bp-c-${i}" class="inp" type="number" min="1" step="1" inputmode="numeric" placeholder="Ej: 3" value="${escH(f.cierres)}"
+              oninput="actualizarPrecinto(${i},'cierres',this.value,true)"/>
+          </label>
+          ${d.esMarket?`<label><span>Caja <span class="bp-opc">(si corresponde)</span></span>
+            <input id="bp-k-${i}" class="inp" type="text" autocomplete="off" placeholder="Ej: 12" value="${escH(f.caja)}"
+              oninput="actualizarPrecinto(${i},'caja',this.value)"/>
+          </label>`:""}
+          <button class="btn btn-ghost btn-sm bp-x" onclick="quitarPrecinto(${i})" ${d.filas.length<=1?"disabled":""} title="Quitar este precinto">✕</button>
+        </div>
+        <input class="inp" type="text" placeholder="Comentario de este precinto (opcional)" value="${escH(f.comentario)}"
+          oninput="actualizarPrecinto(${i},'comentario',this.value)"/>
+        ${e.filas&&e.filas[i]?`<div class="err-msg" style="margin-top:6px">${escH(e.filas[i])}</div>`:""}
+      </div>`).join("")}
     </div>
-    <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="agregarFilaCajaBolsin()">+ Agregar caja</button>
-    ${d.err&&d.err.cajas?`<div class="err-msg" style="margin-top:6px">${escH(d.err.cajas)}</div>`:""}
-  </div>`:`
-  <div class="field">
-    <label>Cantidad de bolsines <span class="req">*</span></label>
-    <input id="eb-cantidad" type="number" min="1" class="inp ${d.err&&d.err.cantidad?"err":""}" placeholder="Ej: 3" value="${escH(d.cantidad)}"/>
-    ${d.err&&d.err.cantidad?`<span class="err-msg">${escH(d.err.cantidad)}</span>`:""}
-  </div>`}
+    <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="agregarPrecinto()">+ Agregar precinto</button>
+    ${e.general?`<div class="err-msg" style="margin-top:8px">${escH(e.general)}</div>`:""}
+  </div>
+  <div class="bp-resumen"><strong>${res.bolsines}</strong> ${res.bolsines!==1?"bolsines":"bolsín"} · <strong>${res.cierres}</strong> cierre${res.cierres!==1?"s":""}</div>
   <div class="field" style="margin-top:12px">
     <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional)</span></label>
-    <textarea id="eb-comentario" rows="2" placeholder="Alguna aclaración...">${escH(d.comentario||"")}</textarea>
+    <textarea id="eb-comentario" rows="2" placeholder="Alguna aclaración general...">${escH(d.comentario||"")}</textarea>
   </div>
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
@@ -9883,21 +10067,36 @@ async function submitEnviarBolsin(){
   if(S.saving) return;
   const d = S.enviarBolsinModal;
   const comentario  = ($("eb-comentario")?.value||d.comentario||"").trim();
-  let cantidadTotal, detalleCajas = null, descripcion = "Bolsines";
 
-  if(d.esMarket){
-    const filas = d.cajas
-      .map(c=>({caja:(c.caja||"").trim(), cantidad:+((c.cantidad||"").toString().trim())}))
-      .filter(c=>c.cantidad>0);
-    if(!filas.length){ S.enviarBolsinModal.err={cajas:"Cargá al menos una caja con su cantidad."}; render(); return; }
-    cantidadTotal = filas.reduce((s,c)=>s+c.cantidad,0);
-    detalleCajas = JSON.stringify(filas);
-    descripcion = `Bolsines (${filas.length} caja${filas.length!==1?"s":""})`;
-  } else {
-    const cantidad = ($("eb-cantidad")?.value||d.cantidad||"").trim();
-    if(!cantidad||isNaN(+cantidad)||+cantidad<=0){ S.enviarBolsinModal.err={cantidad:"Ingresá una cantidad válida"}; render(); return; }
-    cantidadTotal = +cantidad;
-  }
+  // ── Validación: todo por precinto ──
+  const filasErr = {};
+  const vistos = new Map();
+  const yaCargados = new Map();           // precinto → solicitud donde ya figura
+  S.requests.forEach(r=>{
+    if(r.tipoPedido!=="bolsin" || ["Cancelada","Rechazada"].includes(r.estado)) return;
+    filasPrecintoDe(r).forEach(x=>{ const k=normPrecinto(x.precinto); if(k && !yaCargados.has(k)) yaCargados.set(k,r.id); });
+  });
+  const filas = [];
+  d.filas.forEach((f,i)=>{
+    const precinto = String(f.precinto||"").trim();
+    const cierresTxt = String(f.cierres||"").trim();
+    const cierres = parseInt(cierresTxt,10);
+    if(!precinto && !cierresTxt && !String(f.caja||"").trim() && !String(f.comentario||"").trim() && d.filas.length>1) return;   // fila vacía: se ignora
+    if(!precinto){ filasErr[i]="Falta el número de precinto."; return; }
+    if(!cierresTxt || isNaN(cierres) || cierres<=0 || String(cierres)!==cierresTxt.replace(/^0+(?=\d)/,"")){ filasErr[i]="Poné la cantidad de cierres (un número entero, mínimo 1)."; return; }
+    const k = normPrecinto(precinto);
+    if(vistos.has(k)){ filasErr[i]=`El precinto ${precinto} está repetido en este envío.`; return; }
+    if(yaCargados.has(k)){ filasErr[i]=`El precinto ${precinto} ya figura en ${yaCargados.get(k)}.`; return; }
+    vistos.set(k,i);
+    filas.push({precinto, cierres, caja:d.esMarket?String(f.caja||"").trim():"", comentario:String(f.comentario||"").trim()});
+  });
+  if(Object.keys(filasErr).length){ S.enviarBolsinModal.err={filas:filasErr}; render(); return; }
+  if(!filas.length){ S.enviarBolsinModal.err={general:"Cargá al menos un precinto con su cantidad de cierres."}; render(); return; }
+
+  const cantidadTotal = filas.length;                       // un bolsín por precinto
+  const cierresTotal  = filas.reduce((s,f)=>s+f.cierres,0);
+  const detalleCajas  = JSON.stringify(filas);
+  const descripcion   = `Bolsines (${cantidadTotal}) · ${cierresTotal} cierre${cierresTotal!==1?"s":""}`;
 
   const u = S.user;
   S.dniModal = {
@@ -9933,7 +10132,7 @@ async function submitEnviarBolsin(){
       const creada = await sheetsAdd(optimista);
       S.requests = [creada||optimista, ...S.requests];
       S.saving = false;
-      toast(`📤 ${cantidadTotal} bolsines enviados a Tesorería — ${(creada||optimista).id}`);
+      toast(`📤 ${cantidadTotal} ${cantidadTotal!==1?"bolsines":"bolsín"} (${cierresTotal} cierres) enviados a Tesorería — ${(creada||optimista).id}`);
       render();
     }
   };
