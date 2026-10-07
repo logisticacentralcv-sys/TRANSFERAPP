@@ -618,6 +618,35 @@ tr[onclick]:active td{background:var(--s3)}
 .dv-chip.ok{color:#4ade80;border-color:#2ecc7a55;background:#2ecc7a14}
 .dv-chip.mal{color:var(--amber);border-color:#f5a62355;background:#f5a62314}
 
+
+/* ── Admin → Configuración: ocupa todo el ancho ── */
+.cfg-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin-bottom:16px}
+.cfg-stats .stat-card{margin:0}
+.cfg-stats .stat-val{font-size:26px;line-height:1.2}
+.cfg-ancho{margin-bottom:16px}
+.cfg-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.cfg-doble{grid-column:1/-1}
+.cfg-card{margin:0}
+.cfg-tit{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+.cfg-tit h3{font-size:16px;font-weight:700;margin:0 0 4px}
+.cfg-tit p{font-size:13px;color:var(--muted);margin:0;max-width:760px;line-height:1.45}
+.cfg-switch{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;background:var(--s2);border-radius:10px}
+.cfg-switch p{font-size:12.5px;color:var(--muted);margin-top:2px}
+.cfg-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:8px}
+.cfg-chip{display:flex;align-items:center;gap:9px;font-size:13.5px;cursor:pointer;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;transition:background .15s,border-color .15s}
+.cfg-chip:hover{border-color:var(--border2)}
+.cfg-chip.on{border-color:#4f9eff66;background:#4f9eff12}
+.cfg-chip span{flex:1;min-width:0}
+.cfg-chip em{font-style:normal;font-size:11px;color:var(--faint);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.cfg-chip.on em{color:var(--blue)}
+.dv-barra{display:grid;grid-template-columns:minmax(220px,1.6fr) repeat(3,minmax(150px,1fr)) auto;gap:10px;margin-bottom:14px;align-items:center}
+.dv-q{min-width:0}
+.dv-pie{font-size:12px;color:var(--faint);margin-top:8px}
+.dv-sin{margin-top:14px;padding:12px 14px;background:var(--s2);border-radius:10px;font-size:13px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.dv-tag{font-size:12px;background:var(--s3);border-radius:999px;padding:3px 10px;color:#c3cfe2}
+@media(max-width:900px){ .cfg-grid{grid-template-columns:1fr} .dv-barra{grid-template-columns:1fr 1fr} .dv-q{grid-column:1/-1} }
+@media(max-width:560px){ .cfg-grid{grid-template-columns:1fr} .dv-barra{grid-template-columns:1fr} }
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -642,7 +671,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261007-0921";
+const APP_VERSION = "20261007-0951";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5386,101 +5415,162 @@ async function cargarDispositivos(){
   }
   S.dispositivosCargando=false; render();
 }
+// Lugares físicos de venta (no incluye Fábrica, Depósito, Administración ni "Otra dirección")
+const NO_SON_TIENDAS = ["fabrica","fabrica central","deposito","deposito central","otra direccion","administracion"];
+function sucursalesTienda(){ return getSucursales().filter(s=>!NO_SON_TIENDAS.includes(normNotif(s))); }
+// Cuentas que se espera que usen la app desde un dispositivo fijo
+function cuentasEsperadas(){ return [...sucursalesTienda(), ...getSucursales().filter(s=>["deposito","deposito central"].includes(normNotif(s))).slice(0,1)]; }
+
+function dispResumen(){
+  const ultima=S.versionServidor||APP_VERSION, filas=S.dispositivos||[];
+  const viejos=filas.filter(d=>d.version!==ultima);
+  const con=new Set(filas.map(d=>normNotif(d.area)));
+  const sinDatos=cuentasEsperadas().filter(s=>!con.has(normNotif(s)));
+  const areasViejas=[...new Set(viejos.map(d=>d.area).filter(Boolean))];
+  return {ultima,filas,viejos,sinDatos,areasViejas};
+}
+function dispFiltrados(){
+  const {ultima,filas}=dispResumen(), f=S.dispFiltro||{};
+  const q=normNotif(f.q||"");
+  const ahora=Date.now();
+  let r=filas.filter(d=>{
+    if(q && !(normNotif(d.area).includes(q)||normNotif(d.usuario).includes(q)||normNotif(d.user_agent).includes(q))) return false;
+    if(f.estado==="aldia" && d.version!==ultima) return false;
+    if(f.estado==="vieja" && d.version===ultima) return false;
+    const dias=(ahora-new Date(d.visto_at).getTime())/86400000;
+    if(f.actividad==="hoy" && dias>1) return false;
+    if(f.actividad==="semana" && dias>7) return false;
+    if(f.actividad==="inactivo" && dias<=7) return false;
+    return true;
+  });
+  const orden=f.orden||"estado";
+  r.sort((a,b)=>{
+    if(orden==="uso") return String(b.visto_at).localeCompare(String(a.visto_at));
+    if(orden==="nombre") return String(a.area||"").localeCompare(String(b.area||""),"es");
+    return ((a.version===ultima)-(b.version===ultima)) || String(a.area||"").localeCompare(String(b.area||""),"es") || String(b.visto_at).localeCompare(String(a.visto_at));
+  });
+  return r;
+}
+async function copiarQuienAvisar(){
+  const {areasViejas,sinDatos}=dispResumen();
+  const partes=[];
+  if(areasViejas.length) partes.push("Con versión vieja: "+areasViejas.join(", "));
+  if(sinDatos.length)    partes.push("Sin datos (nunca abrieron esta versión): "+sinDatos.join(", "));
+  if(!partes.length){ toast("Todos están al día 🎉"); return; }
+  const ok=await copiarTexto(partes.join("\n"));
+  if(ok) toast("📋 Copiado: lista de sucursales a avisar"); else toast("No se pudo copiar","warn");
+}
 function renderDispositivosAdmin(){
   if(S.dispositivos===undefined || S.dispositivos===null){ if(!S.dispositivosCargando) setTimeout(cargarDispositivos,0); }
-  const ultima = S.versionServidor || APP_VERSION;
-  const filas = (S.dispositivos||[]).slice();
-  const viejos = filas.filter(d=>d.version!==ultima);
-  const orden = [...filas].sort((a,b)=> ((a.version===ultima)-(b.version===ultima)) || String(a.area||"").localeCompare(String(b.area||""),"es") || String(b.visto_at).localeCompare(String(a.visto_at)));
-  const conReporte = new Set(filas.map(d=>normNotif(d.area)));
-  const sinReporte = getSucursales().filter(s=>!conReporte.has(normNotif(s)));
+  const {ultima,filas,viejos,sinDatos}=dispResumen();
+  const lista=dispFiltrados(), f=S.dispFiltro||{};
+  const hayFiltro=!!(f.q||f.estado||f.actividad);
+  const cargando=S.dispositivos===null||S.dispositivos===undefined;
   return `
-  <div class="card" style="max-width:760px;margin-top:16px">
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:6px">
-      <h3 style="font-size:15px;font-weight:700">📱 Dispositivos y versiones</h3>
-      <button class="btn btn-ghost btn-sm" onclick="S.dispositivos=null;cargarDispositivos()">↻ Actualizar</button>
+  <div class="card cfg-ancho">
+    <div class="cfg-tit">
+      <div>
+        <h3>📱 Dispositivos y versiones</h3>
+        <p>Cada celular, tablet o compu avisa qué versión tiene y cuándo abrió la app. Publicada: <strong class="mono">${escH(ultima)}</strong> · esta pantalla: <strong class="mono">${escH(APP_VERSION)}</strong>.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="copiarQuienAvisar()" title="Copia las sucursales con versión vieja o sin datos">📋 Copiar a quién avisar</button>
+        <button class="btn btn-ghost btn-sm" onclick="S.dispositivos=null;cargarDispositivos()">↻ Actualizar</button>
+      </div>
     </div>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
-      Cada celular, tablet o compu avisa qué versión de la app tiene y cuándo la abrió. Versión publicada ahora:
-      <strong style="font-family:var(--mono);color:var(--text)">${escH(ultima)}</strong>.
-      Un dispositivo que todavía no figura es porque nadie abrió la app ahí desde que existe este panel.
-    </p>
     ${S.dispositivosErr==="falta-tabla"?`<div class="alert-info" style="border-left-color:var(--amber)">⚠️ Falta crear la tabla en Supabase: corré <code>app_01_dispositivos.sql</code>.</div>`:
       S.dispositivosErr==="error"?`<div class="alert-info" style="border-left-color:var(--amber)">⚠️ No se pudo leer la lista. Probá de nuevo con ↻.</div>`:
-      S.dispositivos===null||S.dispositivos===undefined?`<p style="color:var(--muted);font-size:13px"><span class="spinner"></span> Cargando…</p>`:`
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      <span class="dv-res ok">✅ ${filas.length-viejos.length} al día</span>
-      <span class="dv-res ${viejos.length?"mal":""}">${viejos.length?"⚠️":"✅"} ${viejos.length} con versión vieja</span>
-      <span class="dv-res">❔ ${sinReporte.length} sucursal${sinReporte.length!==1?"es":""} sin datos</span>
+      cargando?`<p style="color:var(--muted);font-size:13px"><span class="spinner"></span> Cargando…</p>`:`
+    <div class="dv-barra">
+      <input class="inp dv-q" type="text" placeholder="🔎 Buscar sucursal, usuario o dispositivo…" value="${escH(f.q||"")}" oninput="S.dispFiltro={...(S.dispFiltro||{}),q:this.value};render()"/>
+      <select class="inp" onchange="S.dispFiltro={...(S.dispFiltro||{}),estado:this.value};render()">
+        <option value="">Todos los estados</option>
+        <option value="aldia" ${f.estado==="aldia"?"selected":""}>✅ Al día</option>
+        <option value="vieja" ${f.estado==="vieja"?"selected":""}>⚠️ Versión vieja</option>
+      </select>
+      <select class="inp" onchange="S.dispFiltro={...(S.dispFiltro||{}),actividad:this.value};render()">
+        <option value="">Cualquier momento</option>
+        <option value="hoy" ${f.actividad==="hoy"?"selected":""}>Usaron hoy</option>
+        <option value="semana" ${f.actividad==="semana"?"selected":""}>Últimos 7 días</option>
+        <option value="inactivo" ${f.actividad==="inactivo"?"selected":""}>Sin uso hace más de 7 días</option>
+      </select>
+      <select class="inp" onchange="S.dispFiltro={...(S.dispFiltro||{}),orden:this.value};render()">
+        <option value="estado" ${(f.orden||"estado")==="estado"?"selected":""}>Ordenar: versión vieja primero</option>
+        <option value="uso" ${f.orden==="uso"?"selected":""}>Ordenar: último uso</option>
+        <option value="nombre" ${f.orden==="nombre"?"selected":""}>Ordenar: sucursal (A-Z)</option>
+      </select>
+      ${hayFiltro?`<button class="btn btn-ghost btn-md" onclick="S.dispFiltro={orden:(S.dispFiltro||{}).orden};render()">✕ Limpiar</button>`:""}
     </div>
-    ${filas.length?`<div class="table-wrap"><table>
-      <thead><tr><th>Sucursal / área</th><th>Último uso</th><th>Versión</th><th>Estado</th><th>Dispositivo</th></tr></thead>
-      <tbody>${orden.map(d=>{
+    ${filas.length===0
+      ? `<div class="pk-vacio">Todavía no se registró ningún dispositivo. Aparecen a medida que abren la app con esta versión.</div>`
+      : lista.length===0
+        ? `<div class="pk-vacio">Ningún dispositivo coincide con ese filtro.</div>`
+        : `<div class="table-wrap"><table>
+      <thead><tr><th>Sucursal / área</th><th>Usuario</th><th>Último uso</th><th>Versión</th><th>Estado</th><th>Dispositivo</th></tr></thead>
+      <tbody>${lista.map(d=>{
         const alDia=d.version===ultima;
-        return `<tr><td><strong>${escH(d.area||"—")}</strong><div style="font-size:11px;color:var(--faint)">${escH(d.usuario||"")}</div></td>
-          <td class="muted-cell">${haceTxt(d.visto_at)}</td>
+        return `<tr>
+          <td><strong>${escH(d.area||"—")}</strong></td>
+          <td class="muted-cell">${escH(d.usuario||"—")}</td>
+          <td class="muted-cell" title="${escH(new Date(d.visto_at).toLocaleString("es-AR"))}">${haceTxt(d.visto_at)}</td>
           <td class="mono" style="font-size:12px">${escH(d.version||"—")}</td>
           <td>${alDia?`<span class="dv-chip ok">Al día</span>`:`<span class="dv-chip mal">Versión vieja</span>`}</td>
-          <td class="muted-cell">${escH(d.user_agent||"—")}</td></tr>`;}).join("")}</tbody></table></div>`:`<p style="color:var(--muted);font-size:13px">Todavía no se registró ningún dispositivo.</p>`}
-    ${sinReporte.length&&filas.length?`<p style="font-size:12.5px;color:var(--muted);margin-top:12px"><strong>Sin datos:</strong> ${sinReporte.map(escH).join(", ")}</p>`:""}`}
+          <td class="muted-cell">${escH(d.user_agent||"—")}</td></tr>`;}).join("")}</tbody></table></div>
+      <div class="dv-pie">Mostrando ${lista.length} de ${filas.length} dispositivo${filas.length!==1?"s":""}</div>`}
+    ${sinDatos.length?`<div class="dv-sin"><strong>❔ Sin datos (${sinDatos.length}):</strong> ${sinDatos.map(s=>`<span class="dv-tag">${escH(s)}</span>`).join("")}</div>`:""}`}
   </div>`;
 }
 
 function renderAdminConfig(){
-  const activo = bolsinesActivo();
+  const activo=bolsinesActivo();
+  const {ultima,filas,viejos,sinDatos}=dispResumen();
+  const cargado=!(S.dispositivos===null||S.dispositivos===undefined) && !S.dispositivosErr;
+  const tiendas=sucursalesTienda(), nMarket=tiendas.filter(esSucursalMarket).length;
   return `
-  <div class="card" style="max-width:520px;margin-bottom:16px">
-    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🔄 Versión de la app</h3>
-    <p style="color:var(--muted);font-size:13px">Esta pantalla corre la versión <strong style="font-family:var(--mono);color:var(--text)">${APP_VERSION}</strong>.
-      Para ver cuál está publicada, abrí <code>/version.json</code> en el navegador. La app se actualiza sola al abrirla o al volver a ella.</p>
+  <div class="cfg-stats">
+    ${statCard("🔄","VERSIÓN PUBLICADA",`<span class="mono" style="font-size:17px;white-space:nowrap">${escH(ultima)}</span>`,"var(--blue)")}
+    ${statCard("✅","DISPOSITIVOS AL DÍA",cargado?filas.length-viejos.length:"—","var(--green)")}
+    ${statCard("⚠️","CON VERSIÓN VIEJA",cargado?viejos.length:"—",viejos.length?"var(--amber)":"var(--green)")}
+    ${statCard("❔","SUCURSALES SIN DATOS",cargado?sinDatos.length:"—","var(--muted)")}
+    ${statCard("🎒","BOLSINES",activo?"Activado":"Apagado",activo?"var(--teal)":"var(--red)")}
   </div>
+
   ${renderDispositivosAdmin()}
 
-  <div class="card" style="max-width:520px">
-    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🎒 Módulo de Bolsines</h3>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
-      Cuando está desactivado, las sucursales no ven los botones de "Pedir bolsín" / "Enviar bolsín",
-      y la pantalla de Tesorería queda oculta. Los bolsines ya cargados no se borran, solo se deja de poder crear nuevos.
-    </p>
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;background:var(--s2);border-radius:8px">
-      <div>
-        <strong style="font-size:14px">${activo?"Activado":"Desactivado"}</strong>
-        <p style="color:var(--muted);font-size:12px;margin-top:2px">${activo?"Las sucursales pueden pedir y enviar bolsines.":"Nadie puede pedir ni enviar bolsines por ahora."}</p>
+  <div class="cfg-grid">
+    <div class="card cfg-card">
+      <div class="cfg-tit"><div><h3>🎒 Módulo de Bolsines</h3>
+        <p>Si se apaga, las sucursales no ven "Enviar bolsín" y la pantalla de Tesorería queda oculta. Lo ya cargado no se borra.</p></div></div>
+      <div class="cfg-switch">
+        <div><strong>${activo?"Activado":"Desactivado"}</strong>
+          <p>${activo?"Las sucursales pueden enviar bolsines.":"Nadie puede enviar bolsines por ahora."}</p></div>
+        <button class="btn ${activo?"btn-danger":"btn-success"} btn-md" onclick="toggleBolsinesActivo()">${activo?"Desactivar":"Activar"}</button>
       </div>
-      <button class="btn ${activo?"btn-danger":"btn-success"} btn-md" onclick="toggleBolsinesActivo()">
-        ${activo?"Desactivar":"Activar"}
-      </button>
     </div>
-  </div>
 
-  <div class="card" style="max-width:520px;margin-top:16px">
-    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🏪 Sucursales tipo Market</h3>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
-      Tildá cuáles son <strong>Market</strong>; el resto se considera <strong>Granja</strong>. Los Market piden el número de caja al enviar bolsines
-      y pueden hacer devoluciones de Secos; las Granjas no.
-    </p>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">
-      ${getSucursales().map(s=>`
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;background:var(--s2);border-radius:8px;padding:8px 10px">
+    <div class="card cfg-card">
+      <div class="cfg-tit"><div><h3>🥬 Recepción Fresco</h3>
+        <p>Áreas cuyos pedidos aprobados prepara Recepción Fresco. Lo que no esté tildado (ej: RRHH, Administración) lo sigue viendo el recepcionista genérico.</p></div></div>
+      <div class="cfg-chips" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
+        ${AREAS_OFICINA.map(area=>{ const on=areasRecepcionFresco().some(a=>normNotif(a)===normNotif(area)); return `
+        <label class="cfg-chip ${on?"on":""}">
+          <input type="checkbox" class="chk-round" ${on?"checked":""} onchange="toggleAreaRecepcionFresco('${escH(area)}',this.checked)"/>
+          <span>${escH(area)}</span>
+        </label>`;}).join("")}
+      </div>
+    </div>
+
+    <div class="card cfg-card cfg-doble">
+      <div class="cfg-tit"><div><h3>🏪 Sucursales tipo Market</h3>
+        <p>Tildá cuáles son <strong>Market</strong>; el resto es <strong>Granja</strong>. Los Market piden el número de caja al enviar bolsines y pueden devolver Secos.</p></div>
+        <span class="dv-res ok">${nMarket} Market · ${tiendas.length-nMarket} Granja${tiendas.length-nMarket!==1?"s":""}</span></div>
+      <div class="cfg-chips">
+        ${tiendas.map(s=>`
+        <label class="cfg-chip ${esSucursalMarket(s)?"on":""}">
           <input type="checkbox" class="chk-round" ${esSucursalMarket(s)?"checked":""} onchange="toggleSucursalMarket('${escH(s).replace(/'/g,"&#39;")}',this.checked)"/>
-          ${escH(s)} <span style="margin-left:auto;font-size:11px;color:var(--faint)">${esSucursalMarket(s)?"Market":"Granja"}</span>
+          <span>${escH(s)}</span><em>${esSucursalMarket(s)?"Market":"Granja"}</em>
         </label>`).join("")}
-    </div>
-  </div>
-
-  <div class="card" style="max-width:520px;margin-top:16px">
-    <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🥬 Recepción Fresco — qué áreas prepara</h3>
-    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
-      Tildá las áreas cuyos pedidos aprobados debe preparar Recepción Fresco. Lo que no esté tildado
-      (ej: RRHH, Administración) lo sigue viendo el recepcionista genérico como hasta ahora.
-    </p>
-    <div style="display:flex;flex-direction:column;gap:8px">
-      ${AREAS_OFICINA.map(area=>`
-        <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
-          <input type="checkbox" class="chk-round" ${areasRecepcionFresco().some(a=>normNotif(a)===normNotif(area))?"checked":""}
-            onchange="toggleAreaRecepcionFresco('${escH(area)}',this.checked)"/>
-          ${escH(area)}
-        </label>`).join("")}
+      </div>
     </div>
   </div>`;
 }
