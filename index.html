@@ -610,6 +610,14 @@ tr[onclick]:active td{background:var(--s3)}
 
 .ver-app{margin-top:14px;text-align:center;font-family:var(--mono);font-size:11px;color:var(--faint)}
 
+
+.dv-res{font-size:13px;font-weight:700;padding:5px 12px;border-radius:999px;background:var(--s2);border:1px solid var(--border);color:#c3cfe2}
+.dv-res.ok{color:#4ade80;border-color:#2ecc7a55;background:#2ecc7a14}
+.dv-res.mal{color:var(--amber);border-color:#f5a62355;background:#f5a62314}
+.dv-chip{font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;border:1px solid}
+.dv-chip.ok{color:#4ade80;border-color:#2ecc7a55;background:#2ecc7a14}
+.dv-chip.mal{color:var(--amber);border-color:#f5a62355;background:#f5a62314}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -634,7 +642,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261007-0908";
+const APP_VERSION = "20261007-0921";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -643,6 +651,8 @@ async function chequearVersion(){
     const r = await fetch("version.json?t="+Date.now(), {cache:"no-store"});
     if(!r.ok) return;
     const v = await r.json();
+    if(v && v.version && typeof S!=="undefined") S.versionServidor = v.version;
+    registrarDispositivo();
     if(!v || !v.version || v.version===APP_VERSION) return;
     const ocupado = !!(S.modal || S.pickeo || S.clasif || S.saving || S.dniModal?.cb);
     const clave = "tl_recarga_"+v.version;
@@ -655,8 +665,36 @@ async function chequearVersion(){
     document.body.appendChild(b);
   }catch(e){ /* sin conexión: se reintenta la próxima vez */ }
 }
-document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") chequearVersion(); });
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible"){ chequearVersion(); registrarDispositivo(); } });
 setTimeout(chequearVersion, 4000);
+
+// ── Cada dispositivo avisa qué versión corre (Admin lo ve en Configuración) ──
+function deviceId(){
+  let id=null;
+  try{
+    id=localStorage.getItem("tl_device_id");
+    if(!id){ id=(window.crypto&&crypto.randomUUID)?crypto.randomUUID():(Math.random().toString(36).slice(2)+Date.now().toString(36)); localStorage.setItem("tl_device_id",id); }
+  }catch(e){}
+  return id||"sin-id";
+}
+function navegadorCorto(){
+  const ua=navigator.userAgent||"";
+  const nav=/Edg\//.test(ua)?"Edge":/OPR\//.test(ua)?"Opera":/Chrome\//.test(ua)?"Chrome":/Firefox\//.test(ua)?"Firefox":/Safari\//.test(ua)?"Safari":"Navegador";
+  const so=/Android/.test(ua)?"Android":/iPhone|iPad|iPod/.test(ua)?"iOS":/Windows/.test(ua)?"Windows":/Mac OS/.test(ua)?"Mac":/Linux/.test(ua)?"Linux":"";
+  return so?`${nav} · ${so}`:nav;
+}
+let _ultimoRegistroDisp = 0;
+async function registrarDispositivo(forzar){
+  if(typeof S==="undefined" || S.view!=="app" || !S.user) return;
+  if(!forzar && Date.now()-_ultimoRegistroDisp < 10*60000) return;
+  _ultimoRegistroDisp = Date.now();
+  try{
+    await sb.from("app_dispositivos").upsert({
+      id:deviceId(), area:S.user.area||"", rol:S.user.rol||"", usuario:S.user.nombre||"",
+      version:APP_VERSION, user_agent:navegadorCorto(), visto_at:new Date().toISOString()
+    },{onConflict:"id"});
+  }catch(e){ /* si todavía no existe la tabla, no pasa nada */ }
+}
 
 // QR de cada sucursal: llega como ?s=Sucursal (y opcionalmente &v=ViajeID). Se
 // guarda enseguida —antes del login y de la identificación por DNI— y se
@@ -5326,6 +5364,68 @@ function renderAdmin(){
   </div>`;
 }
 
+
+// ── Admin: qué versión corre cada dispositivo ──
+function haceTxt(iso){
+  const t=new Date(iso).getTime(); if(isNaN(t)) return "—";
+  const m=Math.round((Date.now()-t)/60000);
+  if(m<1) return "recién";
+  if(m<60) return `hace ${m} min`;
+  const h=Math.round(m/60); if(h<24) return `hace ${h} h`;
+  const d=Math.round(h/24); return d===1?"ayer":`hace ${d} días`;
+}
+async function cargarDispositivos(){
+  if(S.dispositivosCargando) return;
+  S.dispositivosCargando=true;
+  try{
+    const { data, error } = await sb.from("app_dispositivos").select("*").order("visto_at",{ascending:false}).limit(500);
+    if(error) throw error;
+    S.dispositivos=data||[]; S.dispositivosErr="";
+  }catch(e){
+    console.warn("Dispositivos:",e); S.dispositivos=[]; S.dispositivosErr=/app_dispositivos|relation|schema cache/i.test(String(e&&(e.message||e.details||"")))?"falta-tabla":"error";
+  }
+  S.dispositivosCargando=false; render();
+}
+function renderDispositivosAdmin(){
+  if(S.dispositivos===undefined || S.dispositivos===null){ if(!S.dispositivosCargando) setTimeout(cargarDispositivos,0); }
+  const ultima = S.versionServidor || APP_VERSION;
+  const filas = (S.dispositivos||[]).slice();
+  const viejos = filas.filter(d=>d.version!==ultima);
+  const orden = [...filas].sort((a,b)=> ((a.version===ultima)-(b.version===ultima)) || String(a.area||"").localeCompare(String(b.area||""),"es") || String(b.visto_at).localeCompare(String(a.visto_at)));
+  const conReporte = new Set(filas.map(d=>normNotif(d.area)));
+  const sinReporte = getSucursales().filter(s=>!conReporte.has(normNotif(s)));
+  return `
+  <div class="card" style="max-width:760px;margin-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:6px">
+      <h3 style="font-size:15px;font-weight:700">📱 Dispositivos y versiones</h3>
+      <button class="btn btn-ghost btn-sm" onclick="S.dispositivos=null;cargarDispositivos()">↻ Actualizar</button>
+    </div>
+    <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
+      Cada celular, tablet o compu avisa qué versión de la app tiene y cuándo la abrió. Versión publicada ahora:
+      <strong style="font-family:var(--mono);color:var(--text)">${escH(ultima)}</strong>.
+      Un dispositivo que todavía no figura es porque nadie abrió la app ahí desde que existe este panel.
+    </p>
+    ${S.dispositivosErr==="falta-tabla"?`<div class="alert-info" style="border-left-color:var(--amber)">⚠️ Falta crear la tabla en Supabase: corré <code>app_01_dispositivos.sql</code>.</div>`:
+      S.dispositivosErr==="error"?`<div class="alert-info" style="border-left-color:var(--amber)">⚠️ No se pudo leer la lista. Probá de nuevo con ↻.</div>`:
+      S.dispositivos===null||S.dispositivos===undefined?`<p style="color:var(--muted);font-size:13px"><span class="spinner"></span> Cargando…</p>`:`
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <span class="dv-res ok">✅ ${filas.length-viejos.length} al día</span>
+      <span class="dv-res ${viejos.length?"mal":""}">${viejos.length?"⚠️":"✅"} ${viejos.length} con versión vieja</span>
+      <span class="dv-res">❔ ${sinReporte.length} sucursal${sinReporte.length!==1?"es":""} sin datos</span>
+    </div>
+    ${filas.length?`<div class="table-wrap"><table>
+      <thead><tr><th>Sucursal / área</th><th>Último uso</th><th>Versión</th><th>Estado</th><th>Dispositivo</th></tr></thead>
+      <tbody>${orden.map(d=>{
+        const alDia=d.version===ultima;
+        return `<tr><td><strong>${escH(d.area||"—")}</strong><div style="font-size:11px;color:var(--faint)">${escH(d.usuario||"")}</div></td>
+          <td class="muted-cell">${haceTxt(d.visto_at)}</td>
+          <td class="mono" style="font-size:12px">${escH(d.version||"—")}</td>
+          <td>${alDia?`<span class="dv-chip ok">Al día</span>`:`<span class="dv-chip mal">Versión vieja</span>`}</td>
+          <td class="muted-cell">${escH(d.user_agent||"—")}</td></tr>`;}).join("")}</tbody></table></div>`:`<p style="color:var(--muted);font-size:13px">Todavía no se registró ningún dispositivo.</p>`}
+    ${sinReporte.length&&filas.length?`<p style="font-size:12.5px;color:var(--muted);margin-top:12px"><strong>Sin datos:</strong> ${sinReporte.map(escH).join(", ")}</p>`:""}`}
+  </div>`;
+}
+
 function renderAdminConfig(){
   const activo = bolsinesActivo();
   return `
@@ -5334,6 +5434,8 @@ function renderAdminConfig(){
     <p style="color:var(--muted);font-size:13px">Esta pantalla corre la versión <strong style="font-family:var(--mono);color:var(--text)">${APP_VERSION}</strong>.
       Para ver cuál está publicada, abrí <code>/version.json</code> en el navegador. La app se actualiza sola al abrirla o al volver a ella.</p>
   </div>
+  ${renderDispositivosAdmin()}
+
   <div class="card" style="max-width:520px">
     <h3 style="font-size:15px;font-weight:700;margin-bottom:4px">🎒 Módulo de Bolsines</h3>
     <p style="color:var(--muted);font-size:13px;margin-bottom:14px">
@@ -11310,6 +11412,7 @@ function finalizarEntradaApp(){
   if(["repartidor","recepcionista","tesoreria"].includes(S.user.rol)) cargarIdentidadRepartidor();
   aplicarQRPendiente();
   reiniciarTimerInactividad();
+  registrarDispositivo(true);
   render(); // mostrar app ya
 
   setTimeout(animarEntradaContenido, 120);
@@ -11928,6 +12031,7 @@ if(_sesionRestaurada){
   } else {
   aplicarQRPendiente();
   reiniciarTimerInactividad();
+  registrarDispositivo(true);
   render();
   if(USE_SHEETS) sheetsLoadUsuarios();
   sheetsLoadDatos().then(()=>{ render(); });
