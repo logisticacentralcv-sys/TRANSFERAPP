@@ -747,6 +747,43 @@ tr[onclick]:active td{background:var(--s3)}
 .cc-cie.off{opacity:.45}
 .cc-e-p{flex:1;min-width:150px;padding:7px 10px}
 
+
+/* ── Confirmar recepción: más grande, y los botones siempre visibles ── */
+.cc-acciones{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end;position:sticky;bottom:0;margin:14px -20px -20px;padding:14px 20px 18px;background:var(--s1);border-top:1px solid var(--border);z-index:2}
+.cc-acciones .btn{flex:1 1 150px;justify-content:center;min-height:48px;font-size:15px}
+.cc-acciones .btn-success{flex:2 1 220px}
+.cc-precintos{max-height:none;gap:10px}
+.cc-prec{padding:14px 16px;border-radius:12px;gap:12px}
+.cc-n{font-size:18px}
+.cc-m{font-size:14px}
+.cc-chk .chk-round{width:30px;height:30px;flex-shrink:0}
+.cc-cie{font-size:13px;gap:8px}
+.cc-cie input{width:100px;height:48px;font-size:20px;font-weight:700}
+.cc-e-p{height:48px;font-size:16px}
+.cc-res{font-size:15px;padding:12px 14px;line-height:1.5}
+.cc-prec .btn-sm{min-height:44px;min-width:44px}
+@media(max-width:560px){
+  /* celular: "Confirmar" ocupa todo el ancho arriba y las otras dos van lado a lado (ocupa poco alto, queda lugar para ver los precintos) */
+  .cc-acciones{gap:8px;padding:10px 20px 12px;margin-top:10px}
+  .cc-acciones .btn{flex:1 1 calc(50% - 4px);min-height:44px;font-size:14px}
+  .cc-acciones .btn-success{order:-1;flex:1 1 100%;min-height:48px;font-size:15px}
+  .cc-prec{flex-direction:column;align-items:stretch}
+  .cc-cie{margin-left:0;justify-content:space-between}
+  .cc-cie input{width:120px}
+}
+/* En cualquier ventana: si los botones no entran en una fila, bajan a la siguiente */
+.modal-body div[style*="justify-content:flex-end"]{flex-wrap:wrap}
+
+
+/* ── Tesorería: métricas ── */
+.tes-met-filtros{grid-template-columns:repeat(3,minmax(140px,1fr)) minmax(240px,2fr)}
+.tm-difs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.tm-difs>div{background:var(--s2);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:3px}
+.tm-difs strong{font-family:var(--mono);font-size:24px;line-height:1.1}
+.tm-difs span{font-size:12.5px;color:var(--muted);line-height:1.35}
+.tm-difs .mal strong{color:#fca5a5}.tm-difs .ok strong{color:#4ade80}
+@media(max-width:980px){ .tes-met-filtros{grid-template-columns:repeat(2,minmax(0,1fr))} .tes-met-filtros .tes-f-btns{grid-column:1/-1!important} }
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -771,7 +808,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261008-1408";
+const APP_VERSION = "20261008-1428";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1196,7 +1233,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
+  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, tabTes:"operacion", tesMetInit:false, tesMetDesde:"", tesMetHasta:"", tesMetSucursal:"", tesMetSerieSel:"enviados", catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -5027,7 +5064,7 @@ function graficoEvolucion(puntos, color, id, opts){
   // cualquier pantalla y el texto no se agranda ni se achica. Si hay
   // tantos puntos que no entran, se desplaza hacia el costado.
   const base = _evAncho[id] || Math.max(320, Math.min(window.innerWidth,1800)-98);
-  const n=puntos.length, W=Math.max(base,n*52), H=Math.round(Math.min(Math.max(300,base*0.26),440)), pL=54, pR=28, pT=34, pB=50;
+  const n=puntos.length, W=Math.max(base,n*(opts.pasoMin||52)), H=Math.round(Math.min(Math.max(300,base*0.26),440)), pL=54, pR=28, pT=34, pB=50;
   const maxV=Math.max(...puntos.map(p=>p.valor),0.0001);
   const crudo=maxV/4, pot=Math.pow(10,Math.floor(Math.log10(crudo))), f=crudo/pot;
   const paso=(f<=1?1:f<=2?2:f<=5?5:10)*pot;
@@ -5054,7 +5091,7 @@ function graficoEvolucion(puntos, color, id, opts){
   const ancho = n===1 ? W-pL-pR : (W-pL-pR)/(n-1);
   const bandas=puntos.map((p,i)=>`<rect x="${Xs[i]-ancho/2}" y="${pT-10}" width="${ancho}" height="${H-pT-pB+10}" fill="transparent" style="cursor:pointer"
     onmouseenter="evResaltar('${id}',${i})" onmouseleave="evRestaurar('${id}')" onclick="evClick('${id}',${i})"/>`).join("");
-  return `<div data-evwrap="${id}" style="overflow-x:auto"><svg id="ev-${id}" viewBox="0 0 ${W} ${H}" style="width:100%;${W>base?`min-width:${W}px;`:""}height:auto;display:block">
+  return `<div data-evwrap="${id}" ${opts.finAlFondo?'data-fin="1"':""} style="overflow-x:auto"><svg id="ev-${id}" viewBox="0 0 ${W} ${H}" style="width:100%;${W>base?`min-width:${W}px;`:""}height:auto;display:block">
     <defs><linearGradient id="grad-${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="${color}" stop-opacity=".38"/><stop offset="100%" stop-color="${color}" stop-opacity=".02"/></linearGradient></defs>
     ${grid}
     <path class="ev-area" d="${area}" fill="url(#grad-${id})"/>
@@ -5474,6 +5511,7 @@ function renderTesoreria(){
       <p style="color:var(--muted);font-size:14px">El módulo de Bolsines está desactivado por Administración por el momento.</p>
     </div>`;
   }
+  if(S.tabTes==="metricas") return renderTesoreriaMetricas();
   const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId && r.destino!=="Tesorería");
   const pendientes    = pedidosBolsin.filter(r=>r.estado==="Pendiente Tesorería");
   const aprobadosParaListo = pedidosBolsin.filter(r=>r.estado==="Aprobada");
@@ -5528,6 +5566,7 @@ function renderTesoreria(){
       <button class="rep-yo" onclick="cambiarIdentidadTesoreria()" title="Todo lo que hagas queda a tu nombre. Tocá para cambiar de persona">👤 <strong>${escH(S.miIdentidadTesoreria.nombre)}</strong><span class="rep-edit">✎</span></button>
       <span style="font-size:12px;color:var(--faint)">Todo queda a tu nombre, sin volver a pedirte el DNI</span>
     </div>`:""}
+    ${tabsTes()}
 
     <div class="stats-grid">
       ${statCard("🎒","PEDIDOS PENDIENTES",pendientes.length,"var(--amber)")}
@@ -8650,7 +8689,7 @@ function renderModals(){
   if(S.modal==="listo")      return wrapModal("m","Transferencia lista para retirar",renderListoModal(),420);
   if(S.modal==="cerrado")    return wrapModal("m","Dejar en sucursal cerrada",renderDejarCerradoModal(),420);
   if(S.modal==="identificarLogistica") return wrapModal("m","¿Quién sos?",renderIdentificarLogisticaModal(),420);
-  if(S.modal==="confirmarCerrado") return wrapModal("m","Confirmar transferencia recibida",renderConfirmarCerradoModal(),420);
+  if(S.modal==="confirmarCerrado") return wrapModal("m",(S.requests.find(x=>x.id===S.confirmarCerradoModal?.id)?.tipoPedido==="bolsin")?"Confirmar recepción de bolsines":"Confirmar transferencia recibida",renderConfirmarCerradoModal(),780);
   if(S.modal==="editar")     return wrapModal("m","Editar solicitud",renderEditarModal(),460);
   if(S.modal==="pedirBolsin")   return wrapModal("m","Pedir bolsín",renderPedirBolsinModal(),420);
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
@@ -9391,7 +9430,7 @@ function renderConfirmarCerradoModal(){
       <label>Comentario <span style="color:var(--faint);font-size:12px">(opcional — ej. "llegó incompleto", "una caja rota")</span></label>
       <textarea id="confcerrado-comentario" rows="2" oninput="S.confirmarCerradoModal.comentario=this.value">${escH(d.comentario||"")}</textarea>
     </div>
-    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:4px">
+    <div class="cc-acciones">
       <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-danger btn-md" onclick="openNoMeLlego('${escH(d.id)}')">✕ No me llegó</button>
       <button class="btn btn-success btn-md" onclick="submitConfirmarCerrado()" ${d.loading?"disabled":""}>
@@ -11452,6 +11491,184 @@ function renderReporteBolsinModal(){
   <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
     <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
     <button class="btn btn-success btn-md" onclick="descargarReporteBolsines()" ${reqs.length?"":"disabled"}>⬇ Descargar Excel</button>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+//  TESORERÍA → MÉTRICAS DE BOLSINES
+//  Seguimiento de lo que mandan las sucursales: cuánto se envió, cuánto
+//  está en distribución, en el buzón y retirado, y cuánto llegó con
+//  diferencias. Todo sale de los bolsines ya cargados (sin consultas extra).
+// ═══════════════════════════════════════════════════════════════════
+function tabsTes(){
+  const t=S.tabTes||"operacion";
+  return `<div class="toolbar" style="margin-bottom:16px"><div class="tabs">
+    <button class="tab ${t==="operacion"?"active":""}" onclick="S.tabTes='operacion';render()">📥 Operación</button>
+    <button class="tab ${t==="metricas"?"active":""}" onclick="S.tabTes='metricas';render()">📊 Métricas</button>
+  </div></div>`;
+}
+const _restarDias=(iso,n)=>{ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); };
+function tesMetRapido(dias){
+  const hoy=fechaISO();
+  S.tesMetHasta = dias===null ? "" : hoy;
+  S.tesMetDesde = dias===null ? "" : _restarDias(hoy,dias-1);
+  S.tesMetDiaSel=""; render();
+}
+function tesMetInicio(){ if(!S.tesMetInit){ S.tesMetInit=true; tesMetRapidoSilencioso(30); } }
+function tesMetRapidoSilencioso(dias){ const hoy=fechaISO(); S.tesMetHasta=hoy; S.tesMetDesde=_restarDias(hoy,dias-1); }
+function tesVerEnOperacion(o){
+  S.fTesDesde=o.desde||""; S.fTesHasta=o.hasta||""; S.fTesSucursal=o.sucursal||""; S.fTesEstado=o.estado||""; S.fTesTexto=""; S.fTesDif=!!o.dif;
+  S.tabTes="operacion"; render(); window.scrollTo({top:0,behavior:"smooth"});
+}
+function tesSeleccionarDia(key){ tesVerEnOperacion({desde:key,hasta:key,sucursal:S.tesMetSucursal}); }
+
+function tesMetDatos(){
+  const desde=S.tesMetDesde||"", hasta=S.tesMetHasta||"", suc=S.tesMetSucursal||"";
+  const enSuc=r=>!suc||normNotif(r.sucursal)===normNotif(suc);
+  const baseTodo=bolsinesTesBase().filter(enSuc);
+  const lista=baseTodo.filter(r=>{ const d=_diaDe(r.createdAt); return (!desde||d>=desde)&&(!hasta||d<=hasta); });
+  const cat=r=>{ const e=estadoBolsinTes(r); return e==="Lista para retirar"?"esperando":e==="En tránsito"?"transito":e==="En el buzón"?"buzon":e==="Entregada"?"retirado":"otros"; };
+  const g={esperando:[],transito:[],buzon:[],retirado:[],otros:[]};
+  lista.forEach(r=>g[cat(r)].push(r));
+  const bol=a=>a.reduce((s,r)=>s+bolsinesDe(r),0), cie=a=>a.reduce((s,r)=>s+cierresDe(r),0);
+  // Diferencias: a nivel de precinto
+  const dif={controladas:0,conDif:0,faltan:0,extras:0,cierresDistintos:0,cierFalt:0,cierSobr:0,cierDecl:0,cierRec:0};
+  const conDifPorSuc={}, porSuc={};
+  const ensureSuc=k=>porSuc[k]=porSuc[k]||{env:0,dist:0,buzon:0,ret:0,retSol:0,conDif:0,falt:0,sobr:0,sol:0};
+  lista.forEach(r=>{
+    const k=r.sucursal||"—", o=ensureSuc(k), c=cat(r);
+    o.sol++; o.env+=bolsinesDe(r);
+    if(c==="esperando"||c==="transito") o.dist+=bolsinesDe(r);
+    if(c==="buzon") o.buzon+=bolsinesDe(r);
+    if(c==="retirado"){ o.ret+=bolsinesDe(r); o.retSol++; if(tieneDiferencia(r)){ o.conDif++; dif.conDif++; } }
+    const d=c==="retirado"?diferenciasBolsin(r):null;
+    if(d){
+      dif.controladas++; dif.faltan+=d.faltan.length; dif.extras+=d.extras.length; dif.cierresDistintos+=d.cierres.length; dif.cierDecl+=d.cierDecl; dif.cierRec+=d.cierRec;
+      filasPrecintoDe(r).forEach(x=>{
+        if(x.extra){ dif.cierSobr+=(+x.cierresRecibidos||0); o.sobr+=(+x.cierresRecibidos||0); return; }
+        const rec=x.recibido===false?0:(x.cierresRecibidos!==undefined?+x.cierresRecibidos:(+x.cierres||0)), df=rec-(+x.cierres||0);
+        if(df<0){ dif.cierFalt+=-df; o.falt+=-df; } else if(df>0){ dif.cierSobr+=df; o.sobr+=df; }
+      });
+    }
+  });
+  // Tiempos
+  const horas=g.retirado.filter(r=>r.confirmadaSucursalAt&&r.createdAt).map(r=>(new Date(r.confirmadaSucursalAt)-new Date(r.createdAt))/36e5).filter(h=>h>=0&&isFinite(h));
+  const promH=horas.length?horas.reduce((s,h)=>s+h,0)/horas.length:null;
+  const espBuzon=g.buzon.map(r=>({r,h:r.deliveredAt?(Date.now()-new Date(r.deliveredAt))/36e5:null})).filter(x=>x.h!==null);
+  return {lista,g,suc,desde,hasta,baseTodo,
+    tot:{sol:lista.length,bol:bol(lista),cie:cie(lista)},
+    dist:{sol:g.esperando.length+g.transito.length,bol:bol(g.esperando)+bol(g.transito),esperando:bol(g.esperando),transito:bol(g.transito)},
+    buzon:{sol:g.buzon.length,bol:bol(g.buzon)}, ret:{sol:g.retirado.length,bol:bol(g.retirado),cie:cie(g.retirado)},
+    dif, porSuc, promH, buzonMas24:espBuzon.filter(x=>x.h>24).length, buzonMasViejo:espBuzon.length?Math.max(...espBuzon.map(x=>x.h)):null};
+}
+const _pl=(n,s,p)=>n===1?s:p;
+const _fmtHoras=h=>h===null||h===undefined?"—":h<1?`${Math.round(h*60)} min`:h<48?`${Math.round(h*10)/10} h`:`${Math.round(h/24*10)/10} días`;
+function tesMetSerie(m){
+  const serie=S.tesMetSerieSel||"enviados", desde=m.desde, hasta=m.hasta;
+  const dia=serie==="enviados"?(r=>_diaDe(r.createdAt)):(r=>_diaDe(r.confirmadaSucursalAt));
+  const filtro=serie==="enviados"?(r=>true):serie==="retirados"?(r=>r.estado==="Entregada"&&r.confirmadaSucursalAt):(r=>r.estado==="Entregada"&&r.confirmadaSucursalAt&&tieneDiferencia(r));
+  const valor=serie==="difs"?(r=>1):bolsinesDe;
+  const mapa={};
+  m.baseTodo.filter(filtro).forEach(r=>{ const d=dia(r); if(!d||(desde&&d<desde)||(hasta&&d>hasta)) return; mapa[d]=(mapa[d]||0)+valor(r); });
+  let dias=Object.keys(mapa).sort();
+  if(desde&&hasta){ const n=Math.round((new Date(hasta+"T12:00:00")-new Date(desde+"T12:00:00"))/864e5)+1; if(n>0&&n<=92){ dias=[]; for(let i=0;i<n;i++) dias.push(_restarDias(hasta,n-1-i)); } }
+  return dias.map(d=>({key:d, label:d.slice(8)+"/"+d.slice(5,7), valor:mapa[d]||0}));
+}
+function renderTesoreriaMetricas(){
+  tesMetInicio();
+  setTimeout(()=>document.querySelectorAll("[data-evwrap][data-fin]").forEach(w=>{ w.scrollLeft=w.scrollWidth; }),60);   // rangos largos: se ven los últimos días
+  const m=tesMetDatos(), sucs=[...new Set(bolsinesTesBase().map(r=>r.sucursal).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"es"));
+  const retPct=m.tot.bol?Math.round(m.ret.bol/m.tot.bol*100):0;
+  const difPct=m.ret.sol?Math.round(m.dif.conDif/m.ret.sol*100):0;
+  const sub=t=>`<span class="stat-sub"> ${t}</span>`;
+  const filasEstado=[
+    {label:"Esperando al repartidor",valor:m.g.esperando.reduce((s,r)=>s+bolsinesDe(r),0),color:"#f5a623",extra:`${m.g.esperando.length} solicitud${m.g.esperando.length!==1?"es":""}`},
+    {label:"En tránsito",valor:m.dist.transito,color:"#4f9eff",extra:`${m.g.transito.length} solicitud${m.g.transito.length!==1?"es":""}`},
+    {label:"En el buzón (esperando retiro)",valor:m.buzon.bol,color:"#2de0c4",extra:`${m.buzon.sol} solicitud${m.buzon.sol!==1?"es":""}`},
+    {label:"Retirados por Tesorería",valor:m.ret.bol,color:"#2ecc7a",extra:`${m.ret.sol} solicitud${m.ret.sol!==1?"es":""}`},
+    ...(m.g.otros.length?[{label:"Otros (cancelados, etc.)",valor:m.g.otros.reduce((s,r)=>s+bolsinesDe(r),0),color:"#6b7a99",extra:`${m.g.otros.length}`}]:[])
+  ].filter(f=>f.valor>0||true);
+  const sucFilas=Object.entries(m.porSuc).sort((a,b)=>b[1].env-a[1].env);
+  const puntos=tesMetSerie(m), serie=S.tesMetSerieSel||"enviados";
+  const colorSerie=serie==="enviados"?"#4f9eff":serie==="retirados"?"#2ecc7a":"#f05252";
+  return `
+  <div style="animation:fadeUp .3s ease">
+    ${pageHead("Tesorería","Métricas de bolsines",accesosRapidosHtml())}
+    ${S.miIdentidadTesoreria?`<div class="rep-toolbar" style="margin-bottom:16px"><button class="rep-yo" onclick="cambiarIdentidadTesoreria()">👤 <strong>${escH(S.miIdentidadTesoreria.nombre)}</strong><span class="rep-edit">✎</span></button></div>`:""}
+    ${tabsTes()}
+
+    <div class="tes-filtros tes-met-filtros">
+      <label class="tes-f"><span>Desde</span><input type="date" class="inp" value="${escH(S.tesMetDesde||"")}" onchange="S.tesMetDesde=this.value;render()"/></label>
+      <label class="tes-f"><span>Hasta</span><input type="date" class="inp" value="${escH(S.tesMetHasta||"")}" onchange="S.tesMetHasta=this.value;render()"/></label>
+      <label class="tes-f"><span>Sucursal</span>
+        <select class="inp" onchange="S.tesMetSucursal=this.value;render()"><option value="">Todas</option>${sucs.map(s=>`<option ${normNotif(S.tesMetSucursal)===normNotif(s)?"selected":""}>${escH(s)}</option>`).join("")}</select></label>
+      <div class="tes-f-btns" style="grid-column:span 2">
+        <button class="btn btn-ghost btn-md" onclick="tesMetRapido(1)">Hoy</button>
+        <button class="btn btn-ghost btn-md" onclick="tesMetRapido(7)">7 días</button>
+        <button class="btn btn-ghost btn-md" onclick="tesMetRapido(30)">30 días</button>
+        <button class="btn btn-ghost btn-md" onclick="tesMetRapido(null)">Todo</button>
+      </div>
+    </div>
+
+    <div class="cfg-stats">
+      ${statCard("📤","ENVIADOS",m.tot.bol+sub(`bolsines · ${m.tot.cie} cierres`),"var(--blue)")}
+      ${statCard("🚚","EN DISTRIBUCIÓN",m.dist.bol+sub(`bolsines · ${m.dist.esperando} esperan · ${m.dist.transito} en tránsito`),"var(--amber)")}
+      ${statCard("📫","EN EL BUZÓN",m.buzon.bol+sub(`bolsines${m.buzonMas24?` · ${m.buzonMas24} hace +24 h`:""}`),m.buzonMas24?"var(--red)":"var(--teal)")}
+      ${statCard("✅","RETIRADOS",m.ret.bol+sub(`bolsines · ${retPct}% de lo enviado`),"var(--green)")}
+      ${statCard("⚠️","CON DIFERENCIAS",m.dif.conDif+sub(`de ${m.ret.sol} retirad${m.ret.sol===1?"a":"as"} · ${difPct}%`),m.dif.conDif?"var(--red)":"var(--green)")}
+    </div>
+
+    <div class="cfg-grid">
+      <div class="card cfg-card">
+        <div class="cfg-tit"><div><h3>🧭 ¿Dónde está lo enviado?</h3><p>Bolsines por etapa, en el período elegido.</p></div></div>
+        ${m.tot.bol?barrasHorizontales(filasEstado,"#4f9eff",m.tot.bol):`<div class="pk-vacio">No hay bolsines en este período.</div>`}
+      </div>
+
+      <div class="card cfg-card">
+        <div class="cfg-tit"><div><h3>⚠️ Diferencias al recibir</h3><p>Entre lo declarado por la sucursal y lo que Tesorería contó. Sobre lo ya retirado.</p></div>
+          ${m.dif.conDif?`<button class="btn btn-ghost btn-sm" onclick="tesVerEnOperacion({desde:'${escH(m.desde)}',hasta:'${escH(m.hasta)}',sucursal:'${escH(m.suc)}',dif:true})">Ver los ${m.dif.conDif} →</button>`:""}</div>
+        <div class="tm-difs">
+          <div><strong>${m.dif.conDif}</strong><span>${_pl(m.dif.conDif,"solicitud","solicitudes")} con diferencias</span></div>
+          <div><strong>${m.dif.faltan}</strong><span>${_pl(m.dif.faltan,"precinto que no llegó","precintos que no llegaron")}</span></div>
+          <div><strong>${m.dif.extras}</strong><span>${_pl(m.dif.extras,"precinto de más (no figuraba)","precintos de más (no figuraban)")}</span></div>
+          <div><strong>${m.dif.cierresDistintos}</strong><span>${_pl(m.dif.cierresDistintos,"precinto con","precintos con")} otra cantidad de cierres</span></div>
+          <div class="mal"><strong>−${m.dif.cierFalt}</strong><span>${_pl(m.dif.cierFalt,"cierre faltante","cierres faltantes")}</span></div>
+          <div class="ok"><strong>+${m.dif.cierSobr}</strong><span>${_pl(m.dif.cierSobr,"cierre de más","cierres de más")}</span></div>
+        </div>
+        <div class="dv-pie" style="margin-top:10px">${m.dif.controladas?`Control por precinto en ${m.dif.controladas} solicitud${m.dif.controladas!==1?"es":""}: declarados ${m.dif.cierDecl} cierres → recibidos ${m.dif.cierRec}.`:"Todavía no hay recepciones controladas por precinto en este período."}</div>
+      </div>
+
+      <div class="card cfg-card cfg-doble">
+        <div class="cfg-tit"><div><h3>📈 Evolución por día</h3><p>Tocá un día para ver esos bolsines.</p></div>
+          <div class="tabs" style="margin:0">
+            <button class="tab ${serie==="enviados"?"active":""}" onclick="S.tesMetSerieSel='enviados';render()">Enviados</button>
+            <button class="tab ${serie==="retirados"?"active":""}" onclick="S.tesMetSerieSel='retirados';render()">Retirados</button>
+            <button class="tab ${serie==="difs"?"active":""}" onclick="S.tesMetSerieSel='difs';render()">Con diferencias</button>
+          </div></div>
+        ${graficoEvolucion(puntos,colorSerie,"tesoreria",{pasoMin:30,finAlFondo:true,onClickFn:"tesSeleccionarDia",unidadTxt:serie==="difs"?"solicitudes con diferencias":serie==="retirados"?"bolsines retirados":"bolsines enviados"})}
+      </div>
+
+      <div class="card cfg-card cfg-doble">
+        <div class="cfg-tit"><div><h3>🏪 Por sucursal</h3><p>Bolsines enviados en el período y cómo van. Las diferencias se miden sobre lo ya retirado.</p></div></div>
+        ${!sucFilas.length?`<div class="pk-vacio">Sin datos.</div>`:`
+        <div class="table-wrap"><table>
+          <thead><tr><th>Sucursal</th><th>Enviados</th><th>En distribución</th><th>En el buzón</th><th>Retirados</th><th>Con diferencias</th><th>Cierres −</th><th>Cierres +</th><th></th></tr></thead>
+          <tbody>${sucFilas.map(([k,o])=>`<tr>
+            <td><strong>${escH(k)}</strong></td><td class="mono">${o.env}</td><td class="mono">${o.dist||"—"}</td><td class="mono">${o.buzon||"—"}</td><td class="mono">${o.ret||"—"}</td>
+            <td>${o.conDif?`<span class="dv-chip mal">${o.conDif} de ${o.retSol}${o.retSol?` · ${Math.round(o.conDif/o.retSol*100)}%`:""}</span>`:(o.retSol?`<span class="dv-chip ok">Sin diferencias</span>`:"—")}</td>
+            <td class="mono" style="color:${o.falt?"#fca5a5":"inherit"}">${o.falt?"−"+o.falt:"—"}</td><td class="mono" style="color:${o.sobr?"#4ade80":"inherit"}">${o.sobr?"+"+o.sobr:"—"}</td>
+            <td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="tesVerEnOperacion({desde:'${escH(m.desde)}',hasta:'${escH(m.hasta)}',sucursal:'${escH(k).replace(/'/g,"&#39;")}'})">Ver →</button></td></tr>`).join("")}</tbody></table></div>`}
+      </div>
+
+      <div class="card cfg-card cfg-doble">
+        <div class="cfg-tit"><div><h3>⏱️ Tiempos</h3><p>Cuánto tarda un bolsín en llegar a manos de Tesorería.</p></div></div>
+        <div class="tm-difs">
+          <div><strong>${_fmtHoras(m.promH)}</strong><span>promedio desde que se envía hasta que se retira</span></div>
+          <div class="${m.buzonMas24?"mal":""}"><strong>${m.buzonMas24}</strong><span>en el buzón hace más de 24 h</span></div>
+          <div><strong>${_fmtHoras(m.buzonMasViejo)}</strong><span>el que más espera en el buzón</span></div>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
