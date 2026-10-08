@@ -735,6 +735,18 @@ tr[onclick]:active td{background:var(--s3)}
 .cc-res.ok{background:#2ecc7a14;color:#4ade80}
 .cc-res.mal{background:#f0525214;color:#fca5a5}
 
+
+.bp-dif{font-size:11.5px;font-weight:700;color:#fca5a5;margin-top:3px}
+.tes-chip.dif b{color:#fca5a5}
+.tes-chip.dif.on{background:#f052521f;border-color:var(--red);color:#fca5a5}
+.cc-prec.difiere{border-color:#f5a62366;background:#f5a62310}
+.cc-prec.extra{border-style:dashed}
+.cc-chk{display:flex;align-items:center;gap:10px;cursor:pointer}
+.cc-cie{display:flex;align-items:center;gap:6px;font-size:12px;color:#a9b8d0;margin-left:auto}
+.cc-cie input{width:74px;padding:6px 8px;background:var(--s3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:14px;text-align:center}
+.cc-cie.off{opacity:.45}
+.cc-e-p{flex:1;min-width:150px;padding:7px 10px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -759,7 +771,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261008-1351";
+const APP_VERSION = "20261008-1408";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1231,7 +1243,7 @@ let S = {
   fFrescoFecha:"",
   identidadRepModal: {dni:"", err:"", loading:false},
   selDevolucionId: null,
-  fTesDesde:"", fTesHasta:"", fTesSucursal:"", fTesEstado:"", fTesTexto:"", reporteBolsinModal:null,
+  fTesDesde:"", fTesHasta:"", fTesSucursal:"", fTesEstado:"", fTesTexto:"", fTesDif:false, reporteBolsinModal:null,
 
   // UI – tabs
   tabLog: "solicitudes",  // solicitudes | metricas
@@ -5475,7 +5487,8 @@ function renderTesoreria(){
   filtrarBolsinesTes(bolsinesBase,true).forEach(r=>{ const e=estadoBolsinTes(r); conteoEstadosTes[e]=(conteoEstadosTes[e]||0)+1; });
   const estadosTes = ["En el buzón","Lista para retirar","En tránsito","Entregada"].filter(e=>conteoEstadosTes[e]||S.fTesEstado===e)
     .concat(Object.keys(conteoEstadosTes).filter(e=>!["En el buzón","Lista para retirar","En tránsito","Entregada"].includes(e)));
-  const hayFiltroTes = !!(S.fTesDesde||S.fTesHasta||S.fTesSucursal||S.fTesEstado||S.fTesTexto);
+  const hayFiltroTes = !!(S.fTesDesde||S.fTesHasta||S.fTesSucursal||S.fTesEstado||S.fTesTexto||S.fTesDif);
+  const nConDif = filtrarBolsinesTes(bolsinesBase,true).filter(tieneDiferencia).length;
   const totBolTes = bolsinesEnviados.reduce((s,r)=>s+bolsinesDe(r),0), totCieTes = bolsinesEnviados.reduce((s,r)=>s+cierresDe(r),0);
   const hoyTes = fechaISO();
   const deHoy = bolsinesBase.filter(r=>_diaDe(r.createdAt)===hoyTes);
@@ -5603,6 +5616,7 @@ function renderTesoreria(){
       <div class="tes-chips">
         <button class="tes-chip ${!S.fTesEstado?"on":""}" onclick="S.fTesEstado='';render()">Todos <b>${Object.values(conteoEstadosTes).reduce((s,n)=>s+n,0)}</b></button>
         ${estadosTes.map(e=>`<button class="tes-chip ${S.fTesEstado===e?"on":""}" onclick="S.fTesEstado=S.fTesEstado==='${escH(e)}'?'':'${escH(e)}';render()">${escH(etiquetaEstadoTes(e))} <b>${conteoEstadosTes[e]||0}</b></button>`).join("")}
+        <button class="tes-chip dif ${S.fTesDif?"on":""}" onclick="S.fTesDif=!S.fTesDif;render()" title="Bolsines en los que llegó otra cosa de lo declarado">⚠️ Con diferencias <b>${nConDif}</b></button>
       </div>
       <div class="tes-resumen">Mostrando <strong>${bolsinesEnviados.length}</strong> solicitud${bolsinesEnviados.length!==1?"es":""} · <strong>${totBolTes}</strong> ${totBolTes!==1?"bolsines":"bolsín"} · <strong>${totCieTes}</strong> cierre${totCieTes!==1?"s":""}</div>
       ${bolsinesEnviados.length===0?`<p style="color:var(--muted);font-size:13px">${hayFiltroTes?"No hay bolsines con ese filtro.":"Todavía no llegó ningún bolsín."}</p>`:`
@@ -5615,7 +5629,8 @@ function renderTesoreria(){
               <td class="id-cell">${escH(r.id)}</td>
               <td>${escH(r.sucursal)}</td>
               <td><div class="trunc">${escH(r.descripcion)}</div>
-                ${filasPrecintoDe(r).length?`<div class="bp-mini">🔒 ${filasPrecintoDe(r).slice(0,4).map(x=>escH(x.precinto)).join(" · ")}${filasPrecintoDe(r).length>4?` · +${filasPrecintoDe(r).length-4}`:""}</div>`:""}</td>
+                ${filasPrecintoDe(r).length?`<div class="bp-mini">🔒 ${filasPrecintoDe(r).slice(0,4).map(x=>escH(x.precinto)).join(" · ")}${filasPrecintoDe(r).length>4?` · +${filasPrecintoDe(r).length-4}`:""}</div>`:""}
+                ${tieneDiferencia(r)?`<div class="bp-dif">⚠️ Con diferencias al recibir</div>`:""}</td>
               <td class="muted-cell">${fdt(r.createdAt)}</td>
               <td class="muted-cell">${r.deliveredAt?fdt(r.deliveredAt):"—"}</td>
               <td>${estadoBadges(r)}</td>
@@ -8979,15 +8994,27 @@ function renderDetalle(){
     if(!Array.isArray(cajas)||!cajas.length) return "";
     const prec = cajas.filter(x=>x && x.precinto!==undefined);
     if(prec.length){
-      const tc = prec.reduce((s,x)=>s+(+x.cierres||0),0);
+      const dec = prec.filter(x=>!x.extra), ext = prec.filter(x=>x.extra);
+      const tc = dec.reduce((s,x)=>s+(+x.cierres||0),0);
+      const dif = diferenciasBolsin(r);
       return `<div class="field">
-        <label>Precintos · ${prec.length} ${prec.length!==1?"bolsines":"bolsín"} · ${tc} cierre${tc!==1?"s":""}</label>
+        <label>Precintos · ${dec.length} ${dec.length!==1?"bolsines":"bolsín"} · ${tc} cierre${tc!==1?"s":""} declarados</label>
+        ${dif?`<div class="cc-res ${dif.hay?"mal":"ok"}" style="margin:6px 0 8px">
+          Recibido por Tesorería: <strong>${dif.bolsRec}</strong> ${dif.bolsRec!==1?"bolsines":"bolsín"} · <strong>${dif.cierRec}</strong> cierre${dif.cierRec!==1?"s":""}
+          ${dif.hay?`<div style="margin-top:4px">⚠️ Diferencia: ${dif.bolsRec-dif.bolsDecl>0?"+":""}${dif.bolsRec-dif.bolsDecl} ${Math.abs(dif.bolsRec-dif.bolsDecl)!==1?"bolsines":"bolsín"} · ${dif.cierRec-dif.cierDecl>0?"+":""}${dif.cierRec-dif.cierDecl} cierre${Math.abs(dif.cierRec-dif.cierDecl)!==1?"s":""}</div>`:`<div style="margin-top:4px">✅ Coincide con lo declarado</div>`}
+        </div>`:""}
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
-          ${prec.map(x=>`<div class="bp-det ${x.recibido===false?"falto":""}">
+          ${dec.map(x=>{
+            const cambio = x.recibido===true && x.cierresRecibidos!==undefined && +x.cierresRecibidos!==+x.cierres;
+            return `<div class="bp-det ${x.recibido===false||cambio?"falto":""}">
             <div class="bp-det-top"><span class="bp-det-n">🔒 ${escH(x.precinto)}${x.recibido===true?` <span class="bp-ok">✓ recibido</span>`:x.recibido===false?` <span class="bp-falto">✕ NO llegó</span>`:""}</span>
-              <span>${escH(String(x.cierres))} cierre${+x.cierres!==1?"s":""}${x.caja?` · Caja ${escH(x.caja)}`:""}</span></div>
+              <span>${cambio?`<s style="opacity:.6">${escH(String(x.cierres))}</s> → <strong>${escH(String(x.cierresRecibidos))}</strong> cierre${+x.cierresRecibidos!==1?"s":""} <span class="bp-falto">(declarados ${escH(String(x.cierres))})</span>`:`${escH(String(x.cierres))} cierre${+x.cierres!==1?"s":""}`}${x.caja?` · Caja ${escH(x.caja)}`:""}</span></div>
             ${x.comentario?`<div class="bp-det-c">${escH(x.comentario)}</div>`:""}
-          </div>`).join("")}
+          </div>`;}).join("")}
+          ${ext.length?`<div class="dd-tit" style="margin:10px 0 2px">No figuraba en el envío</div>`:""}
+          ${ext.map(x=>`<div class="bp-det falto">
+            <div class="bp-det-top"><span class="bp-det-n">🔒 ${escH(x.precinto)} <span class="bp-falto">➕ llegó de más</span></span>
+              <span><strong>${escH(String(x.cierresRecibidos??0))}</strong> cierre${+x.cierresRecibidos!==1?"s":""}</span></div></div>`).join("")}
         </div>
       </div>`;
     }
@@ -9320,26 +9347,44 @@ function renderConfirmarCerradoModal(){
         onkeydown="if(event.key==='Enter')submitConfirmarCerrado()"/>
       ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
     </div>`}
-    ${r && r.tipoPedido==="bolsin" && filasPrecintoDe(r).length?`
+    ${r && r.tipoPedido==="bolsin" && filasPrecintoDe(r).length?(()=>{
+      const filas=filasPrecintoDe(r), num=v=>{ const n=parseInt(String(v).trim(),10); return isNaN(n)?null:n; };
+      const llego=i=>d.llegaron[i]!==false;
+      const cierRec=filas.reduce((s,x,i)=>s+(llego(i)?(num(d.cierresRec[i])??(+x.cierres||0)):0),0)+(d.extras||[]).reduce((s,e)=>s+(num(e.cierres)||0),0);
+      const bolRec=filas.filter((x,i)=>llego(i)).length+(d.extras||[]).filter(e=>String(e.precinto||"").trim()).length;
+      const cierDecl=filas.reduce((s,x)=>s+(+x.cierres||0),0), bolDecl=filas.length;
+      const hayDif=bolRec!==bolDecl||cierRec!==cierDecl||filas.some((x,i)=>llego(i)&&(num(d.cierresRec[i])??+x.cierres)!==+x.cierres);
+      return `
     <div class="field" style="margin-top:12px">
-      <label>Controlá cada precinto <span class="req">*</span> <span style="color:var(--faint);font-size:12px;font-weight:400">— destildá el que no llegó</span></label>
+      <label>Controlá cada precinto <span class="req">*</span> <span style="color:var(--faint);font-size:12px;font-weight:400">— destildá el que no llegó y corregí los cierres si contaste otra cantidad</span></label>
       <div class="cc-precintos">
-        ${filasPrecintoDe(r).map((x,i)=>`
-        <label class="cc-prec ${d.llegaron[i]===false?"falta":""}">
-          <input type="checkbox" class="chk-round" ${d.llegaron[i]!==false?"checked":""} onchange="S.confirmarCerradoModal.llegaron[${i}]=this.checked;render()"/>
-          <span class="cc-n">🔒 ${escH(x.precinto)}</span>
-          <span class="cc-m">${escH(String(x.cierres))} cierre${+x.cierres!==1?"s":""}${x.caja?` · Caja ${escH(x.caja)}`:""}${x.comentario?` · ${escH(x.comentario)}`:""}</span>
-        </label>`).join("")}
+        ${filas.map((x,i)=>`
+        <div class="cc-prec ${!llego(i)?"falta":(num(d.cierresRec[i])??+x.cierres)!==+x.cierres?"difiere":""}">
+          <label class="cc-chk"><input type="checkbox" class="chk-round" ${llego(i)?"checked":""} onchange="S.confirmarCerradoModal.llegaron[${i}]=this.checked;render()"/>
+            <span class="cc-n">🔒 ${escH(x.precinto)}</span></label>
+          <span class="cc-m">${x.caja?`Caja ${escH(x.caja)} · `:""}declarados <strong>${escH(String(x.cierres))}</strong> cierre${+x.cierres!==1?"s":""}${x.comentario?` · ${escH(x.comentario)}`:""}</span>
+          <label class="cc-cie ${!llego(i)?"off":""}">Cierres que había
+            <input type="number" min="0" step="1" inputmode="numeric" value="${escH(String(llego(i)?d.cierresRec[i]:0))}" ${llego(i)?"":"disabled"}
+              oninput="S.confirmarCerradoModal.cierresRec[${i}]=this.value" onchange="render()"/></label>
+        </div>`).join("")}
+        ${(d.extras||[]).map((e,i)=>`
+        <div class="cc-prec extra">
+          <span class="cc-n">➕</span>
+          <input class="inp cc-e-p" type="text" placeholder="N° de precinto que llegó" value="${escH(e.precinto)}" oninput="S.confirmarCerradoModal.extras[${i}].precinto=this.value" onchange="render()"/>
+          <label class="cc-cie">Cierres <input type="number" min="0" step="1" inputmode="numeric" value="${escH(String(e.cierres))}" oninput="S.confirmarCerradoModal.extras[${i}].cierres=this.value" onchange="render()"/></label>
+          <button class="btn btn-ghost btn-sm" onclick="S.confirmarCerradoModal.extras.splice(${i},1);render()" title="Quitar">✕</button>
+        </div>`).join("")}
       </div>
-      <div class="cc-res ${d.llegaron.some(v=>v===false)?"mal":"ok"}">
-        ${d.llegaron.some(v=>v===false)
-          ? `⚠️ Llegaron <strong>${d.llegaron.filter(v=>v!==false).length}</strong> de ${d.llegaron.length} — faltan ${d.llegaron.map((v,i)=>v===false?filasPrecintoDe(r)[i].precinto:null).filter(Boolean).map(escH).join(", ")}`
-          : `✅ Llegaron los ${d.llegaron.length} precintos`}
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="S.confirmarCerradoModal.extras.push({precinto:'',cierres:''});render()">+ Llegó un precinto que no figuraba en el envío</button>
+      <div class="cc-res ${hayDif?"mal":"ok"}">
+        Declarado: <strong>${bolDecl}</strong> ${bolDecl!==1?"bolsines":"bolsín"} · <strong>${cierDecl}</strong> cierre${cierDecl!==1?"s":""}
+        &nbsp;→&nbsp; Recibido: <strong>${bolRec}</strong> ${bolRec!==1?"bolsines":"bolsín"} · <strong>${cierRec}</strong> cierre${cierRec!==1?"s":""}
+        ${hayDif?`<div style="margin-top:4px">⚠️ Diferencia: ${bolRec-bolDecl>0?"+":""}${bolRec-bolDecl} ${Math.abs(bolRec-bolDecl)!==1?"bolsines":"bolsín"} · ${cierRec-cierDecl>0?"+":""}${cierRec-cierDecl} cierre${Math.abs(cierRec-cierDecl)!==1?"s":""} <span style="color:var(--muted)">(queda anotada)</span></div>`:`<div style="margin-top:4px">✅ Coincide con lo declarado</div>`}
       </div>
-    </div>`:r && r.tipoPedido==="bolsin"?`
+    </div>`;})():r && r.tipoPedido==="bolsin"?`
     <div class="field" style="margin-top:12px">
       <label>Cantidad de bolsines que retiraste <span class="req">*</span></label>
-      <input id="confcerrado-cantidad" type="number" min="0" class="inp" value="${escH(String(r.cantidad))}"/>
+      <input id="confcerrado-cantidad" type="number" min="0" class="inp" value="${escH(String(d.cantidad??r.cantidad))}" oninput="S.confirmarCerradoModal.cantidad=this.value"/>
       <span style="font-size:12px;color:var(--muted)">Se declararon ${escH(String(r.cantidad))} — corregí si al contarlos te dio otro número.</span>
     </div>`:""}
     <div class="field" style="margin-top:12px">
@@ -9619,7 +9664,10 @@ function openEditar(id){
   if(r.detalleCajas){
     try{ const arr = JSON.parse(r.detalleCajas); if(Array.isArray(arr)&&arr.length) cajas = arr; }catch(e){}
   }
-  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", sucursal:r.sucursal||"", destino:r.destino||"", area:r.area||"", unidad:r.unidad||"", cajas, err:"", loading:false};
+  // lo que Tesorería agregó al recibir ("llegó y no figuraba") no se edita acá: se conserva tal cual
+  const extrasOcultos = (cajas||[]).filter(x=>x && x.extra);
+  if(cajas && extrasOcultos.length) cajas = cajas.filter(x=>!(x&&x.extra));
+  S.editarModal = {id, descripcion:r.descripcion||"", cantidad:r.cantidad||"", observaciones:r.observaciones||"", sucursal:r.sucursal||"", destino:r.destino||"", area:r.area||"", unidad:r.unidad||"", cajas, extrasOcultos, err:"", loading:false};
   S.modal = "editar";
   render();
 }
@@ -9644,10 +9692,13 @@ async function submitEditar(){
       const k=normPrecinto(precinto);
       if(vistos.has(k)){ S.editarModal.err=`El precinto ${precinto} está repetido.`; render(); return; }
       vistos.add(k);
-      filas.push({precinto, cierres, caja:String(x.caja||"").trim(), comentario:String(x.comentario||"").trim()});
+      // se conserva lo que Tesorería ya anotó de ese precinto (si llegó, cuántos cierres había)
+      filas.push({...x, precinto, cierres, caja:String(x.caja||"").trim(), comentario:String(x.comentario||"").trim()});
     }
-    changes.detalleCajas = JSON.stringify(filas);
-    changes.cantidad = filas.length;
+    const todasLasFilas = [...filas, ...(d.extrasOcultos||[])];
+    changes.detalleCajas = JSON.stringify(todasLasFilas);
+    // si Tesorería ya controló, "cantidad" es lo que llegó; si no, lo declarado
+    changes.cantidad = todasLasFilas.some(x=>x.recibido!==undefined) ? todasLasFilas.filter(x=>x.recibido!==false).length : filas.length;
     changes.descripcion = `Bolsines (${filas.length}) · ${filas.reduce((s,f)=>s+f.cierres,0)} cierres`;
   } else if(S.user?.rol==="admin" && Array.isArray(d.cajas)){
     const cajasValidas = d.cajas
@@ -10455,7 +10506,8 @@ function openConfirmarCerrado(id){
   const rq = S.requests.find(x=>x.id===id);
   // por cada precinto declarado: ¿llegó? (arranca todo tildado; se destilda lo que falte)
   const llegaron = rq ? filasPrecintoDe(rq).map(()=>true) : [];
-  S.confirmarCerradoModal = {id, dni: identidadFija?identidadFija.dni:"", err:"", loading:false, nombreOk: identidadFija?identidadFija.nombre:"", llegaron};
+  const cierresRec = rq ? filasPrecintoDe(rq).map(x=>String(x.cierres??"")) : [];          // arranca igual a lo declarado
+  S.confirmarCerradoModal = {id, dni: identidadFija?identidadFija.dni:"", err:"", loading:false, nombreOk: identidadFija?identidadFija.nombre:"", llegaron, cierresRec, extras:[]};
   S.modal = "confirmarCerrado";
   render();
 }
@@ -10492,18 +10544,34 @@ async function submitConfirmarCerrado(){
   };
   let comentarioFinal = comentario;
   if(r && r.tipoPedido==="bolsin" && filasPrecintoDe(r).length){
-    // control por precinto: queda anotado cuáles llegaron y cuáles no
+    // control por precinto: queda anotado qué llegó, cuántos cierres había y qué apareció sin figurar
     const filas = filasPrecintoDe(r), llegaron = d.llegaron||[];
-    const faltan = filas.filter((x,i)=>llegaron[i]===false);
-    const nuevasFilas = filas.map((x,i)=>({...x, recibido: llegaron[i]!==false}));
-    changes.detalleCajas = JSON.stringify(nuevasFilas);
-    if(faltan.length){
-      const nota = `⚠️ Tesorería recibió ${filas.length-faltan.length} de ${filas.length} precintos — NO llegaron: ${faltan.map(x=>x.precinto).join(", ")}`;
+    const num = v => { const n=parseInt(String(v??"").trim(),10); return isNaN(n)?null:n; };
+    const nuevasFilas = filas.map((x,i)=>{
+      const llego = llegaron[i]!==false, rec = llego ? (num((d.cierresRec||[])[i]) ?? (+x.cierres||0)) : 0;
+      return {...x, recibido:llego, cierresRecibidos:rec};
+    });
+    const extras = (d.extras||[]).filter(e=>String(e.precinto||"").trim()).map(e=>({
+      precinto:String(e.precinto).trim(), cierres:0, caja:"", comentario:"Llegó y no figuraba en el envío", recibido:true, cierresRecibidos:num(e.cierres)||0, extra:true}));
+    const repetido = extras.find(e=>nuevasFilas.some(x=>normPrecinto(x.precinto)===normPrecinto(e.precinto)) || extras.filter(y=>normPrecinto(y.precinto)===normPrecinto(e.precinto)).length>1);
+    if(repetido){ S.confirmarCerradoModal.loading=false; S.confirmarCerradoModal.err=`El precinto ${repetido.precinto} ya figura en este envío o está repetido.`; render(); return; }
+    changes.detalleCajas = JSON.stringify([...nuevasFilas,...extras]);
+    const dif = diferenciasBolsin({detalleCajas:changes.detalleCajas});
+    changes.cantidad = dif.bolsRec;                                     // bolsines que efectivamente llegaron
+    const notas = [];
+    if(dif.faltan.length) notas.push(`NO llegaron: ${dif.faltan.map(x=>x.precinto).join(", ")}`);
+    dif.cierres.forEach(x=>notas.push(`${x.precinto}: declarados ${x.decl} cierres, había ${x.rec}`));
+    dif.extras.forEach(x=>{
+      const otro=S.requests.find(q=>q.id!==r.id && q.tipoPedido==="bolsin" && filasPrecintoDe(q).some(f=>normPrecinto(f.precinto)===normPrecinto(x.precinto)));
+      notas.push(`llegó el precinto ${x.precinto} (${x.cierresRecibidos} cierres) que no figuraba${otro?` — figura en el envío ${otro.id} de ${otro.sucursal}`:""}`);
+    });
+    if(notas.length){
+      const nota = `⚠️ Diferencias al recibir (declarado ${dif.bolsDecl} bolsines/${dif.cierDecl} cierres → recibido ${dif.bolsRec}/${dif.cierRec}): ${notas.join("; ")}`;
       comentarioFinal = comentarioFinal ? comentarioFinal+" · "+nota : nota;
-      changes.cantidad = filas.length-faltan.length;
     }
   } else if(r && r.tipoPedido==="bolsin"){
-    const cantidadRetirada = +($("confcerrado-cantidad")?.value ?? r.cantidad);
+    // (el campo ya no está en pantalla cuando se llega acá, por eso se lee del estado)
+    const cantidadRetirada = +(d.cantidad ?? $("confcerrado-cantidad")?.value ?? r.cantidad);
     if(!isNaN(cantidadRetirada) && cantidadRetirada!==+r.cantidad){
       const nota = `⚠️ Tesorería retiró ${cantidadRetirada} — se habían declarado ${r.cantidad}`;
       comentarioFinal = comentarioFinal ? comentarioFinal+" · "+nota : nota;
@@ -11186,8 +11254,26 @@ async function submitNuevoLote(){
 // "Entregada (sin confirmar)" de un bolsín es lo mismo que "En el buzón" (dato viejo sin migrar)
 function estadoBolsinTes(r){ return (r.estado==="Entregada (sin confirmar)") ? "En el buzón" : r.estado; }
 function etiquetaEstadoTes(e){ return e==="Entregada" ? "Retirado por Tesorería" : e; }
-function bolsinesDe(r){ const f=filasPrecintoDe(r); return f.length ? f.length : (+r.cantidad||0); }
-function cierresDe(r){ return filasPrecintoDe(r).reduce((s,x)=>s+(+x.cierres||0),0); }
+// Lo DECLARADO por la sucursal (sin contar lo que Tesorería agrega como "no figuraba")
+function filasDeclaradas(r){ return filasPrecintoDe(r).filter(x=>!x.extra); }
+function bolsinesDe(r){ const f=filasDeclaradas(r); return f.length ? f.length : (+r.cantidad||0); }
+function cierresDe(r){ return filasDeclaradas(r).reduce((s,x)=>s+(+x.cierres||0),0); }
+// Lo que Tesorería CONTÓ al recibir (null si todavía no hizo el control por precinto)
+function diferenciasBolsin(r){
+  const todas=filasPrecintoDe(r), dec=todas.filter(x=>!x.extra), ext=todas.filter(x=>x.extra);
+  if(!todas.some(x=>x.recibido!==undefined)) return null;
+  const llegaron=dec.filter(x=>x.recibido!==false);
+  const faltan=dec.filter(x=>x.recibido===false);
+  const cierres=llegaron.filter(x=>x.cierresRecibidos!==undefined && +x.cierresRecibidos!==+x.cierres).map(x=>({precinto:x.precinto,decl:+x.cierres||0,rec:+x.cierresRecibidos||0}));
+  const cierRec=llegaron.reduce((s,x)=>s+(x.cierresRecibidos!==undefined?(+x.cierresRecibidos||0):(+x.cierres||0)),0)+ext.reduce((s,x)=>s+(+x.cierresRecibidos||0),0);
+  return {faltan,cierres,extras:ext,bolsDecl:dec.length,bolsRec:llegaron.length+ext.length,
+          cierDecl:dec.reduce((s,x)=>s+(+x.cierres||0),0),cierRec,
+          hay:!!(faltan.length||cierres.length||ext.length)};
+}
+function tieneDiferencia(r){
+  const d=diferenciasBolsin(r);
+  return d ? d.hay : /Tesorería retiró/.test(String(r.motivoNoRecibido||""));
+}
 function bolsinesTesBase(){
   return S.requests.filter(r=>r.tipoPedido==="bolsin" && r.destino==="Tesorería")
     .sort((a,b)=>(b.createdAt||"").localeCompare(a.createdAt||""));
@@ -11199,6 +11285,7 @@ function filtrarBolsinesTes(lista, sinEstado){
   if(S.fTesHasta) r=r.filter(x=>_diaDe(x.createdAt)<=S.fTesHasta);
   if(S.fTesSucursal) r=r.filter(x=>normNotif(x.sucursal)===normNotif(S.fTesSucursal));
   if(!sinEstado && S.fTesEstado) r=r.filter(x=>estadoBolsinTes(x)===S.fTesEstado);
+  if(S.fTesDif) r=r.filter(tieneDiferencia);
   if(S.fTesTexto){
     const q=normNotif(S.fTesTexto);
     r=r.filter(x=>[x.id,x.sucursal,x.descripcion,x.observaciones,...filasPrecintoDe(x).map(f=>f.precinto)].some(v=>normNotif(v).includes(q)));
@@ -11206,7 +11293,7 @@ function filtrarBolsinesTes(lista, sinEstado){
   return r;
 }
 function tesHoy(){ S.fTesDesde=fechaISO(); S.fTesHasta=fechaISO(); render(); }
-function tesLimpiar(){ S.fTesDesde=""; S.fTesHasta=""; S.fTesSucursal=""; S.fTesEstado=""; S.fTesTexto=""; render(); }
+function tesLimpiar(){ S.fTesDesde=""; S.fTesHasta=""; S.fTesSucursal=""; S.fTesEstado=""; S.fTesTexto=""; S.fTesDif=false; render(); }
 
 // ── Excel (.xlsx) generado en el navegador, sin librerías ──
 const _crcTabla=(()=>{ const t=new Uint32Array(256); for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
@@ -11289,29 +11376,45 @@ function hojasReporteBolsines(reqs){
   const H=t=>({v:t,s:1}), T=t=>({v:t,s:2});
   const hora=iso=>{ try{ return iso?new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",hour12:false}):""; }catch(e){ return ""; } };
   const fecha=iso=>{ const d=_diaDe(iso); return d?d.split("-").reverse().join("/"):""; };
-  const cab=["Fecha de envío","Hora","N° solicitud","Sucursal","N° de precinto","Cant. de cierres","Caja","Cant. de bolsines","Comentario del precinto","Estado","Enviado por","Levantado por (repartidor)","Recibido en Tesorería","Retirado por (Tesorería)","Observaciones","Precinto recibido"];
+  const cab=["Fecha de envío","Hora","N° solicitud","Sucursal","N° de precinto","Cant. de cierres","Caja","Cant. de bolsines","Comentario del precinto","Estado","Enviado por","Levantado por (repartidor)","Recibido en Tesorería","Retirado por (Tesorería)","Observaciones","Precinto recibido","Cierres recibidos","Diferencia de cierres"];
   const filas=[cab.map(H)];
+  let tCierRec=0, tDifCie=0;
   reqs.forEach(r=>{
     const comunes=[fecha(r.createdAt), hora(r.createdAt), r.id, r.sucursal||""];
     const colas=[etiquetaEstadoTes(estadoBolsinTes(r)), r.solicitante||"", r.nombreQuienLevanto||"",
       r.confirmadaSucursalAt?`${fecha(r.confirmadaSucursalAt)} ${hora(r.confirmadaSucursalAt)}`:(r.deliveredAt?`${fecha(r.deliveredAt)} ${hora(r.deliveredAt)} (en el buzón)`:""),
       r.nombreQuienRecibio||"", [r.observaciones,r.motivoNoRecibido].filter(Boolean).join(" · ")];
     const pr=filasPrecintoDe(r);
-    if(pr.length) pr.forEach(x=>filas.push([...comunes, x.precinto, +x.cierres||0, x.caja||"", 1, x.comentario||"", ...colas, x.recibido===true?"Recibido":x.recibido===false?"NO LLEGÓ":""]));
+    if(pr.length) pr.forEach(x=>{
+      const controlado = x.recibido!==undefined;
+      const rec = x.extra ? (+x.cierresRecibidos||0) : (x.recibido===false ? 0 : (x.cierresRecibidos!==undefined ? +x.cierresRecibidos : (controlado?(+x.cierres||0):null)));
+      const dif = rec===null ? "" : rec-(x.extra?0:(+x.cierres||0));
+      if(rec!==null){ tCierRec+=rec; tDifCie+=dif; }
+      filas.push([...comunes, x.precinto, x.extra?0:(+x.cierres||0), x.caja||"", x.extra?0:1, x.comentario||"", ...colas,
+        x.extra?"EXTRA (no figuraba)":x.recibido===true?"Recibido":x.recibido===false?"NO LLEGÓ":"", rec===null?"":rec, dif]);
+    });
     else{
       let legacy=""; try{ const a=JSON.parse(r.detalleCajas||"[]"); if(Array.isArray(a)) legacy=a.filter(x=>x&&x.caja!==undefined).map(x=>`Caja ${x.caja||"s/n"}: ${x.cantidad}`).join(" · "); }catch(e){}
-      filas.push([...comunes, "(sin detalle de precintos)", "", "", +r.cantidad||0, legacy, ...colas]);
+      filas.push([...comunes, "(sin detalle de precintos)", "", "", +r.cantidad||0, legacy, ...colas, "", "", ""]);
     }
   });
   const tb=reqs.reduce((s,r)=>s+bolsinesDe(r),0), tc=reqs.reduce((s,r)=>s+cierresDe(r),0);
-  filas.push([T("TOTAL"),"","","","",T(tc),"",T(tb),"","","","","","","",""]);
+  filas.push([T("TOTAL"),"","","","",T(tc),"",T(tb),"","","","","","","","",T(tCierRec),T(tDifCie)]);
+  // Resumen por sucursal: lo declarado y, de lo ya controlado, lo que efectivamente llegó
   const porSuc={};
-  reqs.forEach(r=>{ const k=r.sucursal||"—"; const o=porSuc[k]=porSuc[k]||{sol:0,bol:0,cie:0}; o.sol++; o.bol+=bolsinesDe(r); o.cie+=cierresDe(r); });
-  const res=[["Sucursal","Solicitudes","Bolsines","Cierres"].map(H),
-    ...Object.entries(porSuc).sort((a,b)=>a[0].localeCompare(b[0],"es")).map(([k,o])=>[k,o.sol,o.bol,o.cie]),
-    [T("TOTAL"),T(reqs.length),T(tb),T(tc)]];
-  return [{nombre:"Bolsines", filas, anchos:[14,8,14,18,20,14,10,16,30,22,24,26,26,24,34,18]},
-          {nombre:"Resumen por sucursal", filas:res, anchos:[26,14,12,12]}];
+  reqs.forEach(r=>{
+    const k=r.sucursal||"—"; const o=porSuc[k]=porSuc[k]||{sol:0,bol:0,cie:0,ctl:0,bolDeclCtl:0,cieDeclCtl:0,bolRec:0,cieRec:0,conDif:0};
+    o.sol++; o.bol+=bolsinesDe(r); o.cie+=cierresDe(r);
+    const d=diferenciasBolsin(r);
+    if(d){ o.ctl++; o.bolDeclCtl+=d.bolsDecl; o.cieDeclCtl+=d.cierDecl; o.bolRec+=d.bolsRec; o.cieRec+=d.cierRec; if(d.hay) o.conDif++; }
+  });
+  const sumar=(f)=>Object.values(porSuc).reduce((s,o)=>s+f(o),0);
+  const cabRes=["Sucursal","Solicitudes","Bolsines declarados","Cierres declarados","Controladas por Tesorería","Bolsines recibidos","Cierres recibidos","Diferencia de bolsines","Diferencia de cierres","Solicitudes con diferencias"];
+  const res=[cabRes.map(H),
+    ...Object.entries(porSuc).sort((a,b)=>a[0].localeCompare(b[0],"es")).map(([k,o])=>[k,o.sol,o.bol,o.cie,o.ctl,o.ctl?o.bolRec:"",o.ctl?o.cieRec:"",o.ctl?o.bolRec-o.bolDeclCtl:"",o.ctl?o.cieRec-o.cieDeclCtl:"",o.conDif]),
+    [T("TOTAL"),T(reqs.length),T(tb),T(tc),T(sumar(o=>o.ctl)),T(sumar(o=>o.bolRec)),T(sumar(o=>o.cieRec)),T(sumar(o=>o.bolRec-o.bolDeclCtl)),T(sumar(o=>o.cieRec-o.cieDeclCtl)),T(sumar(o=>o.conDif))]];
+  return [{nombre:"Bolsines", filas, anchos:[14,8,14,18,20,14,10,16,30,22,24,26,26,24,40,20,16,18]},
+          {nombre:"Resumen por sucursal", filas:res, anchos:[26,14,18,18,22,18,16,20,20,24]}];
 }
 function descargarReporteBolsines(){
   const o=S.reporteBolsinModal; if(!o) return;
