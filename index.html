@@ -647,6 +647,60 @@ tr[onclick]:active td{background:var(--s3)}
 @media(max-width:900px){ .cfg-grid{grid-template-columns:1fr} .dv-barra{grid-template-columns:1fr 1fr} .dv-q{grid-column:1/-1} }
 @media(max-width:560px){ .cfg-grid{grid-template-columns:1fr} .dv-barra{grid-template-columns:1fr} }
 
+
+/* ── Devoluciones: fotos, detalle, trazabilidad ── */
+.dev-num{font-family:var(--mono);font-size:12px;color:var(--blue);background:#4f9eff14;border:1px solid #4f9eff44;border-radius:999px;padding:1px 9px;margin-left:4px}
+.fotos-form{display:flex;gap:10px;flex-wrap:wrap}
+.foto-th{position:relative;width:92px;height:92px;border-radius:10px;overflow:hidden;border:1px solid var(--border2);background:var(--s2)}
+.foto-th img{width:100%;height:100%;object-fit:cover;display:block}
+.foto-x{position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;border:0;background:rgba(0,0,0,.65);color:#fff;font-size:12px;cursor:pointer;line-height:1}
+.foto-tag{position:absolute;left:0;bottom:0;right:0;text-align:center;background:rgba(79,158,255,.85);color:#fff;font-size:11px;font-weight:700;padding:2px 0}
+.foto-add{width:92px;height:92px;border-radius:10px;border:1.5px dashed var(--border2);background:var(--s2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;cursor:pointer;color:#a9b8d0;font-size:11.5px;font-weight:600;text-align:center;padding:6px;transition:border-color .15s,background .15s}
+.foto-add span:first-child{font-size:22px}
+.foto-add:hover{border-color:var(--blue);background:#4f9eff10}
+.fotos-fila{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.foto-mini{position:relative;width:64px;height:64px;padding:0;border:1px solid var(--border2);border-radius:8px;overflow:hidden;background:var(--s2);cursor:zoom-in}
+.foto-mini img{width:100%;height:100%;object-fit:cover;display:block}
+.foto-mas{position:absolute;inset:0;background:rgba(0,0,0,.6);color:#fff;font-weight:800;font-size:15px;display:flex;align-items:center;justify-content:center}
+.gal-flecha{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:64px;border:0;border-radius:10px;background:rgba(255,255,255,.14);color:#fff;font-size:34px;cursor:pointer;z-index:2}
+.gal-flecha:hover{background:rgba(255,255,255,.28)}
+.gal-flecha.izq{left:14px}.gal-flecha.der{right:14px}
+.gal-cont{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:13px;font-weight:700;padding:4px 14px;border-radius:999px}
+.dd-datos{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:6px}
+.dd-datos div{background:var(--s2);border-radius:10px;padding:9px 12px;display:flex;flex-direction:column;gap:2px}
+.dd-datos span{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em;font-weight:700}
+.dd-datos strong{font-size:14px}
+.dd-tit{font-size:12.5px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#a9b8d0;margin:18px 0 10px}
+.dd-prods{display:flex;flex-direction:column;gap:8px}
+.dd-prod{display:flex;gap:12px;align-items:flex-start;background:var(--s2);border-radius:10px;padding:10px 12px}
+.dd-prod-n{font-size:14.5px;font-weight:700}
+.dd-prod-c{font-size:12px;color:#8ea2c4;font-family:var(--mono);margin-top:2px}
+.dd-prod-m{font-size:13px;margin-top:3px}
+.dd-prod-q{text-align:right;white-space:nowrap;font-size:13px;color:#c3cfe2}
+.dd-prod-q strong{font-family:var(--mono);font-size:18px;color:var(--text)}
+.dd-fotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.dd-foto{position:relative;aspect-ratio:1/1;padding:0;border:1px solid var(--border2);border-radius:10px;overflow:hidden;background:var(--s2);cursor:zoom-in}
+.dd-foto img{width:100%;height:100%;object-fit:cover;display:block;transition:transform .2s}
+.dd-foto:hover img{transform:scale(1.05)}
+.dd-foto span{position:absolute;left:0;right:0;bottom:0;text-align:center;background:rgba(79,158,255,.85);color:#fff;font-size:11px;font-weight:700;padding:2px 0}
+.dl-lista{display:flex;flex-direction:column;gap:8px}
+.dl-fila{display:flex;gap:12px;align-items:center;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 12px;cursor:pointer;transition:border-color .15s,transform .18s,background .15s}
+.dl-fila:hover{border-color:var(--blue);background:#4f9eff0d;transform:translateY(-1px)}
+.dl-th{width:58px;height:58px;border-radius:8px;object-fit:cover;flex:0 0 58px;background:var(--s3)}
+.dl-th.sin{display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--faint);text-align:center}
+.dl-main{flex:1;min-width:0}
+.dl-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}
+.dl-fecha{font-size:12px;color:var(--faint)}
+.dl-prods{font-size:13px;color:#c3cfe2;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dl-prods em{font-style:normal;color:var(--teal);font-weight:600}
+.dl-mots{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.dl-mots span{font-size:11.5px;font-weight:700;border:1px solid;border-radius:999px;padding:1px 8px}
+.dl-lado{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0}
+.dl-fotos{font-size:12px;color:#a9b8d0;font-weight:700}
+.fila-clic{cursor:pointer}
+.fila-clic:hover td{background:var(--s2)}
+@media(max-width:640px){ .dl-fila{flex-wrap:wrap} .dl-lado{flex-direction:row;width:100%;justify-content:flex-end} .foto-th,.foto-add{width:84px;height:84px} }
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -671,7 +725,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261007-1052";
+const APP_VERSION = "20261008-0656";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1096,7 +1150,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {tipo:"", items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false},
+  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25,
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -2172,6 +2226,21 @@ async function cargarDevoluciones(){
   }catch(e){ console.warn("Cargar devoluciones:",e); }
 }
 
+const MAX_FOTOS_DEV = 8;
+function agregarFotosDevolucion(input){
+  const files=[...(input.files||[])]; input.value="";
+  const f=S.devolucionForm; f.fotos=f.fotos||[];
+  for(const file of files){
+    if(f.fotos.length>=MAX_FOTOS_DEV){ toast(`Máximo ${MAX_FOTOS_DEV} fotos por devolución`,"warn"); break; }
+    file._url=URL.createObjectURL(file); f.fotos.push(file);
+  }
+  f.err=""; render();
+}
+function quitarFotoDevolucion(i){
+  const f=S.devolucionForm, x=(f.fotos||[])[i];
+  if(x&&x._url){ try{ URL.revokeObjectURL(x._url); }catch(e){} }
+  (f.fotos||[]).splice(i,1); render();
+}
 let _timerBusquedaProducto = null;
 function buscarProductosDevolucion(query){
   S.devolucionForm.productoQuery = query;
@@ -2238,12 +2307,18 @@ async function submitDevolucion(){
     if(!it.motivo){ S.devolucionForm.err=`Elegí el motivo para "${it.producto.descripcion}".`; render(); return; }
     if(it.motivo==="Otro" && !it.detalle){ S.devolucionForm.err=`Contá el detalle de "${it.producto.descripcion}" — elegiste 'Otro'.`; render(); return; }
   }
-  const fotoFile = $("devol-foto")?.files?.[0] || null;
-  if(!fotoFile){ S.devolucionForm.err="La foto del ticket es obligatoria."; render(); return; }
+  const fotos = S.devolucionForm.fotos || [];
+  if(!fotos.length){ S.devolucionForm.err="La foto del ticket es obligatoria."; render(); return; }
 
   S.devolucionForm.loading = true; S.devolucionForm.err=""; renderNow();
 
-  const fotoUrl = await subirArchivo(fotoFile, "devoluciones");
+  const urls = [];
+  for(let i=0;i<fotos.length;i++){
+    const url = await subirArchivo(fotos[i], "devoluciones");
+    if(!url){ S.devolucionForm.loading=false; S.devolucionForm.err=`No se pudo subir la foto ${i+1}. Revisá la conexión y probá de nuevo.`; render(); return; }
+    urls.push(url);
+  }
+  const fotoUrl = urls.length===1 ? urls[0] : JSON.stringify(urls);
   const u = S.user;
   const productosJson = items.map(it=>({
     productoId: it.producto.id,
@@ -2271,7 +2346,8 @@ async function submitDevolucion(){
     const { data, error } = await sb.from("devoluciones").insert(payload).select().single();
     if(error) throw error;
     S.devoluciones = [toCamelRow(data), ...S.devoluciones];
-    S.devolucionForm = {tipo:"", items:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
+    fotos.forEach(f=>{ try{ URL.revokeObjectURL(f._url); }catch(e){} });
+    S.devolucionForm = {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false};
     toast("📦 Devolución enviada");
   }catch(e){
     S.devolucionForm.loading = false;
@@ -2520,28 +2596,119 @@ function toggleDevolSeleccionTomar(id, checked){
 }
 
 // ── PASO 1: repartidor TOMA (levanta) la devolución de la sucursal ──
-function verDetalleDevolucionRep(id){
+// Detalle de una devolución (lo ve quien tenga acceso a la lista): datos, productos,
+// TODAS las fotos y la trazabilidad paso a paso.
+function abrirDetalleDevolucion(id){
   S.selDevolucionId = id;
-  S.modal = "detalleDevolucionRep";
+  S.modal = "detalleDevolucion";
   render();
 }
-function renderDetalleDevolucionRep(){
+function verDetalleDevolucionRep(id){ abrirDetalleDevolucion(id); }   // el repartidor usa el mismo detalle
+
+// Línea de tiempo: todo lo que se sabe de esta devolución, en orden
+function trazaDevolucion(d){
+  const prods=productosDeDevolucion(d), pasos=[];
+  const hora = iso => iso ? fdt(iso) : "";
+  const unir = (...x)=>x.filter(Boolean).join(" · ");
+  const col={ok:"#34d399",info:"var(--blue)",warn:"var(--amber)",mal:"var(--red)",fin:"var(--teal)"};
+  pasos.push({dot:col.info, t:"📦 Devolución cargada", m:unir(hora(d.createdAt), d.creadoPor?`por ${d.creadoPor}`:"", fotosDe(d).length?`${fotosDe(d).length} foto${fotosDe(d).length!==1?"s":""}`:"")});
+  // Secos: evaluación del sobrestock
+  const evals=prods.filter(x=>x.evaluadoPor||x.evaluadoAt);
+  if(evals.length){
+    const ult=evals.map(x=>x.evaluadoAt).filter(Boolean).sort().pop();
+    pasos.push({dot:col.warn, t:"🔎 Sobrestock evaluado", m:unir(hora(ult), "por "+[...new Set(evals.map(x=>x.evaluadoPor).filter(Boolean))].join(", "),
+      evals.map(x=>x.evaluacion==="rechazada"?`no vuelve ${x.descripcion}`:`vuelve ${fmtNum(+x.cantidadAceptada||0)} de ${fmtNum(+x.cantidad||0)} ${x.descripcion}`).join("; "))});
+  } else if(d.estado==="En evaluación"){
+    pasos.push({dot:col.warn, t:"⏳ Esperando evaluación del sobrestock", m:"Logística decide qué vuelve a fábrica"});
+  }
+  if(d.nombreQuienLevanto||d.levantadoAt) pasos.push({dot:col.info, t:"🤲 Tomada por el repartidor", m:unir(hora(d.levantadoAt), d.nombreQuienLevanto?`por ${d.nombreQuienLevanto}`:"")});
+  if(d.nombreRepartidor||d.dejadoFabricaAt) pasos.push({dot:col.fin, t:"📫 Dejada en fábrica", m:unir(hora(d.dejadoFabricaAt), d.nombreRepartidor?`por ${d.nombreRepartidor}`:"")});
+  // Control / respuesta
+  const controlado=prods.map(x=>x.controladoAt).filter(Boolean).sort().pop();
+  const hayRecibido=prods.some(x=>x.cantidadRecibida!==undefined);
+  if(d.respuesta||d.respondidoPor||["Confirmada","Clasificada","No confirmada","Rechazada"].includes(d.estado)){
+    const malo=["No confirmada","Rechazada"].includes(d.estado);
+    const titulo = d.estado==="Rechazada" ? "✕ No vuelve nada (sobrestock rechazado)"
+      : d.estado==="No confirmada" ? "✕ No confirmada"
+      : (d.tipoDevolucion==="Secos"&&hayRecibido) ? "🔎 Controlada en fábrica" : "✅ Confirmada";
+    pasos.push({dot:malo?col.mal:col.ok, t:titulo, m:unir(hora(controlado||(["Confirmada","No confirmada","Rechazada"].includes(d.estado)?d.updatedAt:"")), d.respondidoPor?`por ${d.respondidoPor}`:"", d.respuesta||"")});
+  }
+  // Clasificación (Secos)
+  const clas=prods.filter(x=>x.clasificacion);
+  if(clas.length){
+    const ult=clas.map(x=>x.clasificadoAt).filter(Boolean).sort().pop();
+    const t={cambio:0,comedor:0,stock:0}; clas.forEach(x=>DESTINOS_SECOS.forEach(k=>{ t[k.k]+=+x.clasificacion[k.k]||0; }));
+    pasos.push({dot:col.ok, t:"🗂️ Clasificada", m:unir(hora(ult), clas[0].clasificadoPor?`por ${clas[0].clasificadoPor}`:"", DESTINOS_SECOS.filter(k=>t[k.k]>0).map(k=>`${k.icon} ${k.label} ${fmtNum(t[k.k])}`).join("  "))});
+  }
+  const recl=prods.filter(x=>x.reclamo);
+  if(recl.length) pasos.push({dot:col.warn, t:"🔁 Reclamado a proveedor", m:unir(hora(recl[0].reclamo.at), recl[0].reclamo.por?`por ${recl[0].reclamo.por}`:"", recl[0].reclamo.proveedor||"")});
+  const ed=prods.filter(x=>x.editadoPor);
+  if(ed.length) pasos.push({dot:"#a371f7", t:"✏️ Cantidades corregidas por Admin", m:unir(hora(ed.map(x=>x.editadoAt).filter(Boolean).sort().pop()), "por "+[...new Set(ed.map(x=>x.editadoPor))].join(", "),
+    ed.filter(x=>x.cantidadOriginal!==undefined&&+x.cantidadOriginal!==+x.cantidad).map(x=>`${x.descripcion}: era ${fmtNum(+x.cantidadOriginal)}, ahora ${fmtNum(+x.cantidad)}`).join("; "))});
+  return pasos;
+}
+function renderDetalleDevolucion(){
   const d = S.devoluciones.find(x=>String(x.id)===String(S.selDevolucionId));
   if(!d) return `<p style="color:var(--muted)">No se encontró la devolución.</p>`;
-  const drow=(l,v)=>`<div class="field"><label>${l}</label><div style="font-size:14px">${escH(v||"—")}</div></div>`;
+  const prods=productosDeDevolucion(d), fotos=fotosDe(d), pasos=trazaDevolucion(d);
+  const u=S.user||{};
+  const colTipo={Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"}[d.tipoDevolucion]||"var(--muted)";
   return `
-  ${drow("Sucursal", d.sucursal)}
-  ${drow("Motivo", unificarMotivoDevol(d.motivo))}
-  <div class="field"><label>Estado</label>${badge(d.estado, d.estado==="En camino"?"var(--blue)":d.estado==="En fábrica"?"var(--teal)":"var(--amber)")}</div>
-  ${drow("Cargada", fdt(d.createdAt))}
-  ${d.nombreQuienLevanto?drow("Tomada por", d.nombreQuienLevanto):""}
-  ${d.nombreRepartidor?drow("Dejada en fábrica por", d.nombreRepartidor):""}
-  ${d.fotoUrl?`<div class="field"><label>Foto</label><img src="${escH(d.fotoUrl)}" style="max-width:100%;border-radius:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/></div>`:""}
-  <div style="display:flex;gap:8px;margin-top:14px">
-    ${d.estado==="Pendiente"?`<button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
-    ${d.estado==="En camino"?`<button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+    ${badge(d.estado, d.estado==="En camino"?"var(--blue)":d.estado==="En fábrica"?"var(--teal)":colorEstadoDev(d.estado))}
+    ${d.tipoDevolucion?badge(d.tipoDevolucion,colTipo):""}
+    ${badge("N° "+d.id,"var(--blue)")}
+  </div>
+  <div class="dd-datos">
+    <div><span>Sucursal</span><strong>${escH(d.sucursal||"—")}</strong></div>
+    <div><span>Cargada</span><strong>${escH(fdt(d.createdAt))}</strong></div>
+    <div><span>Cargada por</span><strong>${escH(d.creadoPor||"—")}</strong></div>
+  </div>
+
+  <div class="dd-tit">Productos (${prods.length})</div>
+  ${prods.length?`<div class="dd-prods">
+    ${prods.map(x=>{
+      const mot=String(x.motivo||"").split(" — ");
+      return `<div class="dd-prod">
+        <div style="min-width:0;flex:1">
+          <div class="dd-prod-n">${escH(x.descripcion)}</div>
+          <div class="dd-prod-c">${x.codigoInterno?`Int. ${escH(x.codigoInterno)}`:""}${x.codigoInterno&&x.codigoBarras?" · ":""}${x.codigoBarras?`EAN ${escH(x.codigoBarras)}`:""}</div>
+          <div class="dd-prod-m"><span style="color:${colorMotivoCalidad(mot[0],0)};font-weight:700">${escH(mot[0])}</span>${mot[1]?` — ${escH(mot.slice(1).join(" — "))}`:""}</div>
+          ${(x.cantidadRecibida!==undefined||x.cantidadAceptada!==undefined&&x.cantidadAceptada!==null&&+x.cantidadAceptada!==+x.cantidad||x.clasificacion||x.reclamo)?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
+            ${x.cantidadAceptada!==undefined&&x.cantidadAceptada!==null&&+x.cantidadAceptada!==+x.cantidad?`<span class="sk-chip amber">aceptadas ${fmtNum(+x.cantidadAceptada)}</span>`:""}
+            ${x.cantidadRecibida!==undefined?`<span class="sk-chip ${+x.cantidadRecibida===+(x.cantidadAceptada??x.cantidad)?"green":"red"}">recibidas ${fmtNum(+x.cantidadRecibida)}</span>`:""}
+            ${renderClasificacionChips(x)}
+            ${x.reclamo?`<span class="sk-chip amber">🔁 reclamado</span>`:""}
+          </div>`:""}
+        </div>
+        <div class="dd-prod-q"><strong>${fmtNum(+x.cantidad||0)}</strong> ${escH(x.unidad||"")}${(x.cantidadOriginal!==undefined&&+x.cantidadOriginal!==+x.cantidad)?`<div class="sk-chip amber" style="margin-top:4px">✏️ era ${fmtNum(+x.cantidadOriginal)}</div>`:""}</div>
+      </div>`; }).join("")}
+  </div>`:`<p style="font-size:14px;color:var(--muted)">${escH(unificarMotivoDevol(d.motivo)||"—")}</p>`}
+
+  <div class="dd-tit">Fotos (${fotos.length})</div>
+  ${fotos.length?`<div class="dd-fotos">${fotos.map((url,i)=>`<button class="dd-foto" onclick="verGaleria(${escH(JSON.stringify(fotos))},${i})" title="Ver foto ${i+1} de ${fotos.length}"><img src="${escH(url)}" loading="lazy" alt="Foto ${i+1}"/>${i===0?`<span>Ticket</span>`:""}</button>`).join("")}</div>`
+    :`<p style="font-size:13px;color:var(--muted)">Esta devolución no tiene fotos cargadas.</p>`}
+
+  <div class="dd-tit">Trazabilidad</div>
+  ${pasos.map((s,i)=>`
+    <div class="trace-step">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div class="trace-dot" style="background:${s.dot}"></div>
+        ${i<pasos.length-1?`<div class="trace-line" style="height:30px"></div>`:""}
+      </div>
+      <div class="trace-body">
+        <div class="trace-title">${escH(s.t)}</div>
+        <div class="trace-meta">${escH(s.m)}</div>
+      </div>
+    </div>`).join("")}
+
+  <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">
+    ${u.rol==="repartidor" && d.estado==="Pendiente"?`<button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();openTomarDevoluciones(['${escH(d.id)}'])">🤲 Tomar</button>`:""}
+    ${u.rol==="repartidor" && d.estado==="En camino"?`<button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();openDejarDevolucionesFabrica(['${escH(d.id)}'])">📫 Dejar en fábrica</button>`:""}
+    <button class="btn btn-ghost btn-md" style="flex:1" onclick="closeModal()">Cerrar</button>
   </div>`;
 }
+const colorEstadoDev = e => e==="Clasificada" ? "var(--green)" : e==="Confirmada" ? "#1fa86a" : (e==="No confirmada"||e==="Rechazada") ? "var(--red)" : e==="En evaluación" ? "var(--purple)" : "var(--amber)";
 
 function openTomarDevoluciones(idsExplicitos){
   const base = idsExplicitos || [...S.devolSeleccionTomar];
@@ -3252,6 +3419,7 @@ async function pickeoConfirmarControl(firmaParam){
     idxs.forEach((ix,j)=>{
       const asignado = j===idxs.length-1 ? resto : Math.min(esperadoDe(productosConfirmados[ix]),resto);
       productosConfirmados[ix].cantidadRecibida=asignado; resto-=asignado;
+      productosConfirmados[ix].controladoAt=now(); productosConfirmados[ix].controladoPor=firma.nombre;
     });
   });
   const difs=p.lineas.filter(l=>(+l.recibido||0)!==(+l.esperado||0));
@@ -3848,7 +4016,12 @@ function renderDevoluciones(){
     if(S.devolucionFiltroFecha)    lista = lista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===S.devolucionFiltroFecha);
     if(S.devolucionFiltroProducto){
       const qp = normNotif(S.devolucionFiltroProducto);
-      lista = lista.filter(d=>productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp) || normNotif(p.codigoBarras).includes(qp)));
+      lista = lista.filter(d=>{
+      const numero = qp.replace(/^(n°|n|#|dev)\s*/,"");
+      if(numero && /^\d+$/.test(numero) && String(d.id)===numero) return true;          // N° exacto
+      return String(d.id)===qp || normNotif(d.creadoPor).includes(qp) || normNotif(d.sucursal).includes(qp) ||
+        productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp) || normNotif(p.codigoBarras).includes(qp));
+    });
     }
   }
   const enReclamo = esGestor && S.tabDevGestor==="reclamo" && puedeVerReclamos();
@@ -3945,13 +4118,22 @@ function renderDevoluciones(){
 
       ${S.devolucionForm.err?`<span class="err-msg" style="display:block;margin-top:10px">${escH(S.devolucionForm.err)}</span>`:""}
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <label style="display:block;font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;margin-bottom:8px">Foto del ticket (una sola, para toda la devolución)</label>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div>
-            <input id="devol-foto" type="file" accept="image/*" style="font-size:12px;max-width:220px" onchange="previsualizarFoto(this,'devol-foto-preview')"/>
-            <img id="devol-foto-preview" style="display:none;max-width:140px;max-height:140px;border-radius:8px;margin-top:8px;object-fit:cover"/>
-          </div>
-          <button class="btn btn-warn btn-md" style="margin-left:auto" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
+        <label style="display:block;font-size:12px;color:var(--faint);text-transform:uppercase;letter-spacing:.09em;margin-bottom:8px">Fotos <span style="text-transform:none;letter-spacing:0">— la primera es el ticket (obligatoria); sumá las que hagan falta</span></label>
+        <div class="fotos-form">
+          ${(S.devolucionForm.fotos||[]).map((f,i)=>`
+          <div class="foto-th">
+            <img src="${escH(f._url||"")}" alt="Foto ${i+1}"/>
+            <button class="foto-x" onclick="quitarFotoDevolucion(${i})" title="Quitar esta foto">✕</button>
+            ${i===0?`<span class="foto-tag">Ticket</span>`:""}
+          </div>`).join("")}
+          ${(S.devolucionForm.fotos||[]).length<MAX_FOTOS_DEV?`
+          <label class="foto-add">
+            <span>📷</span><span>${(S.devolucionForm.fotos||[]).length?"Agregar otra foto":"Agregar foto del ticket"}</span>
+            <input type="file" accept="image/*" multiple style="display:none" onchange="agregarFotosDevolucion(this)"/>
+          </label>`:""}
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-warn btn-md" onclick="submitDevolucion()" ${S.devolucionForm.loading?"disabled":""}>
             ${S.devolucionForm.loading?`<span class="spinner"></span> Enviando...`:"Enviar devolución"}
           </button>
         </div>
@@ -3994,7 +4176,7 @@ function renderDevoluciones(){
         <option ${S.devolucionFiltroEstado==="Rechazada"?"selected":""}>Rechazada</option>
         <option ${S.devolucionFiltroEstado==="Clasificada"?"selected":""}>Clasificada</option>
       </select>
-      <input type="text" class="inp" style="width:200px" placeholder="🔎 Producto o código interno..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>
+      <input type="text" class="inp" style="width:200px" placeholder="🔎 N°, producto, código o persona..." value="${escH(S.devolucionFiltroProducto)}" oninput="S.devolucionFiltroProducto=this.value;render()"/>
       ${(()=>{
         const catFija = categoriaDevolucionFija();
         if(catFija) return `<span class="btn btn-ghost btn-md" style="pointer-events:none;opacity:.8" title="Tu alcance es fijo">🔒 ${catFija}</span>`;
@@ -4017,13 +4199,14 @@ function renderDevoluciones(){
               ${esRepartidor && d.estado==="Pendiente"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccionTomar.has(d.id)?"checked":""} onchange="toggleDevolSeleccionTomar('${escH(d.id)}',this.checked)"/>`:""}
               ${esRepartidor && d.estado==="En camino"?`<input type="checkbox" class="chk-round" style="margin-top:4px" ${S.devolSeleccion.has(d.id)?"checked":""} onchange="toggleDevolSeleccion('${escH(d.id)}',this.checked)"/>`:""}
               <div>
-                <strong>${escH(d.sucursal||"—")}</strong>
+                <strong>${escH(d.sucursal||"—")}</strong> <span class="dev-num">N° ${escH(d.id)}</span>
                 <span style="color:var(--faint);font-size:12px"> · ${fdt(d.createdAt)}${d.creadoPor && normNotif(d.creadoPor)!==normNotif(d.sucursal)?` · ${escH(d.creadoPor)}`:""}</span>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:6px">
               ${d.tipoDevolucion?badge(d.tipoDevolucion, {Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"}[d.tipoDevolucion]||"var(--muted)"):""}
               ${badge(d.estado, colorEstado(d.estado))}
+              <button class="btn btn-ghost btn-sm" onclick="abrirDetalleDevolucion('${escH(d.id)}')" title="Ver fotos y trazabilidad">🔎 Detalle</button>
               ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
             </div>
           </div>
@@ -4033,7 +4216,7 @@ function renderDevoluciones(){
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
             ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
-          ${d.fotoUrl?`<img src="${escH(d.fotoUrl)}" style="max-width:220px;border-radius:8px;margin-top:8px;display:block;cursor:zoom-in" onclick="verImagenAmpliada('${escH(d.fotoUrl)}')"/>`:""}
+          ${miniaturasFotos(fotosDe(d),5)}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
           ${d.nombreRepartidor?`<p style="margin-top:4px;font-size:12px;color:var(--muted)">📦 Dejada en fábrica por ${escH(d.nombreRepartidor)}</p>`:""}
           ${d.respuesta?`<div class="alert-info" style="margin-top:10px"><strong>Respuesta (${escH(d.respondidoPor||"—")}):</strong> ${escH(d.respuesta)}</div>`:""}
@@ -4333,18 +4516,51 @@ function renderNow(){
 }
 
 // ── Lightbox: ver una imagen ampliada, tocando afuera se cierra ──
-function verImagenAmpliada(url){
+function verImagenAmpliada(url, urls){
   S.imagenAmpliada = url;
+  S.galeria = (Array.isArray(urls) && urls.length>1) ? urls : null;
   render();
 }
 function cerrarImagenAmpliada(){
-  S.imagenAmpliada = "";
+  S.imagenAmpliada = ""; S.galeria = null;
   render();
+}
+// Galería: varias fotos de una misma devolución, con flechas
+function verGaleria(urls, i){ verImagenAmpliada(urls[i], urls); }
+function galeriaNav(delta){
+  const g=S.galeria; if(!g||!g.length) return;
+  const i=Math.max(0,g.indexOf(S.imagenAmpliada));
+  S.imagenAmpliada = g[(i+delta+g.length)%g.length];
+  render();
+}
+document.addEventListener("keydown", e=>{
+  if(!S.imagenAmpliada) return;
+  if(e.key==="Escape") cerrarImagenAmpliada();
+  else if(e.key==="ArrowRight") galeriaNav(1);
+  else if(e.key==="ArrowLeft") galeriaNav(-1);
+});
+// Una devolución puede tener varias fotos: con una sola se guarda la dirección tal cual (como siempre);
+// con más de una, se guarda una lista. Esto lee las dos formas.
+function fotosDe(d){
+  const s=String(d&&d.fotoUrl||"").trim();
+  if(!s) return [];
+  if(s.startsWith("[")){ try{ const a=JSON.parse(s); if(Array.isArray(a)) return a.filter(Boolean); }catch(e){} }
+  return [s];
+}
+function miniaturasFotos(urls, max){
+  if(!urls.length) return "";
+  max=max||4;
+  const json=escH(JSON.stringify(urls));
+  return `<div class="fotos-fila">
+    ${urls.slice(0,max).map((u,i)=>`<button class="foto-mini" onclick="event.stopPropagation();verGaleria(${json},${i})" title="Ver foto ${i+1} de ${urls.length}">
+      <img src="${escH(u)}" loading="lazy" alt="Foto ${i+1}"/>${i===max-1&&urls.length>max?`<span class="foto-mas">+${urls.length-max}</span>`:""}</button>`).join("")}
+  </div>`;
 }
 function renderLightbox(){
   if(!S.imagenAmpliada) return "";
   return `
   <div onclick="cerrarImagenAmpliada()" style="position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px;cursor:zoom-out;animation:fadeUp .15s ease">
+    ${S.galeria?`<button onclick="event.stopPropagation();galeriaNav(-1)" class="gal-flecha izq" aria-label="Anterior">‹</button><button onclick="event.stopPropagation();galeriaNav(1)" class="gal-flecha der" aria-label="Siguiente">›</button><div class="gal-cont">${S.galeria.indexOf(S.imagenAmpliada)+1} / ${S.galeria.length}</div>`:""}
     <img src="${escH(S.imagenAmpliada)}" style="max-width:92vw;max-height:92vh;border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.5)" onclick="event.stopPropagation()"/>
     <button onclick="cerrarImagenAmpliada()" style="position:absolute;top:20px;right:24px;background:rgba(255,255,255,.15);border:none;color:#fff;font-size:22px;width:40px;height:40px;border-radius:50%;cursor:pointer">✕</button>
   </div>`;
@@ -5027,8 +5243,9 @@ function renderMetricasDevoluciones(){
       </div>
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px">Todo lo devuelto ese día</div>
       <div class="table-wrap"><table style="font-size:15px">
-        <thead><tr><th style="font-size:13px;color:#a9b8d0">Sucursal</th><th style="font-size:13px;color:#a9b8d0">Producto</th><th style="font-size:13px;color:#a9b8d0">Cantidad</th><th style="font-size:13px;color:#a9b8d0">Motivo</th></tr></thead>
-        <tbody>${itsD.slice(0,60).map(p=>`<tr>
+        <thead><tr><th style="font-size:13px;color:#a9b8d0">N°</th><th style="font-size:13px;color:#a9b8d0">Sucursal</th><th style="font-size:13px;color:#a9b8d0">Producto</th><th style="font-size:13px;color:#a9b8d0">Cantidad</th><th style="font-size:13px;color:#a9b8d0">Motivo</th></tr></thead>
+        <tbody>${itsD.slice(0,60).map(p=>`<tr class="fila-clic" onclick="abrirDetalleDevolucion('${escH(p.devId)}')" title="Ver fotos y trazabilidad">
+          <td class="mono" style="color:var(--blue)">${escH(p.devId)}</td>
           <td style="font-weight:600">${escH(p.sucursal)}</td><td>${escH(p.descripcion||"")}</td>
           <td class="mono" style="font-weight:700">${fmtNum(+p.cantidad||0)} ${escH(p.unidad||"")}</td>
           <td><span style="color:${colorMotivoCalidad(motivoBase(p),0)};font-weight:700">${escH(motivoBase(p))}</span></td>
@@ -5069,6 +5286,33 @@ function renderMetricasDevoluciones(){
     </div>`;
   }
 
+  // ── Listado de devoluciones, una por fila, para abrir su detalle (fotos y trazabilidad) ──
+  const motFiltroLista = S.calidadMotivoSel || "";
+  const idsConItems = new Set(items.map(p=>String(p.devId)));
+  let devsLista = devs.filter(d=>idsConItems.has(String(d.id)));            // respeta el filtro de producto
+  if(motFiltroLista) devsLista = devsLista.filter(d=>productosDeDevolucion(d).some(p=>motivoBase(p)===motFiltroLista));
+  if(diaSel) devsLista = devsLista.filter(d=>d.createdAt && d.createdAt.slice(0,10)===diaSel);
+  devsLista = [...devsLista].sort((a,b)=>String(b.createdAt).localeCompare(String(a.createdAt)));
+  const listaMax = S.devListaMax || 25;
+  const cardListaDevs = `
+  <div id="cal-lista" class="card" style="${cardStyle}">
+    ${tituloGrafico("Devoluciones", `${devsLista.length} devolución${devsLista.length!==1?"es":""}${motFiltroLista?` · motivo «${escH(motFiltroLista)}»`:""}${diaSel?` · ${escH(diaLargo(diaSel))}`:""} — tocá una para ver sus fotos y su recorrido`)}
+    ${!devsLista.length?`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">No hay devoluciones con esos filtros.</p>`:`
+    <div class="dl-lista">
+      ${devsLista.slice(0,listaMax).map(d=>{
+        const fotos=fotosDe(d), ps=productosDeDevolucion(d), motivos=[...new Set(ps.map(motivoBase))];
+        return `<div class="dl-fila" onclick="abrirDetalleDevolucion('${escH(d.id)}')">
+          ${fotos.length?`<img class="dl-th" src="${escH(fotos[0])}" loading="lazy" alt=""/>`:`<div class="dl-th sin">sin foto</div>`}
+          <div class="dl-main">
+            <div class="dl-top"><span class="dev-num">N° ${escH(d.id)}</span><strong>${escH(d.sucursal||"—")}</strong><span class="dl-fecha">${escH(fdt(d.createdAt))}</span></div>
+            <div class="dl-prods">${ps.slice(0,3).map(p=>`${escH(p.descripcion)}${p.cantidad?` <em>${fmtNum(+p.cantidad)} ${escH(p.unidad||"")}</em>`:""}`).join(" · ")}${ps.length>3?` · +${ps.length-3}`:""}</div>
+            <div class="dl-mots">${motivos.map((m,i)=>`<span style="color:${colorMotivoCalidad(m,i)};border-color:${colorMotivoCalidad(m,i)}55">${escH(m)}</span>`).join("")}</div>
+          </div>
+          <div class="dl-lado">${badge(d.estado,colorEstadoDev(d.estado))}${fotos.length?`<span class="dl-fotos">📷 ${fotos.length}</span>`:""}</div>
+        </div>`; }).join("")}
+    </div>
+    ${devsLista.length>listaMax?`<div style="display:flex;justify-content:center;margin-top:12px"><button class="btn btn-ghost btn-md" onclick="S.devListaMax=${listaMax+25};render()">Ver más (${devsLista.length-listaMax})</button></div>`:""}`}
+  </div>`;
   const COLOR_CAT={Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"};
   return `
   <div id="cal-filtros" class="card" style="${cardStyle};margin-bottom:16px">
@@ -5164,6 +5408,8 @@ function renderMetricasDevoluciones(){
     </table></div>
     ${detalleOrd.length>100?`<p style="font-size:13px;color:#a9b8d0;margin-top:10px">Mostrando los 100 cruces más relevantes de ${detalleOrd.length}.</p>`:""}`}
   </div>
+
+  ${cardListaDevs}
 
   <div id="cal-kpis" class="stats-grid" style="margin-bottom:20px">
     ${statCard("📦","DEVOLUCIONES", devs.length, "var(--teal)")}
@@ -8082,7 +8328,7 @@ function renderModals(){
   if(S.modal==="envioMasivoRRHH") return wrapModal("m","Enviar a varias sucursales",renderEnvioMasivoModal(),620);
   if(S.modal==="notificaciones") return wrapModal("m","🔔 Notificaciones",renderNotificacionesModal(),480);
   if(S.modal==="identidadRep") return wrapModal("m","👤 ¿Quién sos?",renderIdentidadRepModal(),420);
-  if(S.modal==="detalleDevolucionRep") return wrapModal("m",`Devolución — ${escH(S.selDevolucionId)}`,renderDetalleDevolucionRep(),460);
+  if(S.modal==="detalleDevolucion"||S.modal==="detalleDevolucionRep") return wrapModal("m",`Devolución N° ${escH(S.selDevolucionId)}`,renderDetalleDevolucion(),680);
   if(S.modal==="prepararFresco") return wrapModal("m","Marcar preparado",renderPrepararFrescoModal(),420);
   if(S.modal==="quiebreStock") return wrapModal("m","🚨 Quiebre de stock",renderQuiebreStockModal(),480);
   if(S.modal==="planificarCantidad") return wrapModal("m","📋 Planificar cantidad",renderPlanificarCantidadModal(),480);
