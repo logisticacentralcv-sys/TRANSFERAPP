@@ -722,6 +722,19 @@ tr[onclick]:active td{background:var(--s3)}
 @media(max-width:980px){ .tes-filtros{grid-template-columns:repeat(2,minmax(0,1fr))} .tes-f-q,.tes-f-btns{grid-column:1/-1} }
 @media(max-width:480px){ .tes-2col{grid-template-columns:1fr} }
 
+
+.bp-ok{font-family:var(--font);font-size:11.5px;font-weight:700;color:#4ade80;margin-left:6px}
+.bp-falto{font-family:var(--font);font-size:11.5px;font-weight:800;color:#fca5a5;margin-left:6px}
+.bp-det.falto{border:1px solid #f0525255;background:#f052520f}
+.cc-precintos{display:flex;flex-direction:column;gap:6px;max-height:260px;overflow-y:auto}
+.cc-prec{display:flex;align-items:center;gap:10px;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:9px 12px;cursor:pointer;flex-wrap:wrap}
+.cc-prec.falta{border-color:#f0525266;background:#f052520f}
+.cc-n{font-family:var(--mono);font-weight:700;font-size:14px}
+.cc-m{font-size:12.5px;color:var(--muted);flex:1;min-width:140px}
+.cc-res{margin-top:10px;padding:9px 12px;border-radius:10px;font-size:13px}
+.cc-res.ok{background:#2ecc7a14;color:#4ade80}
+.cc-res.mal{background:#f0525214;color:#fca5a5}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -746,7 +759,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261008-0816";
+const APP_VERSION = "20261008-1351";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1171,7 +1184,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25,
+  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -5689,13 +5702,267 @@ function renderAdmin(){
         <button class="tab ${S.adminTab==="solicitudes"?"active":""}" onclick="S.adminTab='solicitudes';render()">📋 Solicitudes</button>
         <button class="tab ${S.adminTab==="usuarios"?"active":""}" onclick="S.adminTab='usuarios';render()">👤 Usuarios</button>
         <button class="tab ${S.adminTab==="devmet"?"active":""}" onclick="S.adminTab='devmet';render()">📉 Métricas de devoluciones</button>
+        <button class="tab ${S.adminTab==="catalogo"?"active":""}" onclick="S.adminTab='catalogo';render()">📚 Catálogo</button>
         <button class="tab ${S.adminTab==="config"?"active":""}" onclick="S.adminTab='config';render()">⚙️ Configuración</button>
       </div>
     </div>
-    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():S.adminTab==="devmet"?renderMetricasDevoluciones():renderAdminConfig()}</div>
+    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():S.adminTab==="devmet"?renderMetricasDevoluciones():S.adminTab==="catalogo"?renderAdminCatalogo():renderAdminConfig()}</div>
   </div>`;
 }
 
+
+// ═══════════════════════════════════════════════════════════════════
+//  ADMIN → CATÁLOGO DE PRODUCTOS
+//  Buscar, agregar, editar y (opcional) importar varios desde un CSV.
+//  Solo Admin puede escribir en la tabla `productos` (así lo dicen sus
+//  políticas en Supabase); el resto solo la lee para buscar.
+// ═══════════════════════════════════════════════════════════════════
+const _norm = v => String(v??"").trim();
+let _timerCat=null;
+function catBuscar(q){
+  S.catQuery=q; clearTimeout(_timerCat);
+  _timerCat=setTimeout(()=>catCargar(),300);
+}
+async function catCargar(){
+  S.catCargando=true; S.catErr=""; render();
+  try{
+    const t=_norm(S.catQuery);
+    let consulta=sb.from("productos").select("*");
+    if(t.length>=2){
+      const l=t.replace(/[%,()]/g," ");
+      consulta=consulta.or(`descripcion.ilike.%${l}%,codigo_interno.ilike.%${l}%,codigo_barras.ilike.%${l}%`).order("descripcion").limit(60);
+    } else consulta=consulta.order("id",{ascending:false}).limit(20);          // sin búsqueda: los últimos agregados
+    const { data, error } = await consulta;
+    if(error) throw error;
+    S.catResultados=toCamelRows(data||[]);
+  }catch(e){ console.warn("Catálogo:",e); S.catResultados=[]; S.catErr="No se pudo leer el catálogo. Probá de nuevo."; }
+  try{
+    if(S.catTotal===undefined||S.catTotal===null){
+      const r=await sb.from("productos").select("id",{count:"exact",head:true});
+      if(!r.error && typeof r.count==="number") S.catTotal=r.count;
+    }
+  }catch(e){}
+  S.catCargando=false; render();
+}
+function renderAdminCatalogo(){
+  if(S.catResultados===undefined||S.catResultados===null){ if(!S.catCargando) setTimeout(catCargar,0); }
+  const lista=S.catResultados||[], t=_norm(S.catQuery);
+  return `
+  <div class="card cfg-ancho">
+    <div class="cfg-tit">
+      <div>
+        <h3>📚 Catálogo de productos</h3>
+        <p>${typeof S.catTotal==="number"?`<strong class="mono">${fmtNum(S.catTotal)}</strong> productos cargados. `:""}Es lo que aparece al buscar productos en devoluciones y en el pickeo de Secos.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-md" onclick="abrirImportarCatalogo()">⬆ Importar desde CSV</button>
+        <button class="btn btn-success btn-md" onclick="abrirProductoCatalogo()">+ Nuevo producto</button>
+      </div>
+    </div>
+    <input class="inp" id="cat-busq" style="max-width:520px;margin-bottom:14px" type="text" placeholder="🔎 Buscar por nombre, código interno o código de barras…" value="${escH(S.catQuery||"")}" oninput="catBuscar(this.value)"/>
+    ${S.catErr?`<div class="alert-info" style="border-left-color:var(--amber)">⚠️ ${escH(S.catErr)}</div>`:""}
+    ${S.catCargando&&!lista.length?`<p style="color:var(--muted);font-size:13px"><span class="spinner"></span> Buscando…</p>`:
+      !lista.length?`<div class="pk-vacio">${t.length>=2?`No hay productos que coincidan con «${escH(t)}». <button class="btn btn-ghost btn-sm" style="margin-left:8px" onclick="abrirProductoCatalogo({descripcion:'${escH(t).replace(/'/g,"&#39;")}'})">+ Crearlo</button>`:"Todavía no hay productos cargados."}</div>`:`
+    <div class="table-wrap"><table>
+      <thead><tr><th>Descripción</th><th>Cód. interno</th><th>Cód. de barras</th><th>Proveedor</th><th></th></tr></thead>
+      <tbody>${lista.map(p=>`<tr>
+        <td><strong>${escH(p.descripcion)}</strong></td>
+        <td class="mono">${escH(p.codigoInterno||"—")}</td>
+        <td class="mono">${escH(p.codigoBarras||"—")}</td>
+        <td class="muted-cell">${escH(p.proveedor||"—")}</td>
+        <td style="text-align:right"><button class="btn btn-ghost btn-sm" onclick="abrirProductoCatalogo(${escH(JSON.stringify(p))})">✏️ Editar</button></td>
+      </tr>`).join("")}</tbody></table></div>
+    <div class="dv-pie">${t.length>=2?`${lista.length} resultado${lista.length!==1?"s":""}${lista.length>=60?" (se muestran los primeros 60: afiná la búsqueda)":""}`:"Últimos 20 productos agregados"}</div>`}
+  </div>`;
+}
+
+// ── Alta / edición de un producto ──
+async function cargarProveedoresCatalogo(){
+  if(S.catProveedoresCargados) return; S.catProveedoresCargados=true;
+  try{
+    const { data, error } = await sb.from("productos").select("proveedor").limit(3000);
+    if(error) throw error;
+    S.catProveedores=[...new Set((data||[]).map(r=>_norm(r.proveedor)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"es"));
+    if(S.modal==="productoCatalogo") render();
+  }catch(e){ /* sin la columna proveedor, el campo simplemente no sugiere nada */ }
+}
+function abrirProductoCatalogo(p){
+  p=p||{}; cargarProveedoresCatalogo();
+  S.catModal={id:p.id||null, descripcion:p.descripcion||"", codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||"", proveedor:p.proveedor||"", err:"", loading:false, duplicado:null};
+  S.modal="productoCatalogo"; render();
+  setTimeout(()=>$("cat-desc")?.focus(),120);
+}
+function renderProductoCatalogoModal(){
+  const d=S.catModal, nuevo=!d.id;
+  return `
+  ${d.duplicado?`<div class="alert-info" style="border-left-color:var(--amber);margin-bottom:12px">⚠️ Ya existe: <strong>${escH(d.duplicado.descripcion)}</strong>
+    <span class="mono" style="color:var(--muted)"> · Int. ${escH(d.duplicado.codigoInterno||"—")} · EAN ${escH(d.duplicado.codigoBarras||"—")}</span>
+    <div style="margin-top:8px"><button class="btn btn-ghost btn-sm" onclick="abrirProductoCatalogo(${escH(JSON.stringify(d.duplicado))})">Abrir ese producto para editarlo</button></div></div>`:""}
+  <div class="field"><label>Descripción <span class="req">*</span></label>
+    <input id="cat-desc" class="inp ${d.err&&!_norm(d.descripcion)?"err":""}" type="text" placeholder="Ej: ARROZ LARGO FINO 1KG" value="${escH(d.descripcion)}" oninput="S.catModal.descripcion=this.value;S.catModal.err='';S.catModal.duplicado=null"/></div>
+  <div class="tes-2col">
+    <div class="field"><label>Código interno</label>
+      <input id="cat-int" class="inp" type="text" inputmode="numeric" placeholder="Ej: 1001" value="${escH(d.codigoInterno)}" oninput="S.catModal.codigoInterno=this.value;S.catModal.err='';S.catModal.duplicado=null"/></div>
+    <div class="field"><label>Código de barras</label>
+      <input id="cat-ean" class="inp" type="text" inputmode="numeric" placeholder="Ej: 7790001000011" value="${escH(d.codigoBarras)}" oninput="S.catModal.codigoBarras=this.value;S.catModal.err='';S.catModal.duplicado=null"/></div>
+  </div>
+  <div class="field"><label>Proveedor <span style="color:var(--faint);font-size:12px;font-weight:400">(para el reclamo por cambios)</span></label>
+    <input id="cat-prov" class="inp" type="text" list="cat-provs" placeholder="Ej: Molinos del Sur" value="${escH(d.proveedor)}" oninput="S.catModal.proveedor=this.value"/>
+    <datalist id="cat-provs">${(S.catProveedores||[]).map(x=>`<option value="${escH(x)}">`).join("")}</datalist></div>
+  ${d.err?`<div class="err-msg" style="margin-bottom:10px">${escH(d.err)}</div>`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="guardarProductoCatalogo()" ${d.loading?"disabled":""}>
+      ${d.loading?`<span class="spinner"></span> Guardando…`:(nuevo?"+ Agregar al catálogo":"✅ Guardar cambios")}
+    </button>
+  </div>`;
+}
+async function guardarProductoCatalogo(){
+  const d=S.catModal; if(!d||d.loading) return;
+  const descripcion=_norm(d.descripcion), interno=_norm(d.codigoInterno), barras=_norm(d.codigoBarras), proveedor=_norm(d.proveedor);
+  if(!descripcion){ d.err="Poné la descripción del producto."; render(); return; }
+  if(barras && !/^\d{6,14}$/.test(barras)){ d.err="El código de barras tiene que ser solo números (entre 6 y 14 dígitos)."; render(); return; }
+  d.loading=true; d.err=""; d.duplicado=null; renderNow();
+  try{
+    // ¿ya existe otro producto con ese código interno o de barras?
+    const filtros=[]; if(interno) filtros.push(`codigo_interno.eq.${interno}`); if(barras) filtros.push(`codigo_barras.eq.${barras}`);
+    if(filtros.length){
+      const { data:ya, error:e0 } = await sb.from("productos").select("*").or(filtros.join(",")).limit(5);
+      if(e0) throw e0;
+      const otro=(ya||[]).find(x=>String(x.id)!==String(d.id||""));
+      if(otro){ d.loading=false; d.duplicado=toCamelRow(otro); d.err="Ese código ya está usado por otro producto."; render(); return; }
+    }
+    const fila={descripcion, codigo_interno:interno||null, codigo_barras:barras||null, proveedor:proveedor||null};
+    let res = d.id ? await sb.from("productos").update(fila).eq("id",d.id).select() : await sb.from("productos").insert(fila).select();
+    // si todavía no existe la columna "proveedor", se guarda igual sin ella
+    if(res.error && /proveedor/i.test(String(res.error.message||res.error.details||""))){
+      const { proveedor:_p, ...sinProv }=fila;
+      res = d.id ? await sb.from("productos").update(sinProv).eq("id",d.id).select() : await sb.from("productos").insert(sinProv).select();
+      if(!res.error && proveedor) toast("⚠️ Guardado, pero falta correr productos_02_proveedor.sql para poder guardar el proveedor","warn");
+    }
+    if(res.error) throw res.error;
+    S.modal=null; S.catTotal=null;
+    S.catQuery=descripcion; S.catResultados=null;
+    toast(d.id?`✅ ${descripcion} actualizado`:`✅ ${descripcion} agregado al catálogo`);
+    S.catModal=null; render(); catCargar();
+  }catch(e){
+    console.warn("Guardar producto:",e);
+    d.loading=false;
+    d.err=/row-level security|permission|policy/i.test(String(e&&(e.message||e.details||""))) ? "No tenés permiso para modificar el catálogo. Entrá con tu usuario Administrador (con contraseña)." : "No se pudo guardar — revisá la conexión y probá de nuevo.";
+    render();
+  }
+}
+
+// ── Importar varios desde un CSV ──
+function abrirImportarCatalogo(){
+  S.catImport={texto:"", filas:[], analizado:false, nuevos:[], repetidos:[], invalidos:0, err:"", loading:false, resultado:null};
+  S.modal="importarCatalogo"; render();
+}
+function leerCsvCatalogo(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ S.catImport.texto=String(rd.result||""); S.catImport.analizado=false; S.catImport.err=""; render(); };
+  rd.readAsText(f,"utf-8");
+}
+function parsearCsv(texto){
+  const t=String(texto||"").replace(/^\ufeff/,"");
+  const sep=(t.split("\n")[0].match(/;/g)||[]).length>(t.split("\n")[0].match(/,/g)||[]).length?";":(t.split("\n")[0].includes("\t")?"\t":",");
+  const filas=[]; let f=[], cur="", q=false;
+  for(let i=0;i<t.length;i++){
+    const ch=t[i];
+    if(q){ if(ch==='"'&&t[i+1]==='"'){cur+='"';i++;} else if(ch==='"') q=false; else cur+=ch; }
+    else if(ch==='"') q=true;
+    else if(ch===sep){ f.push(cur); cur=""; }
+    else if(ch==="\n"||ch==="\r"){ if(ch==="\r"&&t[i+1]==="\n") i++; f.push(cur); cur=""; if(f.some(x=>x.trim()!=="")) filas.push(f); f=[]; }
+    else cur+=ch;
+  }
+  f.push(cur); if(f.some(x=>x.trim()!=="")) filas.push(f);
+  return filas;
+}
+async function analizarCsvCatalogo(){
+  const d=S.catImport;
+  if(!_norm(d.texto)){ d.err="Subí un archivo CSV o pegá su contenido primero."; render(); return; }
+  d.err=""; d.loading=true; renderNow();
+  try{
+    const filas=parsearCsv(d.texto);
+    if(filas.length<2) throw new Error("El archivo tiene que traer una fila de títulos y al menos un producto.");
+    const quitar=s=>normNotif(s).replace(/[^a-z0-9]/g,"");
+    const cab=filas[0].map(quitar);
+    const col=(...nombres)=>cab.findIndex(c=>nombres.some(n=>c===n));
+    const iDesc=col("descripcion","producto","nombre","detalle"), iInt=col("codigointerno","interno","codinterno","codigo","cod"), iEan=col("codigobarras","codigodebarras","ean","barras","codbarras"), iProv=col("proveedor");
+    if(iDesc<0) throw new Error("No encontré la columna de la descripción. Los títulos tienen que incluir «descripcion» (y opcionalmente codigo_interno, codigo_barras, proveedor).");
+    const vistos=new Set(); let invalidos=0; const lista=[];
+    filas.slice(1).forEach(f=>{
+      const desc=_norm(f[iDesc]), it=iInt>=0?_norm(f[iInt]):"", ean=iEan>=0?_norm(f[iEan]):"", prov=iProv>=0?_norm(f[iProv]):"";
+      if(!desc){ invalidos++; return; }
+      const k=(ean||"")+"|"+(it||"")+"|"+(ean||it?"":normNotif(desc));
+      if(vistos.has(k)) return; vistos.add(k);
+      lista.push({descripcion:desc, codigo_interno:it||null, codigo_barras:ean||null, proveedor:prov||null});
+    });
+    // cuáles ya existen (por código interno o de barras)
+    const eans=[...new Set(lista.map(x=>x.codigo_barras).filter(Boolean))], ints=[...new Set(lista.map(x=>x.codigo_interno).filter(Boolean))];
+    const yaEans=new Set(), yaInts=new Set();
+    for(let i=0;i<eans.length;i+=150){ const {data,error}=await sb.from("productos").select("codigo_barras").in("codigo_barras",eans.slice(i,i+150)); if(error) throw error; (data||[]).forEach(r=>yaEans.add(String(r.codigo_barras))); }
+    for(let i=0;i<ints.length;i+=150){ const {data,error}=await sb.from("productos").select("codigo_interno").in("codigo_interno",ints.slice(i,i+150)); if(error) throw error; (data||[]).forEach(r=>yaInts.add(String(r.codigo_interno))); }
+    d.nuevos=lista.filter(x=>!(x.codigo_barras&&yaEans.has(x.codigo_barras)) && !(x.codigo_interno&&yaInts.has(x.codigo_interno)));
+    d.repetidos=lista.filter(x=>!d.nuevos.includes(x));
+    d.invalidos=invalidos; d.analizado=true; d.conProveedor=iProv>=0;
+  }catch(e){ console.warn("Analizar CSV:",e); d.err=e.message||"No se pudo leer el archivo."; d.analizado=false; }
+  d.loading=false; render();
+}
+async function importarCatalogo(){
+  const d=S.catImport; if(!d||d.loading||!d.nuevos.length) return;
+  d.loading=true; d.err=""; renderNow();
+  let cargados=0, sinProveedor=false;
+  try{
+    for(let i=0;i<d.nuevos.length;i+=400){
+      let lote=d.nuevos.slice(i,i+400);
+      let r=await sb.from("productos").insert(lote);
+      if(r.error && /proveedor/i.test(String(r.error.message||r.error.details||""))){
+        sinProveedor=true; lote=lote.map(({proveedor,...x})=>x); r=await sb.from("productos").insert(lote);
+      }
+      if(r.error) throw r.error;
+      cargados+=lote.length;
+    }
+    d.resultado={cargados, repetidos:d.repetidos.length, sinProveedor};
+    S.catTotal=null; S.catResultados=null; S.catQuery=""; catCargar();
+    toast(`✅ ${cargados} producto${cargados!==1?"s":""} agregado${cargados!==1?"s":""} al catálogo`);
+  }catch(e){
+    console.warn("Importar:",e);
+    d.err=(cargados?`Se cargaron ${cargados} y se cortó: `:"")+(/row-level security|permission|policy/i.test(String(e&&(e.message||e.details||"")))?"no tenés permiso para modificar el catálogo (entrá como Administrador).":"revisá la conexión y probá de nuevo.");
+  }
+  d.loading=false; render();
+}
+function renderImportarCatalogoModal(){
+  const d=S.catImport;
+  if(d.resultado) return `
+    <div class="alert-ok" style="text-align:center;padding:18px"><div style="font-size:30px">✅</div>
+      <div style="font-size:16px;font-weight:700;margin:6px 0">${d.resultado.cargados} producto${d.resultado.cargados!==1?"s":""} agregado${d.resultado.cargados!==1?"s":""}</div>
+      <div style="font-size:13px;color:var(--muted)">${d.resultado.repetidos?`${d.resultado.repetidos} ya estaban en el catálogo y se dejaron como estaban.`:"Ninguno estaba repetido."}</div>
+      ${d.resultado.sinProveedor?`<div style="font-size:12.5px;color:var(--amber);margin-top:8px">⚠️ El proveedor no se guardó: falta correr productos_02_proveedor.sql.</div>`:""}</div>
+    <div style="display:flex;justify-content:flex-end;margin-top:14px"><button class="btn btn-primary btn-md" onclick="closeModal()">Listo</button></div>`;
+  return `
+  <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Subí un CSV (o pegá el contenido) con una fila de títulos y los productos. Los títulos que entiendo son:
+    <code>descripcion</code>, <code>codigo_interno</code>, <code>codigo_barras</code> y <code>proveedor</code> (los dos últimos, opcionales). Los que ya existen —por código interno o de barras— no se tocan ni se duplican.</p>
+  <div class="field"><label>Archivo CSV</label><input type="file" accept=".csv,.txt,text/csv" style="font-size:12px" onchange="leerCsvCatalogo(this)"/></div>
+  <div class="field"><label>…o pegá el contenido acá</label>
+    <textarea rows="5" style="font-family:var(--mono);font-size:12px" placeholder="descripcion;codigo_interno;codigo_barras;proveedor&#10;ARROZ LARGO FINO 1KG;1001;7790001000011;Molinos del Sur" oninput="S.catImport.texto=this.value;S.catImport.analizado=false">${escH(d.texto)}</textarea></div>
+  ${d.err?`<div class="err-msg" style="margin-bottom:10px">${escH(d.err)}</div>`:""}
+  ${d.analizado?`
+  <div class="bp-resumen" style="margin-bottom:12px">
+    <strong style="color:#4ade80">${d.nuevos.length}</strong> nuevo${d.nuevos.length!==1?"s":""} para agregar ·
+    <strong>${d.repetidos.length}</strong> ya existe${d.repetidos.length!==1?"n":""} (se omiten)${d.invalidos?` · <span style="color:var(--amber)">${d.invalidos} fila${d.invalidos!==1?"s":""} sin descripción (se omiten)</span>`:""}
+  </div>
+  ${d.nuevos.length?`<div class="table-wrap" style="max-height:200px;overflow-y:auto;margin-bottom:12px"><table style="font-size:13px"><thead><tr><th>Descripción</th><th>Int.</th><th>EAN</th><th>Prov.</th></tr></thead>
+    <tbody>${d.nuevos.slice(0,8).map(x=>`<tr><td>${escH(x.descripcion)}</td><td class="mono">${escH(x.codigo_interno||"—")}</td><td class="mono">${escH(x.codigo_barras||"—")}</td><td>${escH(x.proveedor||"—")}</td></tr>`).join("")}</tbody></table>
+    ${d.nuevos.length>8?`<div class="dv-pie">…y ${d.nuevos.length-8} más</div>`:""}</div>`:""}`:""}
+  <div style="display:flex;gap:10px;justify-content:flex-end">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    ${d.analizado
+      ? `<button class="btn btn-success btn-md" onclick="importarCatalogo()" ${d.loading||!d.nuevos.length?"disabled":""}>${d.loading?`<span class="spinner"></span> Importando…`:`⬆ Agregar ${d.nuevos.length} producto${d.nuevos.length!==1?"s":""}`}</button>`
+      : `<button class="btn btn-primary btn-md" onclick="analizarCsvCatalogo()" ${d.loading?"disabled":""}>${d.loading?`<span class="spinner"></span> Revisando…`:"Revisar archivo"}</button>`}
+  </div>`;
+}
 
 // ── Admin: qué versión corre cada dispositivo ──
 function haceTxt(iso){
@@ -8348,6 +8615,8 @@ function renderModals(){
 
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
+  if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
+  if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
   if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
   if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
@@ -8703,6 +8972,8 @@ function renderDetalle(){
   </div>`:""}
   ${drow("Descripción",r.descripcion)}
   ${drow("Cantidad",r.cantidad+" "+r.unidad,true)}
+  ${(r.tipoPedido==="bolsin" && r.destino==="Tesorería" && !filasPrecintoDe(r).length)?`
+  <div class="alert-info" style="margin-bottom:10px;border-left-color:var(--amber)">🔒 Este envío es anterior a la carga de precintos: no tiene números de precinto registrados.</div>`:""}
   ${r.detalleCajas?(()=>{
     let cajas=[]; try{ cajas=JSON.parse(r.detalleCajas); }catch(e){}
     if(!Array.isArray(cajas)||!cajas.length) return "";
@@ -8712,8 +8983,8 @@ function renderDetalle(){
       return `<div class="field">
         <label>Precintos · ${prec.length} ${prec.length!==1?"bolsines":"bolsín"} · ${tc} cierre${tc!==1?"s":""}</label>
         <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
-          ${prec.map(x=>`<div class="bp-det">
-            <div class="bp-det-top"><span class="bp-det-n">🔒 ${escH(x.precinto)}</span>
+          ${prec.map(x=>`<div class="bp-det ${x.recibido===false?"falto":""}">
+            <div class="bp-det-top"><span class="bp-det-n">🔒 ${escH(x.precinto)}${x.recibido===true?` <span class="bp-ok">✓ recibido</span>`:x.recibido===false?` <span class="bp-falto">✕ NO llegó</span>`:""}</span>
               <span>${escH(String(x.cierres))} cierre${+x.cierres!==1?"s":""}${x.caja?` · Caja ${escH(x.caja)}`:""}</span></div>
             ${x.comentario?`<div class="bp-det-c">${escH(x.comentario)}</div>`:""}
           </div>`).join("")}
@@ -8766,6 +9037,12 @@ function renderDetalle(){
     <div style="margin-top:8px;padding-top:16px;border-top:1px solid var(--border)">
       <button class="btn btn-primary btn-md btn-full" onclick="closeModal();openDejarEnFabrica('${escH(r.id)}')">
         🏭 Dejar en fábrica
+      </button>
+    </div>`:""}
+  ${(["tesoreria","admin"].includes(S.user?.rol) && r.tipoPedido==="bolsin" && r.destino==="Tesorería" && ["En el buzón","Entregada (sin confirmar)"].includes(r.estado))?`
+    <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+      <button class="btn btn-success btn-md btn-full" onclick="closeModal();openConfirmarCerrado('${escH(r.id)}')">
+        ✅ Confirmar recepción${filasPrecintoDe(r).length?` de los ${filasPrecintoDe(r).length} precinto${filasPrecintoDe(r).length!==1?"s":""}`:""}
       </button>
     </div>`:""}
   ${puedeConfirmar?`
@@ -9043,7 +9320,23 @@ function renderConfirmarCerradoModal(){
         onkeydown="if(event.key==='Enter')submitConfirmarCerrado()"/>
       ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}
     </div>`}
-    ${r && r.tipoPedido==="bolsin"?`
+    ${r && r.tipoPedido==="bolsin" && filasPrecintoDe(r).length?`
+    <div class="field" style="margin-top:12px">
+      <label>Controlá cada precinto <span class="req">*</span> <span style="color:var(--faint);font-size:12px;font-weight:400">— destildá el que no llegó</span></label>
+      <div class="cc-precintos">
+        ${filasPrecintoDe(r).map((x,i)=>`
+        <label class="cc-prec ${d.llegaron[i]===false?"falta":""}">
+          <input type="checkbox" class="chk-round" ${d.llegaron[i]!==false?"checked":""} onchange="S.confirmarCerradoModal.llegaron[${i}]=this.checked;render()"/>
+          <span class="cc-n">🔒 ${escH(x.precinto)}</span>
+          <span class="cc-m">${escH(String(x.cierres))} cierre${+x.cierres!==1?"s":""}${x.caja?` · Caja ${escH(x.caja)}`:""}${x.comentario?` · ${escH(x.comentario)}`:""}</span>
+        </label>`).join("")}
+      </div>
+      <div class="cc-res ${d.llegaron.some(v=>v===false)?"mal":"ok"}">
+        ${d.llegaron.some(v=>v===false)
+          ? `⚠️ Llegaron <strong>${d.llegaron.filter(v=>v!==false).length}</strong> de ${d.llegaron.length} — faltan ${d.llegaron.map((v,i)=>v===false?filasPrecintoDe(r)[i].precinto:null).filter(Boolean).map(escH).join(", ")}`
+          : `✅ Llegaron los ${d.llegaron.length} precintos`}
+      </div>
+    </div>`:r && r.tipoPedido==="bolsin"?`
     <div class="field" style="margin-top:12px">
       <label>Cantidad de bolsines que retiraste <span class="req">*</span></label>
       <input id="confcerrado-cantidad" type="number" min="0" class="inp" value="${escH(String(r.cantidad))}"/>
@@ -9057,7 +9350,7 @@ function renderConfirmarCerradoModal(){
       <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-danger btn-md" onclick="openNoMeLlego('${escH(d.id)}')">✕ No me llegó</button>
       <button class="btn btn-success btn-md" onclick="submitConfirmarCerrado()" ${d.loading?"disabled":""}>
-        ${d.loading?`<span class="spinner"></span> Registrando...`:"✅ Confirmar transferencia"}
+        ${d.loading?`<span class="spinner"></span> Registrando...`:(r&&r.tipoPedido==="bolsin"?"✅ Confirmar recepción":"✅ Confirmar transferencia")}
       </button>
     </div>
   `}`;
@@ -10159,7 +10452,10 @@ async function submitDejarCerrado(){
 // ── Sucursal confirma una transferencia que quedó "sin confirmar" (cerrada) ──
 function openConfirmarCerrado(id){
   const identidadFija = (S.user?.rol==="tesoreria" && S.miIdentidadTesoreria) ? S.miIdentidadTesoreria : null;
-  S.confirmarCerradoModal = {id, dni: identidadFija?identidadFija.dni:"", err:"", loading:false, nombreOk: identidadFija?identidadFija.nombre:""};
+  const rq = S.requests.find(x=>x.id===id);
+  // por cada precinto declarado: ¿llegó? (arranca todo tildado; se destilda lo que falte)
+  const llegaron = rq ? filasPrecintoDe(rq).map(()=>true) : [];
+  S.confirmarCerradoModal = {id, dni: identidadFija?identidadFija.dni:"", err:"", loading:false, nombreOk: identidadFija?identidadFija.nombre:"", llegaron};
   S.modal = "confirmarCerrado";
   render();
 }
@@ -10167,9 +10463,10 @@ function openConfirmarCerrado(id){
 async function submitConfirmarCerrado(){
   const d = S.confirmarCerradoModal;
   if(d.loading) return;
-  const dni = String(d.dni||"").replace(/\D/g,"");
+  const ident = identTes();
+  const dni = ident ? ident.dni : String(d.dni||"").replace(/\D/g,"");
   if(!dni){ S.confirmarCerradoModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
+  const check = ident ? {ok:true, nombre:ident.nombre} : validarDNI(dni);
   if(!check.ok){ S.confirmarCerradoModal.err=check.msg; render(); return; }
 
   S.confirmarCerradoModal.loading  = true;
@@ -10194,7 +10491,18 @@ async function submitConfirmarCerrado(){
     updatedAt:            now(),
   };
   let comentarioFinal = comentario;
-  if(r && r.tipoPedido==="bolsin"){
+  if(r && r.tipoPedido==="bolsin" && filasPrecintoDe(r).length){
+    // control por precinto: queda anotado cuáles llegaron y cuáles no
+    const filas = filasPrecintoDe(r), llegaron = d.llegaron||[];
+    const faltan = filas.filter((x,i)=>llegaron[i]===false);
+    const nuevasFilas = filas.map((x,i)=>({...x, recibido: llegaron[i]!==false}));
+    changes.detalleCajas = JSON.stringify(nuevasFilas);
+    if(faltan.length){
+      const nota = `⚠️ Tesorería recibió ${filas.length-faltan.length} de ${filas.length} precintos — NO llegaron: ${faltan.map(x=>x.precinto).join(", ")}`;
+      comentarioFinal = comentarioFinal ? comentarioFinal+" · "+nota : nota;
+      changes.cantidad = filas.length-faltan.length;
+    }
+  } else if(r && r.tipoPedido==="bolsin"){
     const cantidadRetirada = +($("confcerrado-cantidad")?.value ?? r.cantidad);
     if(!isNaN(cantidadRetirada) && cantidadRetirada!==+r.cantidad){
       const nota = `⚠️ Tesorería retiró ${cantidadRetirada} — se habían declarado ${r.cantidad}`;
@@ -10981,7 +11289,7 @@ function hojasReporteBolsines(reqs){
   const H=t=>({v:t,s:1}), T=t=>({v:t,s:2});
   const hora=iso=>{ try{ return iso?new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit",hour12:false}):""; }catch(e){ return ""; } };
   const fecha=iso=>{ const d=_diaDe(iso); return d?d.split("-").reverse().join("/"):""; };
-  const cab=["Fecha de envío","Hora","N° solicitud","Sucursal","N° de precinto","Cant. de cierres","Caja","Cant. de bolsines","Comentario del precinto","Estado","Enviado por","Levantado por (repartidor)","Recibido en Tesorería","Retirado por (Tesorería)","Observaciones"];
+  const cab=["Fecha de envío","Hora","N° solicitud","Sucursal","N° de precinto","Cant. de cierres","Caja","Cant. de bolsines","Comentario del precinto","Estado","Enviado por","Levantado por (repartidor)","Recibido en Tesorería","Retirado por (Tesorería)","Observaciones","Precinto recibido"];
   const filas=[cab.map(H)];
   reqs.forEach(r=>{
     const comunes=[fecha(r.createdAt), hora(r.createdAt), r.id, r.sucursal||""];
@@ -10989,20 +11297,20 @@ function hojasReporteBolsines(reqs){
       r.confirmadaSucursalAt?`${fecha(r.confirmadaSucursalAt)} ${hora(r.confirmadaSucursalAt)}`:(r.deliveredAt?`${fecha(r.deliveredAt)} ${hora(r.deliveredAt)} (en el buzón)`:""),
       r.nombreQuienRecibio||"", [r.observaciones,r.motivoNoRecibido].filter(Boolean).join(" · ")];
     const pr=filasPrecintoDe(r);
-    if(pr.length) pr.forEach(x=>filas.push([...comunes, x.precinto, +x.cierres||0, x.caja||"", 1, x.comentario||"", ...colas]));
+    if(pr.length) pr.forEach(x=>filas.push([...comunes, x.precinto, +x.cierres||0, x.caja||"", 1, x.comentario||"", ...colas, x.recibido===true?"Recibido":x.recibido===false?"NO LLEGÓ":""]));
     else{
       let legacy=""; try{ const a=JSON.parse(r.detalleCajas||"[]"); if(Array.isArray(a)) legacy=a.filter(x=>x&&x.caja!==undefined).map(x=>`Caja ${x.caja||"s/n"}: ${x.cantidad}`).join(" · "); }catch(e){}
       filas.push([...comunes, "(sin detalle de precintos)", "", "", +r.cantidad||0, legacy, ...colas]);
     }
   });
   const tb=reqs.reduce((s,r)=>s+bolsinesDe(r),0), tc=reqs.reduce((s,r)=>s+cierresDe(r),0);
-  filas.push([T("TOTAL"),"","","","",T(tc),"",T(tb),"","","","","","",""]);
+  filas.push([T("TOTAL"),"","","","",T(tc),"",T(tb),"","","","","","","",""]);
   const porSuc={};
   reqs.forEach(r=>{ const k=r.sucursal||"—"; const o=porSuc[k]=porSuc[k]||{sol:0,bol:0,cie:0}; o.sol++; o.bol+=bolsinesDe(r); o.cie+=cierresDe(r); });
   const res=[["Sucursal","Solicitudes","Bolsines","Cierres"].map(H),
     ...Object.entries(porSuc).sort((a,b)=>a[0].localeCompare(b[0],"es")).map(([k,o])=>[k,o.sol,o.bol,o.cie]),
     [T("TOTAL"),T(reqs.length),T(tb),T(tc)]];
-  return [{nombre:"Bolsines", filas, anchos:[14,8,14,18,20,14,10,16,30,22,24,26,26,24,34]},
+  return [{nombre:"Bolsines", filas, anchos:[14,8,14,18,20,14,10,16,30,22,24,26,26,24,34,18]},
           {nombre:"Resumen por sucursal", filas:res, anchos:[26,14,12,12]}];
 }
 function descargarReporteBolsines(){
