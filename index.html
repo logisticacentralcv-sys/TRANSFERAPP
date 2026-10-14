@@ -840,7 +840,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261014-0913";
+const APP_VERSION = "20261014-0923";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8581,7 +8581,9 @@ function renderRepartidor(){
   const noBolsin = baseActivos.filter(r=>r.tipoPedido!=="bolsin");
   const bolsinesActivos = baseActivos.filter(r=>r.tipoPedido==="bolsin");
   const paraTomarGeneral = noBolsin.filter(r=>r.estado!=="En tránsito");
-  const tomadasGeneral   = noBolsin.filter(r=>r.estado==="En tránsito");
+  // "Tomadas" = TODO lo que el repartidor lleva encima, transferencias y bolsines juntos (así no se pierde nada);
+  // los bolsines siguen además en su pestaña propia.
+  const tomadasGeneral   = baseActivos.filter(r=>r.estado==="En tránsito");
 
   let entregadas=S.requests.filter(r=>["Entregada","Entregada (sin confirmar)"].includes(r.estado));
   if(S.fRepRecorrido) entregadas = entregadas.filter(r=>r.recorrido===S.fRepRecorrido);
@@ -8725,7 +8727,7 @@ function renderRepartidor(){
       // Lo que está en tránsito con OTRO repartidor: no se puede entregar desde acá, pero se avisa
       // para que no parezca que "desapareció" (Logística lo ve en tránsito).
       if(!["tomadas","bolsines"].includes(S.tabRep)) return "";
-      const lista = ajenas.filter(r=> S.tabRep==="bolsines" ? r.tipoPedido==="bolsin" : r.tipoPedido!=="bolsin");
+      const lista = ajenas.filter(r=> S.tabRep==="bolsines" ? r.tipoPedido==="bolsin" : true);
       if(!lista.length) return "";
       const porQuien={};
       lista.forEach(r=>{ const k=portadorSolicitud(r)?.nombre||"(sin nombre)"; (porQuien[k]=porQuien[k]||[]).push(r); });
