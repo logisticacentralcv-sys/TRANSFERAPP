@@ -784,6 +784,25 @@ tr[onclick]:active td{background:var(--s3)}
 .tm-difs .mal strong{color:#fca5a5}.tm-difs .ok strong{color:#4ade80}
 @media(max-width:980px){ .tes-met-filtros{grid-template-columns:repeat(2,minmax(0,1fr))} .tes-met-filtros .tes-f-btns{grid-column:1/-1!important} }
 
+
+/* ── Rankings (barras) más fáciles de leer ── */
+.hbar-list{display:flex;flex-direction:column;gap:13px}
+.hbar-top{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;margin-bottom:6px}
+.hbar-name{min-width:0;display:flex;flex-direction:column}
+.hbar-label{font-size:15px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hbar-sub{font-size:12.5px;color:#8ea2c4;margin-top:1px}
+.hbar-sub.warn{color:#fbbf24;font-weight:600}
+.hbar-fill.atipico{background-image:repeating-linear-gradient(135deg,rgba(255,255,255,.0) 0 9px,rgba(0,0,0,.28) 9px 14px)!important;background-blend-mode:normal}
+.hbar-val{flex-shrink:0;display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
+.hbar-val strong{font-size:18px;font-weight:800;color:var(--text)}
+.hbar-val em{font-style:normal;font-size:13px;color:#a9b8d0}
+.hbar-val small{font-size:12.5px;color:#8ea2c4;min-width:40px;text-align:right}
+.hbar-track{height:12px;background:var(--s3);border-radius:6px;overflow:hidden}
+.hbar-fill{height:100%;border-radius:6px}
+.rk-tit{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:13px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#c3cfe2}
+.rk-tit em{font-style:normal;font-weight:600;letter-spacing:0;text-transform:none;color:#8ea2c4;font-size:12.5px}
+.rk-nota{font-size:12px;color:#8ea2c4;margin-top:14px;line-height:1.4}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -808,7 +827,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261008-1428";
+const APP_VERSION = "20261014-0725";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2854,7 +2873,7 @@ async function submitTomarDevoluciones(){
       S.devoluciones = S.devoluciones.map(x=>idsSet.has(String(x.id)) ? {...x,...changes} : x);
       S.devolSeleccionTomar = new Set();
       S.modal = null;
-      toast(`🤲 ${nombre} tomó ${d.ids.length} devolución${d.ids.length!==1?"es":""} — camino a fábrica`);
+      toast(`🤲 ${nombre} tomó ${d.ids.length} ${d.ids.length!==1?"devoluciones":"devolución"} — camino a fábrica`);
     } else {
       S.tomarDevolucionesModal.loading=false;
       S.tomarDevolucionesModal.err = `No se pudieron tomar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
@@ -2929,7 +2948,7 @@ async function submitDejarDevolucionesFabrica(){
       S.devoluciones = S.devoluciones.map(x=>idsSet.has(String(x.id)) ? {...x,...changes} : x);
       S.devolSeleccion = new Set();
       S.modal = null;
-      toast(`📦 ${nombre} dejó ${d.ids.length} devolución${d.ids.length!==1?"es":""} en fábrica`);
+      toast(`📦 ${nombre} dejó ${d.ids.length} ${d.ids.length!==1?"devoluciones":"devolución"} en fábrica`);
     } else {
       S.dejarDevolucionesModal.loading=false;
       S.dejarDevolucionesModal.err = `No se pudieron dejar ${fallidas.length} de ${d.ids.length}. Probá de nuevo.`;
@@ -3985,7 +4004,7 @@ async function reclamoGuardar(firmaParam){
     }catch(e){ console.warn("Reclamo:",e); fallos++; }
   }));
   S.devoluciones=S.devoluciones.map(x=>hechas[String(x.id)]?{...x,...hechas[String(x.id)]}:x);
-  if(fallos){ r.err=`No se pudo guardar en ${fallos} devolución${fallos!==1?"es":""} — probá de nuevo.`; render(); return false; }
+  if(fallos){ r.err=`No se pudo guardar en ${fallos} ${fallos!==1?"devoluciones":"devolución"} — probá de nuevo.`; render(); return false; }
   toast(r.accion==="marcar"?`✅ Marcado como reclamado: ${r.proveedor}`:`↩ Vuelve a "para reclamar": ${r.proveedor}`);
   S.reclamoPend=null; render(); return true;
 }
@@ -4045,7 +4064,7 @@ function renderReclamoProveedor(){
             <div class="rc-cod">${p.codigoInterno?escH(p.codigoInterno):"—"}</div>
             <div class="rc-desc">
               <div>${escH(p.descripcion)}</div>
-              <small>${p.origenes.length} devolución${p.origenes.length!==1?"es":""} · ${escH(suc.join(", "))}${p.reclamo&&vista==="reclamados"?` · reclamado ${fd(p.reclamo.at)} por ${escH(p.reclamo.por||"—")}`:""}</small>
+              <small>${p.origenes.length} ${p.origenes.length!==1?"devoluciones":"devolución"} · ${escH(suc.join(", "))}${p.reclamo&&vista==="reclamados"?` · reclamado ${fd(p.reclamo.at)} por ${escH(p.reclamo.por||"—")}`:""}</small>
             </div>
             <div class="rc-cant"><strong>${fmtNum(Math.round(p.cantidad*1000)/1000)}</strong> ${escH(p.unidad)}</div>
           </div>
@@ -5016,21 +5035,53 @@ function leyendaPorcentajes(id, datos, sel){
 // Barras horizontales: nombre a la izquierda, valor y % a la derecha
 function barrasHorizontales(filas, color, total){
   if(!filas.length) return `<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`;
-  const max=Math.max(...filas.map(f=>f.valor),1);
-  return `<div style="display:flex;flex-direction:column;gap:14px">${filas.map(f=>{
-    const w=Math.max(f.valor/max*100,2);
+  // Si hay un valor muy por encima del resto (ej: un kilo mal cargado), las demás barras se miden contra el siguiente
+  // más grande y ese queda marcado: así no se ven todas como puntitos.
+  const normales=filas.filter(f=>!f.atipico);
+  const max=Math.max(...(normales.length?normales:filas).map(f=>f.valor),1);
+  return `<div class="hbar-list">${filas.map(f=>{
+    const w=f.atipico?100:Math.max(f.valor/max*100,2);
     const c=f.color||color||PALETA_CALIDAD[0];
-    return `<div class="hbar-row" ${f.onclickAttr||""} style="${f.onclickAttr?"cursor:pointer":""}">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:6px">
-        <span style="font-size:15.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escH(f.label)}</span>
-        <span style="flex-shrink:0;font-size:16px;font-weight:700;color:var(--text)">${fmtNum(f.valor)}${f.extra?` <span style="font-size:13px;font-weight:500;color:#a9b8d0">· ${f.extra}</span>`:""}${total?` <span style="font-size:13px;font-weight:700;color:${c}">${pctTxt(f.valor,total)}</span>`:""}</span>
+    return `<div class="hbar-row" ${f.onclickAttr||""} ${f.tip?`title="${escH(f.tip)}"`:""} style="${f.onclickAttr?"cursor:pointer":""}">
+      <div class="hbar-top">
+        <div class="hbar-name"><span class="hbar-label">${escH(f.label)}</span>${f.atipico?`<span class="hbar-sub warn">⚠️ Mucho más que el resto — conviene revisar si se cargó bien</span>`:(f.extra?`<span class="hbar-sub">${f.extra}</span>`:"")}</div>
+        <div class="hbar-val"><strong>${fmtNum(f.valor)}</strong>${f.unidad?`<em>${escH(f.unidad)}</em>`:""}${total?`<small>${pctTxt(f.valor,total)}</small>`:""}</div>
       </div>
-      <div style="height:16px;background:var(--s3);border-radius:8px;overflow:hidden">
-        <div class="hbar-fill" style="height:100%;width:${w}%;background:${c};border-radius:8px"></div>
-      </div>
+      <div class="hbar-track"><div class="hbar-fill ${f.atipico?"atipico":""}" style="width:${w}%;background:${c}"></div></div>
     </div>`;
   }).join("")}</div>`;
 }
+
+// Ranking por cantidad DEVUELTA: en kg (o en unidades cuando lo devuelto no se mide en kg).
+// El número de devoluciones queda en el cartelito al pasar el mouse; está en las tarjetas y el listado.
+const _esKgU=u=>normNotif(u||"")==="kg";
+function rankingCantidad(items, clave, opts){
+  opts=opts||{};
+  const m={};
+  items.forEach(p=>{
+    const k=clave(p)||"—", o=m[k]=m[k]||{kg:0,un:0,devs:new Set()};
+    o.devs.add(p.devId);
+    if(_esKgU(p.unidad)) o.kg+=(+p.cantidad||0); else o.un+=(+p.cantidad||0);
+  });
+  const hayKg=Object.values(m).some(o=>o.kg>0);
+  const unidad=hayKg?"kg":"unidades", r1=v=>Math.round(v*10)/10;
+  let filas=Object.entries(m).map(([k,o],i)=>({label:k, valor:hayKg?r1(o.kg):Math.round(o.un), unidad, devs:o.devs.size, resto:hayKg&&o.un?Math.round(o.un):0}))
+    .filter(f=>f.valor>0)
+    .sort((a,b)=>b.valor-a.valor||b.devs-a.devs);
+  const total=filas.reduce((s,f)=>s+f.valor,0);
+  const sinMedida=hayKg?Object.values(m).reduce((s,o)=>s+o.un,0):0;
+  // ¿el primero es 5 veces mayor que el segundo? casi seguro es un dato a revisar
+  if(filas.length>=4 && filas[1].valor>0 && filas[0].valor>=5*filas[1].valor) filas[0].atipico=true;
+  filas=filas.slice(0,opts.limite||10).map((f,i)=>({...f,
+    color:opts.colorFn?opts.colorFn(f.label,i):opts.color,
+    tip:`${f.devs} ${f.devs!==1?"devoluciones":"devolución"}${f.resto?` · y ${fmtNum(f.resto)} unidades más`:""}`,
+    extra:opts.subFn?opts.subFn(f.label):"",
+    onclickAttr:opts.attr?opts.attr(f.label):""}));
+  return {filas,total,unidad,sinMedida};
+}
+// Título neutro de cada lista (los colores quedan para las barras) + aclaración de la medida
+const tituloRanking=(txt,r)=>`<div class="rk-tit"><span>${txt}</span><em>por ${r.unidad} devuelt${r.unidad==="kg"?"os":"as"}</em></div>`;
+const notaRanking=r=>r.sinMedida?`<div class="rk-nota">Además se devolvieron ${fmtNum(Math.round(r.sinMedida))} unidades que no se miden en kg (no entran en este ranking).</div>`:"";
 
 // Línea de evolución con área, grilla y valores sobre cada punto.
 // Interactiva: pasar el mouse por una columna marca ese día (línea
@@ -5238,12 +5289,7 @@ function renderMetricasDevoluciones(){
     .map(([m,v],i)=>({label:m, valor:v.veces, color:colorMotivoCalidad(m,i), extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
   const motSel = S.calidadMotivoSel ? datosMotivo.find(d=>d.label===S.calidadMotivoSel) : null;
 
-  const porSuc={};
-  devs.forEach(d=>{ const s=d.sucursal||"—"; (porSuc[s]=porSuc[s]||{n:0,kg:0}).n++; });
-  items.forEach(p=>{ if(esKg(p.unidad) && porSuc[p.sucursal]) porSuc[p.sucursal].kg+=(+p.cantidad||0); });
-  const filasSuc=Object.entries(porSuc).sort((a,b)=>b[1].n-a[1].n).slice(0,15)
-    .map(([s,v])=>({label:s, valor:v.n, extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
-
+  const rkSuc=rankingCantidad(items,p=>p.sucursal,{color:"#2de0c4",limite:15});
   const attrFiltrar=nombre=>`onclick='calidadFiltrarProducto(${JSON.stringify(nombre).replace(/'/g,"&apos;")})'`;
   const porProd={};
   items.forEach(p=>{
@@ -5252,12 +5298,10 @@ function renderMetricasDevoluciones(){
     o.veces++; if(esKg(p.unidad)) o.kg+=(+p.cantidad||0);
     const m=motivoBase(p); o.motivos[m]=(o.motivos[m]||0)+1;
   });
-  const rankingProd=Object.entries(porProd).sort((a,b)=>b[1].veces-a[1].veces||b[1].kg-a[1].kg);
-  const filasProd=rankingProd.slice(0,10).map(([nombre,v],i)=>{
-    const motPrinc=Object.entries(v.motivos).sort((a,b)=>b[1]-a[1])[0];
-    return {label:nombre, valor:v.veces, color:PALETA_CALIDAD[i%PALETA_CALIDAD.length],
-      extra:`${v.kg?fmtNum(v.kg)+" kg · ":""}${motPrinc?escH(motPrinc[0]):""}`, onclickAttr:attrFiltrar(nombre)};
-  });
+  const rankingProd=Object.entries(porProd).sort((a,b)=>b[1].veces-a[1].veces||b[1].kg-a[1].kg);   // para la tarjeta "Lo que más se destaca"
+  // motivo principal de cada producto (se muestra en chico debajo del nombre)
+  const motPrincipal=nombre=>{ const o=porProd[nombre]; const m=o&&Object.entries(o.motivos).sort((x,y)=>y[1]-x[1])[0]; return m?escH(m[0]):""; };
+  const rkProd=rankingCantidad(items,p=>p.descripcion||"Sin descripción",{color:"#4f9eff",attr:attrFiltrar,subFn:motPrincipal});
 
   const detalle={};
   items.forEach(p=>{
@@ -5293,7 +5337,7 @@ function renderMetricasDevoluciones(){
     ${(desde||hasta)?chip(`📅 ${desde?fechaCortaISO(desde):"…"} → ${hasta?fechaCortaISO(hasta):"hoy"}`):""}
     ${(!catFija&&cat)?chip(`🏷️ ${cat}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.devMetCategoria='';S.calidadMotivoSel='';render()">✕</button>`):""}
     ${sucSel?chip(`🏪 ${escH(sucSel)}`,`<button style="background:none;border:0;color:var(--text);cursor:pointer;font-size:15px;line-height:1" onclick="S.calidadSucursal='';render()">✕</button>`):""}
-    <span style="margin-left:auto;font-size:13px;color:#a9b8d0">${devs.length} devolución${devs.length!==1?"es":""} · ${items.length} línea${items.length!==1?"s":""}</span>
+    <span style="margin-left:auto;font-size:13px;color:#a9b8d0">${devs.length} ${devs.length!==1?"devoluciones":"devolución"} · ${items.length} línea${items.length!==1?"s":""}</span>
     <button class="btn btn-ghost btn-sm" onclick="S.calidadDesde='';S.calidadHasta='';S.calidadProducto='';S.calidadSucursal='';S.devMetCategoria='';S.calidadMotivoSel='';S.calidadDiaSel='';render()">✕ Limpiar</button>
   </div>`;
 
@@ -5309,20 +5353,19 @@ function renderMetricasDevoluciones(){
     const devsD=devs.filter(d=>d.createdAt && d.createdAt.slice(0,10)===diaSel);
     const kgD=itsD.filter(p=>esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
     const unD=itsD.filter(p=>!esKg(p.unidad)).reduce((a,p)=>a+(+p.cantidad||0),0);
-    const agr=fn=>{ const m={}; itsD.forEach(p=>{ const k=fn(p)||"—"; const o=m[k]=m[k]||{n:0,kg:0}; o.n++; if(esKg(p.unidad)) o.kg+=(+p.cantidad||0); }); return Object.entries(m).sort((a,b)=>b[1].n-a[1].n||b[1].kg-a[1].kg); };
-    const fMot=agr(motivoBase).map(([k,v],i)=>({label:k,valor:v.n,color:colorMotivoCalidad(k,i),extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
-    const fProd=agr(p=>p.descripcion).slice(0,10).map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:"",onclickAttr:attrFiltrar(k)}));
-    const fSuc=agr(p=>p.sucursal).slice(0,10).map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
+    const rkM=rankingCantidad(itsD,motivoBase,{colorFn:(k,i)=>colorMotivoCalidad(k,i)});
+    const rkP=rankingCantidad(itsD,p=>p.descripcion,{color:"#4f9eff",attr:attrFiltrar});
+    const rkS=rankingCantidad(itsD,p=>p.sucursal,{color:"#2de0c4"});
     detalleDia=`
     <div id="calidad-detalle-dia" class="card" style="${cardStyle};border-left:5px solid ${colorMetrica};scroll-margin-top:130px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        ${tituloGrafico(escH(diaLargo(diaSel)), `${devsD.length} devolución${devsD.length!==1?"es":""} · ${itsD.length} producto${itsD.length!==1?"s":""}${kgD?` · ${fmtNum(Math.round(kgD*10)/10)} kg`:""}${unD?` · ${fmtNum(Math.round(unD))} unidades`:""}${q?` · solo "${escH(q)}"`:""}`)}
+        ${tituloGrafico(escH(diaLargo(diaSel)), `${devsD.length} ${devsD.length!==1?"devoluciones":"devolución"} · ${itsD.length} producto${itsD.length!==1?"s":""}${kgD?` · ${fmtNum(Math.round(kgD*10)/10)} kg`:""}${unD?` · ${fmtNum(Math.round(unD))} unidades`:""}${q?` · solo "${escH(q)}"`:""}`)}
         <button class="btn btn-ghost btn-sm" onclick="calidadSeleccionarDia('${diaSel}')">✕ Cerrar</button>
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:32px;margin-bottom:24px">
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Motivos</div>${barrasHorizontales(fMot,null,itsD.length)}</div>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Productos</div>${barrasHorizontales(fProd,colorMetrica,itsD.length)}</div>
-        <div><div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:12px">Sucursales</div>${barrasHorizontales(fSuc,"#4f9eff",itsD.length)}</div>
+        <div>${tituloRanking("Motivos",rkM)}${barrasHorizontales(rkM.filas,null,rkM.total)}${notaRanking(rkM)}</div>
+        <div>${tituloRanking("Productos",rkP)}${barrasHorizontales(rkP.filas,"#4f9eff",rkP.total)}${notaRanking(rkP)}</div>
+        <div>${tituloRanking("Sucursales",rkS)}${barrasHorizontales(rkS.filas,"#2de0c4",rkS.total)}${notaRanking(rkS)}</div>
       </div>
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-bottom:10px">Todo lo devuelto ese día</div>
       <div class="table-wrap"><table style="font-size:15px">
@@ -5341,15 +5384,8 @@ function renderMetricasDevoluciones(){
   let detalleMotivo="";
   if(motSel){
     const its=items.filter(p=>motivoBase(p)===motSel.label);
-    const pp={}, ss={};
-    its.forEach(p=>{
-      const k=p.descripcion||"Sin descripción"; const o=pp[k]=pp[k]||{n:0,kg:0}; o.n++; if(esKg(p.unidad)) o.kg+=(+p.cantidad||0);
-      const s=p.sucursal; const o2=ss[s]=ss[s]||{n:0,kg:0}; o2.n++; if(esKg(p.unidad)) o2.kg+=(+p.cantidad||0);
-    });
-    const filasP=Object.entries(pp).sort((a,b)=>b[1].n-a[1].n||b[1].kg-a[1].kg).slice(0,10)
-      .map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:"",onclickAttr:attrFiltrar(k)}));
-    const filasS=Object.entries(ss).sort((a,b)=>b[1].n-a[1].n).slice(0,10)
-      .map(([k,v])=>({label:k,valor:v.n,extra:v.kg?`${fmtNum(v.kg)} kg`:""}));
+    const rkP=rankingCantidad(its,p=>p.descripcion||"Sin descripción",{color:"#4f9eff",attr:attrFiltrar});
+    const rkS=rankingCantidad(its,p=>p.sucursal,{color:"#2de0c4"});
     detalleMotivo=`
     <div id="calidad-detalle-motivo" class="card" style="${cardStyle};border-left:5px solid ${motSel.color};scroll-margin-top:130px">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
@@ -5358,12 +5394,12 @@ function renderMetricasDevoluciones(){
       </div>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:32px">
         <div>
-          <div style="font-size:15px;font-weight:700;color:${motSel.color};margin-bottom:12px">Productos</div>
-          ${barrasHorizontales(filasP,motSel.color,its.length)}
+          ${tituloRanking("Productos",rkP)}
+          ${barrasHorizontales(rkP.filas,"#4f9eff",rkP.total)}${notaRanking(rkP)}
         </div>
         <div>
-          <div style="font-size:15px;font-weight:700;color:${motSel.color};margin-bottom:12px">Sucursales</div>
-          ${barrasHorizontales(filasS,motSel.color,its.length)}
+          ${tituloRanking("Sucursales",rkS)}
+          ${barrasHorizontales(rkS.filas,"#2de0c4",rkS.total)}${notaRanking(rkS)}
         </div>
       </div>
     </div>`;
@@ -5379,7 +5415,7 @@ function renderMetricasDevoluciones(){
   const listaMax = S.devListaMax || 25;
   const cardListaDevs = `
   <div id="cal-lista" class="card" style="${cardStyle}">
-    ${tituloGrafico("Devoluciones", `${devsLista.length} devolución${devsLista.length!==1?"es":""}${motFiltroLista?` · motivo «${escH(motFiltroLista)}»`:""}${diaSel?` · ${escH(diaLargo(diaSel))}`:""} — tocá una para ver sus fotos y su recorrido`)}
+    ${tituloGrafico("Devoluciones", `${devsLista.length} ${devsLista.length!==1?"devoluciones":"devolución"}${motFiltroLista?` · motivo «${escH(motFiltroLista)}»`:""}${diaSel?` · ${escH(diaLargo(diaSel))}`:""} — tocá una para ver sus fotos y su recorrido`)}
     ${!devsLista.length?`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">No hay devoluciones con esos filtros.</p>`:`
     <div class="dl-lista">
       ${devsLista.slice(0,listaMax).map(d=>{
@@ -5465,13 +5501,13 @@ function renderMetricasDevoluciones(){
   <div id="cal-slot-motivo">${detalleMotivo}</div>
 
   <div id="cal-prod" class="card" style="${cardStyle}">
-    ${tituloGrafico("Productos más devueltos", "Tocá un producto para ver solo ese: sus motivos y las sucursales que lo devuelven")}
-    ${barrasHorizontales(filasProd,null,items.length)}
+    ${tituloGrafico("Productos más devueltos", "Ordenados por cantidad devuelta · tocá un producto para ver solo ese: sus motivos y las sucursales que lo devuelven")}
+    ${barrasHorizontales(rkProd.filas,"#4f9eff",rkProd.total)}${notaRanking(rkProd)}
   </div>
 
   <div id="cal-suc" class="card" style="${cardStyle}">
-    ${tituloGrafico("Devoluciones por sucursal", q?`Sucursales que devuelven "${escH(q)}"`:"Cantidad de devoluciones y kg por sucursal")}
-    ${barrasHorizontales(filasSuc,"#4f9eff",devs.length)}
+    ${tituloGrafico("Sucursales con más devoluciones", `${q?`Sucursales que devuelven "${escH(q)}" · `:""}Ordenadas por ${rkSuc.unidad} devuelt${rkSuc.unidad==="kg"?"os":"as"} · pasá el mouse para ver cuántas devoluciones fueron`)}
+    ${barrasHorizontales(rkSuc.filas,"#2de0c4",rkSuc.total)}${notaRanking(rkSuc)}
   </div>
 
   <div id="cal-detalle" class="card" style="${cardStyle}">
@@ -5498,7 +5534,7 @@ function renderMetricasDevoluciones(){
     ${statCard("📦","DEVOLUCIONES", devs.length, "var(--teal)")}
     ${statCard("⚖️","TOTAL KG", fmtNum(Math.round(totalKg*10)/10), "var(--amber)")}
     ${statCard("🔢","TOTAL UNIDADES", fmtNum(Math.round(totalUnid)), "var(--blue)")}
-    ${statCard("🏪","SUCURSALES", Object.keys(porSuc).length, "var(--purple)")}
+    ${statCard("🏪","SUCURSALES", new Set(devs.map(d=>d.sucursal||"—")).size, "var(--purple)")}
   </div>`;
 }
 
