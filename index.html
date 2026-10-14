@@ -803,6 +803,19 @@ tr[onclick]:active td{background:var(--s3)}
 .rk-tit em{font-style:normal;font-weight:600;letter-spacing:0;text-transform:none;color:#8ea2c4;font-size:12.5px}
 .rk-nota{font-size:12px;color:#8ea2c4;margin-top:14px;line-height:1.4}
 
+
+/* ── Repartidor: lo que está en tránsito con otro repartidor ── */
+.rep-ajenas{margin-top:16px;padding:0;overflow:hidden;border-left:3px solid var(--amber)}
+.rep-ajenas-head{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;padding:14px 16px;background:none;border:0;color:var(--text);font-family:var(--font);font-size:14px;text-align:left;cursor:pointer}
+.rep-ajenas-flecha{flex-shrink:0;font-size:12.5px;font-weight:700;color:var(--amber)}
+.rep-ajenas-lista{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+.rep-ajena{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;padding:10px 16px;border-bottom:1px solid var(--border);cursor:pointer;font-size:13.5px}
+.rep-ajena:hover{background:var(--s2)}
+.rep-ajena .mono{color:var(--blue)}
+.rep-ajena-d{color:var(--muted)}
+.rep-ajena em{font-style:normal;color:var(--amber);font-weight:600;margin-left:auto}
+.rep-ajenas-nota{font-size:12px;color:var(--faint);padding:8px 16px 12px;margin:0}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -827,7 +840,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261014-0725";
+const APP_VERSION = "20261014-0913";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8256,16 +8269,7 @@ function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
 // Lo que este repartidor puede ver y hacer (sin los filtros de pantalla)
 function repVisibles(){
-  let base=S.requests.filter(r=>r.estado==="En tránsito"||puedeTomarAhora(r));
-  if(S.miIdentidadRep){
-    const mi=normNotif(S.miIdentidadRep.nombre);
-    base=base.filter(r=>{
-      if(r.estado==="En fábrica") return true;
-      const q=r.nombreQuienEntrego||r.nombreQuienLevanto;
-      return !q || normNotif(q)===mi;
-    });
-  }
-  return base;
+  return S.requests.filter(r=>(r.estado==="En tránsito"||puedeTomarAhora(r)) && visibleParaRepartidor(r));
 }
 function estoyEnLista(){
   const e=S.estoyEn; if(!e) return {retirar:[],dejar:[],devTomar:[],devFabrica:[]};
@@ -8281,9 +8285,8 @@ function estoyEnLista(){
     if(_pasaPorFab(r) && !r.fabricaAt) return e.fabrica;             // pasa por fábrica y todavía no llegó
     return normNotif(r.destino)===n;
   });
-  const mias=d=>!d.nombreQuienLevanto || normNotif(d.nombreQuienLevanto)===mi;
-  const devTomar=S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===n && mias(d));
-  const devFabrica=e.fabrica ? S.devoluciones.filter(d=>d.estado==="En camino" && mias(d) && d.nombreQuienLevanto) : [];
+  const devTomar=S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===n);
+  const devFabrica=e.fabrica ? S.devoluciones.filter(d=>d.estado==="En camino" && portadorDevolucion(d) && devolucionVisibleParaRepartidor(d)) : [];
   return {retirar,dejar,devTomar,devFabrica};
 }
 function cardDevolucionEstoy(d,accion){
@@ -8385,6 +8388,39 @@ function viajeResponsablesTxt(r){
   return v.map(x=>`👤 Viaje ${x.id}: ${[x.nombre_rep1,x.nombre_rep2].filter(Boolean).join(" y ")||"—"}`).join(" · ");
 }
 async function refrescarDevolucionesSilencioso(){ try{ await cargarDevoluciones(); render(); }catch(e){} }
+
+
+// ═══════════════════════════════════════════════════════════════════
+//  ¿QUIÉN LLEVA AHORA CADA COSA? (una sola regla para todo el reparto)
+//  - Solo lo que está "En tránsito" (o una devolución "En camino") tiene dueño.
+//    Lo que está para tomar (Lista para retirar, En fábrica, etc.) lo ven TODOS,
+//    aunque arrastre el nombre de alguien de un intento anterior.
+//  - En el 2º tramo (pasa por fábrica y ya llegó a fábrica) el dueño es quien la
+//    sacó de fábrica; en el 1º, quien la levantó. Un "entregó" viejo no cuenta.
+//  - Se compara por DNI (no falla si el nombre está escrito distinto); si no hay
+//    DNI guardado, por nombre.
+// ═══════════════════════════════════════════════════════════════════
+const _dniLimpio=v=>String(v??"").replace(/\D/g,"");
+function portadorSolicitud(r){
+  if(!r || r.estado!=="En tránsito") return null;
+  const segunda=_pasaPorFab(r) && !!r.fabricaAt;
+  const nombre=String((segunda?r.nombreQuienEntrego:r.nombreQuienLevanto)||"").trim();
+  const dni=_dniLimpio(segunda?r.dniEntrega:r.dniRepartidor);
+  return (nombre||dni) ? {nombre,dni} : null;
+}
+function portadorDevolucion(d){
+  if(!d || d.estado!=="En camino") return null;
+  const nombre=String(d.nombreQuienLevanto||"").trim(), dni=_dniLimpio(d.dniQuienLevanto);
+  return (nombre||dni) ? {nombre,dni} : null;
+}
+function esDeEstaPersona(port, yo){
+  if(!port || !yo) return true;                       // nadie la lleva → la ven todos
+  const dy=_dniLimpio(yo.dni);
+  if(port.dni && dy) return port.dni===dy;
+  return normNotif(port.nombre)===normNotif(yo.nombre);
+}
+const visibleParaRepartidor = r => !S.miIdentidadRep || esDeEstaPersona(portadorSolicitud(r), S.miIdentidadRep);
+const devolucionVisibleParaRepartidor = d => !S.miIdentidadRep || esDeEstaPersona(portadorDevolucion(d), S.miIdentidadRep);
 
 function cardRepartidorHtml(r){
         const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
@@ -8526,6 +8562,8 @@ function cardRepartidorHtml(r){
       }
 
 function renderRepartidor(){
+  // "Estás en…" vence solo: si quedó abierto de un escaneo anterior, vuelve al panel completo
+  if(S.estoyEn && Date.now()-(S.estoyEn.at||0) > VENTANA_PRESENCIA_MIN*60000) S.estoyEn=null;
   if(S.estoyEn) return renderEstoyEn();
   const u=S.user;
   const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
@@ -8537,15 +8575,9 @@ function renderRepartidor(){
   if(S.fRepRecorrido) baseActivos = baseActivos.filter(r=>r.recorrido===S.fRepRecorrido);
   if(S.fRepSucursal)  baseActivos = baseActivos.filter(r=>r.sucursal===S.fRepSucursal);
   if(S.fRepNombre)    baseActivos = baseActivos.filter(r=>r.nombreQuienLevanto===S.fRepNombre);
-  if(S.miIdentidadRep){
-    const miNombre = normNotif(S.miIdentidadRep.nombre);
-    baseActivos = baseActivos.filter(r=>{
-      if(r.estado==="En fábrica") return true; // libre para cualquiera (necesita un segundo tramo)
-      const quienLoTiene = r.nombreQuienEntrego || r.nombreQuienLevanto;
-      if(!quienLoTiene) return true; // todavía nadie lo tomó
-      return normNotif(quienLoTiene)===miNombre;
-    });
-  }
+  // Lo que está en tránsito con OTRO repartidor no se puede gestionar acá, pero se avisa (ver más abajo)
+  let ajenas = baseActivos.filter(r=>!visibleParaRepartidor(r));
+  baseActivos = baseActivos.filter(visibleParaRepartidor);
   const noBolsin = baseActivos.filter(r=>r.tipoPedido!=="bolsin");
   const bolsinesActivos = baseActivos.filter(r=>r.tipoPedido==="bolsin");
   const paraTomarGeneral = noBolsin.filter(r=>r.estado!=="En tránsito");
@@ -8562,10 +8594,7 @@ function renderRepartidor(){
   // Devoluciones — ahora es una pestaña propia, no algo mezclado siempre.
   let devolucionesRep = S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado));
   if(S.fRepSucursal) devolucionesRep = devolucionesRep.filter(d=>d.sucursal===S.fRepSucursal);
-  if(S.miIdentidadRep){
-    const miNombre = normNotif(S.miIdentidadRep.nombre);
-    devolucionesRep = devolucionesRep.filter(d=>!d.nombreQuienLevanto || normNotif(d.nombreQuienLevanto)===miNombre);
-  }
+  devolucionesRep = devolucionesRep.filter(devolucionVisibleParaRepartidor);
 
   // Qué lista de solicitudes corresponde a la pestaña activa
   const list = S.tabRep==="tomadas" ? tomadasGeneral
@@ -8669,10 +8698,16 @@ function renderRepartidor(){
       ${S.tabRep==="bolsines"?(()=>{
         const alBuzonN    = list.filter(r=>esDestinoBuzon(r.destino)).length;
         const desdeBuzonN = list.filter(r=>!esDestinoBuzon(r.destino)).length;
+        // Si la sub-pestaña elegida está vacía y la otra tiene bolsines, se muestra la otra
+        // (antes se abría "Al buzón" vacía aunque hubiera bolsines para entregar).
+        if(!S.subTabBolsinesManual){
+          if(S.subTabBolsines!=="entregar" && !alBuzonN && desdeBuzonN) S.subTabBolsines="entregar";
+          else if(S.subTabBolsines==="entregar" && !desdeBuzonN && alBuzonN) S.subTabBolsines="buzon";
+        }
         return `
       <div class="tabs" style="grid-column:1/-1;margin-bottom:4px">
-        <button class="tab ${S.subTabBolsines!=="entregar"?"active":""}" onclick="S.subTabBolsines='buzon';render()">📥 Al buzón (${alBuzonN})</button>
-        <button class="tab ${S.subTabBolsines==="entregar"?"active":""}" onclick="S.subTabBolsines='entregar';render()">📤 Para entregar (${desdeBuzonN})</button>
+        <button class="tab ${S.subTabBolsines!=="entregar"?"active":""}" onclick="S.subTabBolsines='buzon';S.subTabBolsinesManual=true;render()">📥 Al buzón (${alBuzonN})</button>
+        <button class="tab ${S.subTabBolsines==="entregar"?"active":""}" onclick="S.subTabBolsines='entregar';S.subTabBolsinesManual=true;render()">📤 Para entregar (${desdeBuzonN})</button>
       </div>`;
       })():""}
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
@@ -8686,6 +8721,29 @@ function renderRepartidor(){
       })()}
     </div>
     `}
+    ${(()=>{
+      // Lo que está en tránsito con OTRO repartidor: no se puede entregar desde acá, pero se avisa
+      // para que no parezca que "desapareció" (Logística lo ve en tránsito).
+      if(!["tomadas","bolsines"].includes(S.tabRep)) return "";
+      const lista = ajenas.filter(r=> S.tabRep==="bolsines" ? r.tipoPedido==="bolsin" : r.tipoPedido!=="bolsin");
+      if(!lista.length) return "";
+      const porQuien={};
+      lista.forEach(r=>{ const k=portadorSolicitud(r)?.nombre||"(sin nombre)"; (porQuien[k]=porQuien[k]||[]).push(r); });
+      return `<div class="card rep-ajenas">
+        <button class="rep-ajenas-head" onclick="S.repAjenasAbierto=!S.repAjenasAbierto;render()">
+          <span>👀 ${lista.length} en tránsito con ${Object.keys(porQuien).length===1?"otro repartidor":"otros repartidores"}: ${Object.entries(porQuien).map(([k,v])=>`<strong>${escH(k)}</strong> (${v.length})`).join(" · ")}</span>
+          <span class="rep-ajenas-flecha">${S.repAjenasAbierto?"▲ Ocultar":"▼ Ver"}</span>
+        </button>
+        ${S.repAjenasAbierto?`<div class="rep-ajenas-lista">${lista.map(r=>`
+          <div class="rep-ajena" onclick="openDetalle('${escH(r.id)}')">
+            <span class="mono">${escH(r.id)}</span>
+            <strong>${escH(origenLabel(r))} → ${escH(r.destino||"")}</strong>
+            <span class="rep-ajena-d">${escH(r.descripcion||"")}</span>
+            <em>lleva ${escH(portadorSolicitud(r)?.nombre||"—")}${(r.salidaFabricaAt||r.levantadoAt)?` · desde ${escH(fdt(r.salidaFabricaAt||r.levantadoAt))}`:""}</em>
+          </div>`).join("")}</div>`:""}
+        <p class="rep-ajenas-nota">Solo quien la tomó la puede entregar. Si hay que pasársela a otro, avisale a Logística.</p>
+      </div>`;
+    })()}
   </div>`;
 }
 
