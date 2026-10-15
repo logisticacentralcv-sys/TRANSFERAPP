@@ -840,7 +840,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261014-0923";
+const APP_VERSION = "20261015-1000";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10497,8 +10497,9 @@ async function submitCambioEstadoMasivo(){
       const estadoRealmenteCambia = !!d.estado && (!x || x.estado!==d.estado);
       const changes = {updatedAt:nowTs, dniLogistica:dni, nombreLogistica:nombre};
       if(estadoRealmenteCambia){
-        changes.estado = d.estado;
-        const nota = esAprobar ? `Aprobada por ${nombre}` : `Cambio a "${d.estado}" por ${nombre}`;
+        Object.assign(changes, cambiosEstadoManual(x, d.estado, nombre));   // misma regla que Gestionar
+        const corregido = changes.estado!==d.estado;
+        const nota = esAprobar ? `Aprobada por ${nombre}` : `Cambio a "${changes.estado}" por ${nombre}${corregido?" (bolsín para Tesorería: queda en el buzón hasta que Tesorería lo confirme)":""}`;
         changes.comentario = x && x.comentario ? x.comentario+" · "+nota : nota;
         if(esAprobar && x && !x.approvedAt) changes.approvedAt = nowTs;
         if(esAprobar && x) crearNotificacion(x.sucursal||x.area||"", `✅ Tu solicitud ${id} fue aprobada — prepará y marcá "Lista para retirar"`, id);
@@ -10511,7 +10512,7 @@ async function submitCambioEstadoMasivo(){
       return {id, changes};
     });
     const resultados = await Promise.all(
-      cambios.map(c => sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id))
+      cambios.map(c => actualizarSolicitudTolerante(c.id, c.changes))
     );
     const fallidas = resultados.filter(r=>r.error);
     if(fallidas.length===0){
@@ -10522,7 +10523,10 @@ async function submitCambioEstadoMasivo(){
       S.logSeleccion = new Set();
       S.modoSeleccion = false;
       S.modal = null;
-      toast(esAprobar ? `✅ ${cambios.length} solicitudes aprobadas` : `✅ ${cambios.length} solicitudes cambiadas a "${d.estado}"`);
+      const alBuzon = cambios.filter(c=>c.changes.estado==="En el buzón" && d.estado==="Entregada").length;
+      toast(esAprobar ? `✅ ${cambios.length} solicitudes aprobadas`
+        : `✅ ${cambios.length-alBuzon} cambiada${cambios.length-alBuzon!==1?"s":""} a "${d.estado}"${alBuzon?` · ${alBuzon} ${alBuzon!==1?"bolsines para Tesorería quedaron":"bolsín para Tesorería quedó"} "En el buzón" (los cierra Tesorería)`:""}`, alBuzon?"warn":undefined);
+      if(resultados.some(r=>r.sinColumnasManual)) toast("⚠️ Falta correr solicitudes_01_cambio_manual.sql para registrar quién lo cambió","warn");
     } else {
       S.cambioEstadoMasivoModal.loading=false;
       S.cambioEstadoMasivoModal.err = `No se pudieron cambiar ${fallidas.length} de ${cambios.length}. Probá de nuevo.`;
@@ -12546,6 +12550,33 @@ function cerradaParaOrigen(r){
   return estaCerradaParaSucursal(r) || r.estado==="Entregada (sin confirmar)";
 }
 
+// ── Cambios de estado hechos a mano (Gestionar o cambio masivo) — una sola regla para los dos ──
+// Un bolsín que va al buzón (Tesorería / Fábrica) no se da por "Entregada" a mano: queda "En el buzón"
+// hasta que Tesorería confirme la recepción (y controle los precintos). Solo Tesorería lo cierra.
+function estadoManualCorregido(r, estado){
+  if(estado==="Entregada" && r && r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino) && S.user?.rol!=="tesoreria") return "En el buzón";
+  return estado;
+}
+function cambiosEstadoManual(r, estadoPedido, nombre){
+  const estado = estadoManualCorregido(r, estadoPedido), ts = now(), ch = {estado};
+  if(!r || r.estado===estado) return ch;
+  if(estado==="Entregada" || estado==="En el buzón") ch.deliveredAt = ts;           // antes el cambio masivo no lo guardaba
+  if(estado==="Entregada"){ ch.cambioManualEstado="Entregada"; ch.cambioManualPor=nombre; ch.cambioManualAt=ts; }
+  else if(r.cambioManualEstado){ ch.cambioManualEstado=null; ch.cambioManualPor=null; ch.cambioManualAt=null; }
+  if(r.estado==="En fábrica"){ ch.nombreQuienLevanto=""; ch.dniRepartidor=""; }
+  return ch;
+}
+// Guarda una solicitud; si las columnas de "cambiado a mano" todavía no existen, la guarda igual sin ellas
+async function actualizarSolicitudTolerante(id, changes){
+  let r = await sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",id);
+  if(r.error && /cambio_manual/i.test(String(r.error.message||r.error.details||""))){
+    const { cambioManualEstado, cambioManualPor, cambioManualAt, ...resto } = changes;
+    r = await sb.from("solicitudes").update(toSnakeRow(resto)).eq("id",id);
+    if(!r.error) r.sinColumnasManual = true;
+  }
+  return r;
+}
+
 function esDestinoBuzon(destino){
   const n = normNotif(destino);
   return n==="tesoreria" || n==="fabrica";
@@ -13167,6 +13198,8 @@ async function aplicarGestionar(dniVal, usuario){
       S.saving=true; S.modal=null; renderNow();
       const a=S.action; const r=S.requests.find(x=>x.id===S.selId);
       const savedId = S.selId;
+      const estadoPedido = a.estado;
+      a.estado = estadoManualCorregido(r, a.estado);          // bolsín para Tesorería → "En el buzón"
       // Leer comentario del repartidor del DOM (puede haber sido editado)
       const comentRepDom = ($("g-coment-rep")?.value ?? a.comentarioRepartidor ?? "").trim();
       const changes={
@@ -13206,6 +13239,8 @@ async function aplicarGestionar(dniVal, usuario){
         changes.nombreQuienLevanto="";
         changes.dniRepartidor="";
       }
+      if(a.estado==="En el buzón" && r.estado!=="En el buzón") changes.deliveredAt=now();
+      if(estadoPedido!==a.estado) toast(`📫 Es un bolsín para Tesorería: queda "En el buzón" hasta que Tesorería confirme la recepción`,"warn");
       // Reprogramar: NO toca el estado — solo actualiza la fecha pedida y
       // deja marcado que se reprogramó, para que convivan "Aprobada" +
       // "Reprogramada" en vez de perder el estado real de la solicitud.
