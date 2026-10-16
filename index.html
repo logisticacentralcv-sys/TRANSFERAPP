@@ -840,7 +840,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261015-1000";
+const APP_VERSION = "20261016-0623";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8422,6 +8422,12 @@ function esDeEstaPersona(port, yo){
 const visibleParaRepartidor = r => !S.miIdentidadRep || esDeEstaPersona(portadorSolicitud(r), S.miIdentidadRep);
 const devolucionVisibleParaRepartidor = d => !S.miIdentidadRep || esDeEstaPersona(portadorDevolucion(d), S.miIdentidadRep);
 
+// Saca fechas y horas de un texto ("13/10/2026, 08:02 p. m. · Gaviola" → "Gaviola")
+function sinFechas(t){
+  return String(t||"")
+    .replace(/(Programad[oa] para\s*)?\d{1,2}\/\d{1,2}\/\d{2,4}(,?\s*\d{1,2}:\d{2}(:\d{2})?(\s*[ap]\.?\s*m\.?)?)?/gi,"")
+    .replace(/\s*·\s*(·\s*)+/g," · ").replace(/^\s*·\s*|\s*·\s*$/g,"").trim();
+}
 function cardRepartidorHtml(r){
         const pasaPorFabrica = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
         const estaEnTransito = r.estado === "En tránsito";
@@ -8470,7 +8476,7 @@ function cardRepartidorHtml(r){
                 <span style="width:7px;height:7px;border-radius:50%;background:${categoria.color};display:inline-block;flex-shrink:0"></span>
                 ${categoria.texto}
               </div>
-              <div style="font-size:11px;color:var(--faint);white-space:nowrap">${fd(r.createdAt)} · <span style="color:var(--blue);font-family:var(--mono)">${escH(r.id)}</span></div>
+              <div style="font-size:11px;color:var(--faint);white-space:nowrap"><span style="color:var(--blue);font-family:var(--mono)">${escH(r.id)}</span></div>
             </div>
 
             <!-- Header -->
@@ -8493,11 +8499,7 @@ function cardRepartidorHtml(r){
 
             <!-- Info chips -->
             <div style="display:grid;grid-template-columns:1fr;gap:6px;font-size:12px;margin-bottom:10px">
-              ${r.scheduledAt?`
-              <div style="background:var(--s2);border-radius:6px;padding:7px 10px">
-                <div style="color:var(--faint);margin-bottom:2px">📅 Fecha programada</div>
-                <div style="font-weight:600">${fd(r.scheduledAt)}</div>
-              </div>`:""}
+              ${""/* los repartidores no ven fechas de la transferencia */}
             </div>
 
             ${r.aclaracionListo?`
@@ -8741,7 +8743,7 @@ function renderRepartidor(){
             <span class="mono">${escH(r.id)}</span>
             <strong>${escH(origenLabel(r))} → ${escH(r.destino||"")}</strong>
             <span class="rep-ajena-d">${escH(r.descripcion||"")}</span>
-            <em>lleva ${escH(portadorSolicitud(r)?.nombre||"—")}${(r.salidaFabricaAt||r.levantadoAt)?` · desde ${escH(fdt(r.salidaFabricaAt||r.levantadoAt))}`:""}</em>
+            <em>lleva ${escH(portadorSolicitud(r)?.nombre||"—")}</em>
           </div>`).join("")}</div>`:""}
         <p class="rep-ajenas-nota">Solo quien la tomó la puede entregar. Si hay que pasársela a otro, avisale a Logística.</p>
       </div>`;
@@ -9162,7 +9164,7 @@ function renderDetalle(){
       </div>
     </div>`;
   })():""}
-  ${drow("Fecha requerida",fd(r.fechaRequerida),true)}
+  ${(S.user?.rol==="repartidor"?"":drow("Fecha requerida",fd(r.fechaRequerida),true))}
   ${r.observaciones?drow("Observaciones",r.observaciones):""}
   ${r.adjuntoUrl?`<div class="field"><label>Adjunto</label><a href="${escH(r.adjuntoUrl)}" target="_blank" rel="noopener">
     <img src="${escH(r.adjuntoUrl)}" style="max-width:220px;border-radius:8px;margin-top:4px;display:block;cursor:zoom-in" onclick="event.preventDefault();verImagenAmpliada('${escH(r.adjuntoUrl)}')" onerror="this.style.display='none';this.nextSibling.style.display='inline'"/>
@@ -9178,7 +9180,7 @@ function renderDetalle(){
       </div>
       <div class="trace-body">
         <div class="trace-title">${escH(s.title)}</div>
-        <div class="trace-meta">${escH(s.meta)}</div>
+        <div class="trace-meta">${escH(S.user?.rol==="repartidor"?sinFechas(s.meta):s.meta)}</div>
       </div>
     </div>`).join("")}
   ${puedeReprogramar?`
