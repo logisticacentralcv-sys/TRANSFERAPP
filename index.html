@@ -840,7 +840,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261016-0732";
+const APP_VERSION = "20261016-0821";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -6340,7 +6340,7 @@ function renderAdminUsuarios(){
               <td>${badge(us.activo==="no"?"Inactivo":"Activo", us.activo==="no"?"var(--red)":"#1fa86a")}</td>
               <td style="white-space:nowrap">
                 <button class="btn btn-primary btn-sm" onclick='abrirEditarUsuario(${JSON.stringify(us.dni).replace(/'/g,"&#39;")})'>Editar</button>
-                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick='confirmarBorrarUsuario(${JSON.stringify(us.usuario).replace(/'/g,"&#39;")})'>🗑️</button>
+                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick='confirmarBorrarUsuario(${JSON.stringify(String(us.dni||"")).replace(/'/g,"&#39;")})' title="Borrar a esta persona (las demás que comparten el usuario no se tocan)">🗑️</button>
               </td>
             </tr>`).join("")}
           </tbody>
@@ -6512,14 +6512,30 @@ async function guardarUsuario(){
   render();
 }
 
-async function confirmarBorrarUsuario(usuarioId){
-  if(!confirm(`¿Seguro que querés borrar el usuario "${usuarioId}"? Esto no se puede deshacer.`)) return;
+// Borra a UNA persona (por DNI). Antes borraba por "usuario" y, como varias personas comparten el
+// mismo login (ej: RECEPCION), se llevaba puestas a todas — incluida la fila que tiene la cuenta de
+// acceso, y el login quedaba sin poder entrar. Ahora, si la persona borrada era la que tenía el acceso,
+// el acceso pasa a otra persona del mismo login antes de borrar.
+async function confirmarBorrarUsuario(dni){
+  const fila = S.usuarios.find(u=>String(u.dni||"")===String(dni||""));
+  if(!fila || !String(dni||"").trim()){ toast("⚠️ Esta fila no tiene DNI: no se puede borrar desde acá (pedile ayuda al administrador técnico)","warn"); return; }
+  const mismas = S.usuarios.filter(u=>u!==fila && normNotif(u.usuario)===normNotif(fila.usuario));
+  if(!confirm(`¿Seguro que querés borrar a ${fila.nombre||fila.usuario} (DNI ${dni})?`+
+    (mismas.length?`\n\nLas otras ${mismas.length} persona${mismas.length!==1?"s":""} que entran como "${fila.usuario}" no se tocan.`:`\n\nEs la única persona con el usuario "${fila.usuario}": ese usuario va a dejar de poder entrar.`))) return;
   try{
-    const { error } = await sb.from("usuarios").delete().eq("usuario", usuarioId);
+    if(fila.authUserId && mismas.length && !mismas.some(u=>u.authUserId)){
+      const otra = mismas[0];
+      const pasa = {auth_user_id: fila.authUserId};
+      if(["SUCURSAL","REPARTIDOR"].includes(fila.tipo) && fila.password) pasa.password = fila.password;   // su clave invisible
+      const { error:e1 } = await sb.from("usuarios").update(pasa).eq("dni", otra.dni);
+      if(e1) throw e1;
+      otra.authUserId = fila.authUserId; if(pasa.password) otra.password = pasa.password;
+    }
+    const { error } = await sb.from("usuarios").delete().eq("dni", dni);
     if(error) throw error;
-    S.usuarios = S.usuarios.filter(u=>u.usuario!==usuarioId);
-    toast(`🗑️ Usuario ${usuarioId} borrado`);
-  }catch(e){ toast("⚠️ No se pudo borrar","warn"); }
+    S.usuarios = S.usuarios.filter(u=>u!==fila);
+    toast(`🗑️ ${fila.nombre||fila.usuario} borrado`);
+  }catch(e){ console.warn("Borrar usuario:",e); toast("⚠️ No se pudo borrar","warn"); }
   render();
 }
 
