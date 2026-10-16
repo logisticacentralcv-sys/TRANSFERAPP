@@ -840,7 +840,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261016-0623";
+const APP_VERSION = "20261016-0732";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -4386,7 +4386,9 @@ function buscarUsuario(usuario, password){
   // como sucursal para elegir origen/destino) pero la persona en realidad
   // tiene un usuario de tipo Área con contraseña propia, se respeta ESE
   // tipo real en vez de asumir que es un login de sucursal sin contraseña.
-  const foundUser = lista.find(x => normNotif(x.usuario) === u && x.activo !== "no");
+  // Si varias personas comparten el login, se prefiere la fila que tiene contraseña (es la del acceso)
+  const coincidencias = lista.filter(x => normNotif(x.usuario) === u && x.activo !== "no");
+  const foundUser = coincidencias.find(x => String(x.password||"").trim()) || coincidencias[0];
 
   if(foundUser && foundUser.tipo === "SUCURSAL"){
     const nombreOficial = getSucursales().find(s => normNotif(s) === u) || foundUser.usuario;
@@ -4414,7 +4416,9 @@ function buscarUsuario(usuario, password){
   const necesitaPass = !["SUCURSAL","REPARTIDOR"].includes(foundUser.tipo);
   if(necesitaPass){
     if(!foundUser.password || String(foundUser.password).trim()===""){
-      return {ok:false, msg:"No se pudo validar este usuario. Recargá la página e intentá de nuevo."};
+      return {ok:false, msg: S.usuarios.length
+        ? "Esta cuenta todavía no tiene el acceso activado. Pedile a Admin que le cargue una contraseña (Admin → Usuarios)."
+        : "No se pudo validar este usuario. Recargá la página e intentá de nuevo."};
     }
     if(foundUser.password !== p){
       return {ok:false, msg:"Contraseña incorrecta."};
@@ -12677,7 +12681,12 @@ async function doLogin(){
     // migrada (sucursales sin contraseña, o las 2 con contraseña corta),
     // seguir con el sistema de siempre — así no se rompe nada para nadie
     // mientras se prueba de a poco.
-    const filaCandidata = S.usuarios.find(u=>normNotif(u.usuario)===normNotif(usuario));
+    // Varias personas comparten un mismo login (ej: todos los de RECEPCION, cada uno con su DNI).
+    // Alcanza con que UNA de esas filas tenga la cuenta de acceso para entrar con contraseña.
+    // Antes se miraba solo la primera fila: si era una persona agregada después (sin cuenta propia),
+    // el ingreso fallaba con "No se pudo validar este usuario".
+    const candidatas = S.usuarios.filter(u=>normNotif(u.usuario)===normNotif(usuario));
+    const filaCandidata = candidatas.find(u=>u.authUserId) || candidatas[0];
     if(filaCandidata && filaCandidata.authUserId){
       // Sucursales y repartidores no escriben contraseña — usamos la que
       // quedó guardada (generada al azar, invisible para ellos) al migrarlos.
