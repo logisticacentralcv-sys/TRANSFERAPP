@@ -816,6 +816,18 @@ tr[onclick]:active td{background:var(--s3)}
 .rep-ajena em{font-style:normal;color:var(--amber);font-weight:600;margin-left:auto}
 .rep-ajenas-nota{font-size:12px;color:var(--faint);padding:8px 16px 12px;margin:0}
 
+
+/* ── Fresco: revisión de Producción ── */
+.rp-ayuda{font-size:14px;color:var(--muted);margin:0 0 14px}
+.rp-parte{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;font-size:14px}
+.rp-parte input{width:96px;height:44px;padding:6px 10px;background:var(--s3);border:1px solid var(--border2);border-radius:8px;color:var(--text);font-family:var(--mono);font-size:17px;text-align:center}
+.rp-otras{margin-top:16px;padding:12px 14px;background:var(--s2);border-radius:10px;font-size:13px;color:var(--muted);line-height:1.5}
+.rp-cfg{display:flex;flex-wrap:wrap;gap:8px}
+.rp-tag{display:inline-flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--border);border-radius:999px;padding:4px 6px 4px 12px;font-size:13px}
+.rp-tag .mono{color:var(--blue);font-size:12px}
+.rp-tag button{background:none;border:0;color:var(--faint);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:50%}
+.rp-tag button:hover{color:var(--red);background:var(--s3)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -840,7 +852,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261016-0821";
+const APP_VERSION = "20261023-0643";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1265,7 +1277,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, tabTes:"operacion", tesMetInit:false, tesMetDesde:"", tesMetHasta:"", tesMetSucursal:"", tesMetSerieSel:"enviados", catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
+  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, revProd:null, prodVista:"pendientes", tabTes:"operacion", tesMetInit:false, tesMetDesde:"", tesMetHasta:"", tesMetSucursal:"", tesMetSerieSel:"enviados", catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -2755,6 +2767,18 @@ function trazaDevolucion(d){
     const t={cambio:0,comedor:0,stock:0}; clas.forEach(x=>DESTINOS_SECOS.forEach(k=>{ t[k.k]+=+x.clasificacion[k.k]||0; }));
     pasos.push({dot:col.ok, t:"🗂️ Clasificada", m:unir(hora(ult), clas[0].clasificadoPor?`por ${clas[0].clasificadoPor}`:"", DESTINOS_SECOS.filter(k=>t[k.k]>0).map(k=>`${k.icon} ${k.label} ${fmtNum(t[k.k])}`).join("  "))});
   }
+  // Fresco: revisión de Producción de lo reutilizable
+  const reut=lineasReutilizables(d);
+  if(reut.length){
+    const hechas=reut.filter(x=>x.produccion);
+    if(hechas.length){
+      const ult=hechas.map(x=>x.produccion.at).filter(Boolean).sort().pop();
+      const fr=(arr,k)=>{ const kg=arr.filter(x=>normNotif(x.unidad)==="kg").reduce((s,x)=>s+(+x.produccion[k]||0),0); const un=arr.filter(x=>normNotif(x.unidad)!=="kg").reduce((s,x)=>s+(+x.produccion[k]||0),0); return [kg?`${fmtNum(Math.round(kg*10)/10)} kg`:"",un?`${fmtNum(un)} un.`:""].filter(Boolean).join(" + ")||"0"; };
+      pasos.push({dot:col.ok, t:"🏭 Revisada por Producción", m:unir(hora(ult), hechas[0].produccion.por?`por ${hechas[0].produccion.por}`:"", `reingresan ${fr(hechas,"reingresa")}`, `descarte ${fr(hechas,"descarte")}`, hechas.length<reut.length?`faltan ${reut.length-hechas.length}`:"")});
+    } else if(LLEGO_A_FABRICA.includes(d.estado)){
+      pasos.push({dot:col.warn, t:"🏭 Espera revisión de Producción", m:`${reut.length} producto${reut.length!==1?"s":""} reutilizable${reut.length!==1?"s":""}: ${reut.map(x=>x.descripcion).join(", ")}`});
+    }
+  }
   const recl=prods.filter(x=>x.reclamo);
   if(recl.length) pasos.push({dot:col.warn, t:"🔁 Reclamado a proveedor", m:unir(hora(recl[0].reclamo.at), recl[0].reclamo.por?`por ${recl[0].reclamo.por}`:"", recl[0].reclamo.proveedor||"")});
   const ed=prods.filter(x=>x.editadoPor);
@@ -3459,11 +3483,11 @@ async function pickeoConfirmarConDni(){
   if(!chk.ok){ d.err=chk.msg; render(); return; }
   d.loading=true; renderNow();
   const firma={ok:true,nombre:chk.nombre,dni};
-  const ok = d.modo==="armar" ? await pickeoEnviar(firma) : d.modo==="controlar" ? await pickeoConfirmarControl(firma) : d.modo==="reclamar" ? await reclamoGuardar(firma) : await clasifGuardar(firma);
+  const ok = d.modo==="armar" ? await pickeoEnviar(firma) : d.modo==="controlar" ? await pickeoConfirmarControl(firma) : d.modo==="reclamar" ? await reclamoGuardar(firma) : d.modo==="produccion" ? await rpGuardar(firma) : await clasifGuardar(firma);
   if(ok){ S.modal=null; S.pickeoDni=null; }
   else {
     d.loading=false;
-    const o=d.modo==="clasificar"?S.clasif:d.modo==="reclamar"?S.reclamoPend:S.pickeo;
+    const o=d.modo==="clasificar"?S.clasif:d.modo==="reclamar"?S.reclamoPend:d.modo==="produccion"?S.revProd:S.pickeo;
     d.err=(o&&o.err)||"No se pudo guardar — probá de nuevo."; if(o) o.err="";
   }
   render();
@@ -4101,6 +4125,220 @@ function productosDeDevolucion(d){
   if(d.productoDescripcion) return [{descripcion:d.productoDescripcion, codigoInterno:d.productoCodigoInterno||"", motivo:unificarMotivoDevol(d.motivo||"")}];
   return [];
 }
+// ═══════════════════════════════════════════════════════════════════
+//  FRESCO → REINGRESO A PRODUCCIÓN
+//  Algunos productos frescos (lista configurable en Admin) vuelven a
+//  producción si llegan en buen estado. Cuando una devolución de Fresco
+//  llega a fábrica con alguno de ellos, Producción decide artículo por
+//  artículo: reingresa todo, una parte, o nada. El resto de los frescos
+//  se descarta sin este paso. Queda guardado en cada línea (historial)
+//  y suma a las métricas.
+// ═══════════════════════════════════════════════════════════════════
+const REINGRESO_DEFAULT=[["00070","SOLOMILLO"],["00068","BONDIOLA"],["00060","AMERICANO (bolsas de 1 kg)"],["00062","CARRE DESHUESADO (bolsa de 2 kg)"],
+  ["00061","CARRE (bolsas de 1 kg)"],["00005","RIBS"],["00069","PECHITO (1 o 1/2 unidad)"],["00067","VACIO"],["00066","MATAMBRE"],["00065","MANTA PARRILLERA"],
+  ["00025","PECHUGA"],["00029","PECHUGUIN"],["00026","PECHUGA FILETEADA"],["00020","PATA CON MUSLO"],["00024","CHURRASQUITOS"],["00022","PATA"],
+  ["00023","MUSLO"],["00028","ALITAS"],["00027","POLLO ENTERO"]].map(([codigo,nombre])=>({codigo,nombre}));
+function productosReingreso(){
+  try{ const a=JSON.parse(S.config?.productosReingreso||"null"); if(Array.isArray(a)) return a; }catch(e){}
+  return REINGRESO_DEFAULT;
+}
+const _codNorm=v=>String(v??"").trim().replace(/^0+(?=\d)/,"");
+function esReutilizable(linea){ const c=_codNorm(linea&&linea.codigoInterno); return !!c && productosReingreso().some(p=>_codNorm(p.codigo)===c); }
+function esProduccion(u){ u=u||S.user; return !!u && normSinTildes(u.area)==="produccion"; }
+function puedeRevisarProduccion(){ return esProduccion() || S.user?.rol==="admin"; }
+const _llegoCant=x=>(x.cantidadRecibida!==undefined&&x.cantidadRecibida!==null)?(+x.cantidadRecibida||0):(+x.cantidad||0);
+const esFresco=d=>(d.tipoDevolucion||"Fresco")==="Fresco";
+function lineasReutilizables(d){
+  if(!esFresco(d)) return [];
+  return productosDeDevolucion(d).map((x,i)=>({...x,_i:i})).filter(x=>esReutilizable(x) && _llegoCant(x)>0);
+}
+const LLEGO_A_FABRICA=["En fábrica","Confirmada"];
+function pideRevisionProduccion(d){ return LLEGO_A_FABRICA.includes(d.estado) && lineasReutilizables(d).some(x=>!x.produccion); }
+function revisadaPorProduccion(d){ const l=lineasReutilizables(d); return l.length>0 && l.every(x=>x.produccion); }
+function chipProduccion(p){
+  if(p.produccion){
+    const r=+p.produccion.reingresa||0, ds=+p.produccion.descarte||0, u=escH(p.unidad||"");
+    if(r && ds) return `<span class="sk-chip green">↩️ reingresa ${fmtNum(r)} ${u}</span> <span class="sk-chip red">🗑️ ${fmtNum(ds)} ${u}</span>`;
+    return r ? `<span class="sk-chip green">↩️ reingresa a producción</span>` : `<span class="sk-chip red">🗑️ no reingresa</span>`;
+  }
+  return esReutilizable(p) ? `<span class="sk-chip amber" title="Producción decide si vuelve">🏭 reutilizable</span>` : "";
+}
+
+// ── Pantalla de revisión ──
+function abrirRevisionProduccion(id){
+  const d=S.devoluciones.find(x=>String(x.id)===String(id)); if(!d||!puedeRevisarProduccion()) return;
+  const otras=productosDeDevolucion(d).filter(x=>!esReutilizable(x));
+  S.revProd={devId:id, sucursal:d.sucursal, otras, err:"", loading:false,
+    lineas:lineasReutilizables(d).map(x=>{
+      const llego=_llegoCant(x), pr=x.produccion;
+      const decision = pr ? ((+pr.reingresa||0)>=llego ? "si" : (+pr.reingresa||0)>0 ? "parcial" : "no") : "";
+      return {i:x._i, descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", unidad:x.unidad||"", motivo:String(x.motivo||"").split(" — ")[0], llego, decision, cant:pr?String(pr.reingresa):""};
+    })};
+  S.vista="revProduccion"; render(); window.scrollTo({top:0,behavior:"instant"});
+}
+function salirRevisionProduccion(){ S.revProd=null; S.vista="devoluciones"; render(); }
+function rpDecidir(i,dec){ const l=S.revProd.lineas[i]; if(!l) return; l.decision=dec; if(dec==="parcial" && !l.cant) l.cant=""; S.revProd.err=""; render(); }
+function rpReingresa(l){ return l.decision==="si"?l.llego:l.decision==="no"?0:Math.max(0,Math.min(l.llego,+String(l.cant).replace(",",".")||0)); }
+function rpResumen(){
+  const t={reKg:0,deKg:0,reU:0,deU:0};
+  (S.revProd?.lineas||[]).forEach(l=>{ if(!l.decision) return; const r=rpReingresa(l), kg=normNotif(l.unidad)==="kg";
+    if(kg){ t.reKg+=r; t.deKg+=l.llego-r; } else { t.reU+=r; t.deU+=l.llego-r; } });
+  const f=(kg,u)=>[kg?`${fmtNum(Math.round(kg*10)/10)} kg`:"",u?`${fmtNum(Math.round(u*10)/10)} un.`:""].filter(Boolean).join(" · ")||"0";
+  return {re:f(t.reKg,t.reU), de:f(t.deKg,t.deU)};
+}
+function renderRevisionProduccion(){
+  const c=S.revProd; if(!c) return "";
+  const faltan=c.lineas.filter(l=>!l.decision || (l.decision==="parcial" && !(rpReingresa(l)>0 && rpReingresa(l)<l.llego))).length;
+  const res=rpResumen();
+  return `
+  <div style="animation:fadeUp .3s ease" class="pk-page">
+    ${pageHead("🏭 Revisión de Producción", `${escH(c.sucursal||"")} · <strong style="color:var(--teal)">Fresco</strong> · N° ${escH(c.devId)}`,
+      `<button class="btn btn-ghost btn-md" onclick="salirRevisionProduccion()">← Volver</button>`)}
+    <p class="rp-ayuda">Marcá, producto por producto, si lo que llegó <strong>vuelve a producción</strong>. Lo que no reingresa se descarta.</p>
+    <div class="pk-orden">
+      ${c.lineas.map((l,i)=>{
+        const ok = l.decision && !(l.decision==="parcial" && !(rpReingresa(l)>0 && rpReingresa(l)<l.llego));
+        return `
+        <div class="cl-line ${ok?"ok":"falta"}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+            <div style="min-width:0">
+              <div class="pk-name">${escH(l.descripcion)}</div>
+              <div class="pk-code">${l.codigoInterno?`Int. ${escH(l.codigoInterno)}`:""}${l.motivo?` · ${escH(l.motivo)}`:""}</div>
+            </div>
+            <div class="cl-rec"><strong>${fmtNum(l.llego)}</strong> ${escH(l.unidad)}</div>
+          </div>
+          <div class="cl-dest-row">
+            <button class="cl-dest ${l.decision==="si"?"on":""}" style="--c:#2ecc7a" onclick="rpDecidir(${i},'si')">↩️ Reingresa todo</button>
+            <button class="cl-dest ${l.decision==="parcial"?"on":""}" style="--c:#f5a623" onclick="rpDecidir(${i},'parcial')">✂ Una parte</button>
+            <button class="cl-dest ${l.decision==="no"?"on":""}" style="--c:#f05252" onclick="rpDecidir(${i},'no')">🗑️ No reingresa</button>
+          </div>
+          ${l.decision==="parcial"?`
+          <div class="rp-parte">Reingresan
+            <input type="number" min="0" step="any" inputmode="decimal" value="${escH(l.cant)}" oninput="S.revProd.lineas[${i}].cant=this.value" onchange="render()"/>
+            de ${fmtNum(l.llego)} ${escH(l.unidad)} <span style="color:var(--muted)">— el resto se descarta</span></div>`:""}
+          ${!ok && l.decision==="parcial"?`<div class="cl-falta" style="margin-top:8px;font-size:13px">Poné cuánto reingresa (más de 0 y menos de ${fmtNum(l.llego)})</div>`:""}
+        </div>`; }).join("")}
+    </div>
+    ${c.otras.length?`<div class="rp-otras"><strong>Se descartan sin revisión</strong> (no están en la lista de reutilizables): ${c.otras.map(x=>`${escH(x.descripcion)} ${fmtNum(_llegoCant(x))} ${escH(x.unidad||"")}`).join(" · ")}</div>`:""}
+    ${c.err?`<div class="err-msg" style="display:block;margin-top:12px">${escH(c.err)}</div>`:""}
+    <div class="pk-foot">
+      <div class="pk-resumen cl-tot"><span style="color:#2ecc7a">↩️ <strong>${res.re}</strong></span><span style="color:#f05252">🗑️ <strong>${res.de}</strong></span></div>
+      <button class="btn btn-success btn-md" onclick="rpPedirConfirmacion()" ${c.loading||faltan?"disabled":""}>
+        ${c.loading?`<span class="spinner"></span> Guardando…`:(faltan?`Faltan ${faltan}`:"Confirmar")}
+      </button>
+    </div>
+  </div>`;
+}
+function rpPedirConfirmacion(){
+  const c=S.revProd; if(!c||c.loading) return;
+  if(S.user?.rol==="admin"||S.user?.rol==="logistica"){ rpGuardar(); return; }
+  const res=rpResumen();
+  S.pickeoDni={modo:"produccion",dni:"",err:"",loading:false,titulo:"Confirmar la revisión",boton:"✅ Confirmar",
+    resumen:`↩️ Reingresan <strong>${res.re}</strong> · 🗑️ Descarte <strong>${res.de}</strong>`};
+  S.modal="pickeoDni"; render(); setTimeout(()=>$("pk-dni")?.focus(),120);
+}
+async function rpGuardar(firmaParam){
+  const c=S.revProd; if(!c||c.loading) return false;
+  const d=S.devoluciones.find(x=>String(x.id)===String(c.devId)); if(!d) return false;
+  const firma=firmaParam || {ok:true,nombre:S.user?.nombre||"",dni:S.user?.dni||""};
+  c.loading=true; c.err=""; renderNow();
+  const ahora=now(), prods=productosDeDevolucion(d).map(x=>({...x}));
+  c.lineas.forEach(l=>{ const r=rpReingresa(l); prods[l.i]={...prods[l.i], produccion:{reingresa:r, descarte:Math.round((l.llego-r)*1000)/1000, por:firma.nombre, at:ahora}}; });
+  const changes={productosJson:JSON.stringify(prods), updatedAt:ahora};
+  try{
+    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+    if(error) throw error;
+    S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
+    const res=rpResumen();
+    S.revProd=null; S.vista="devoluciones"; S.tabDevGestor="produccion";
+    window.scrollTo({top:0,behavior:"instant"});
+    toast(`🏭 Revisada · ↩️ ${res.re} · 🗑️ ${res.de}`);
+    render(); return true;
+  }catch(e){ console.warn("Revisión producción:",e); c.loading=false; c.err="No se pudo guardar — probá de nuevo."; }
+  render(); return false;
+}
+
+// ── Admin: qué productos pueden volver a producción ──
+async function guardarProductosReingreso(lista){
+  const valor=JSON.stringify(lista);
+  try{
+    const { error } = await sb.from("config").upsert({clave:"productosReingreso", valor});
+    if(error) throw error;
+    S.config={...S.config, productosReingreso:valor};
+  }catch(e){ toast("⚠️ No se pudo guardar","warn"); }
+  render();
+}
+function quitarProductoReingreso(cod){ guardarProductosReingreso(productosReingreso().filter(p=>_codNorm(p.codigo)!==_codNorm(cod))); }
+async function agregarProductoReingreso(){
+  const el=$("reing-cod"); const cod=String(el?.value||"").trim(); if(!cod) return;
+  if(productosReingreso().some(p=>_codNorm(p.codigo)===_codNorm(cod))){ toast("Ese código ya está en la lista","warn"); return; }
+  let nombre=cod;
+  try{ const { data } = await sb.from("productos").select("descripcion,codigo_interno").eq("codigo_interno",cod).limit(1); if(data&&data[0]) nombre=data[0].descripcion; }catch(e){}
+  await guardarProductosReingreso([...productosReingreso(),{codigo:cod,nombre}]);
+}
+function renderConfigReingreso(){
+  const lista=productosReingreso();
+  return `
+    <div class="card cfg-card cfg-doble">
+      <div class="cfg-tit"><div><h3>🏭 Fresco que vuelve a producción</h3>
+        <p>Cuando una devolución de Fresco llega a fábrica con alguno de estos productos, Producción decide si reingresa. El resto de los frescos se descarta sin ese paso.</p></div>
+        <span class="dv-res ok">${lista.length} producto${lista.length!==1?"s":""}</span></div>
+      <div class="rp-cfg">
+        ${lista.map(p=>`<span class="rp-tag"><span class="mono">${escH(p.codigo)}</span> ${escH(p.nombre||"")}<button onclick="quitarProductoReingreso('${escH(p.codigo)}')" title="Quitar">✕</button></span>`).join("")}
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;max-width:420px">
+        <input id="reing-cod" class="inp" type="text" inputmode="numeric" placeholder="Código interno (ej: 00070)" onkeydown="if(event.key==='Enter')agregarProductoReingreso()"/>
+        <button class="btn btn-ghost btn-md" onclick="agregarProductoReingreso()">+ Agregar</button>
+      </div>
+    </div>`;
+}
+
+// ── Métricas: reingreso a producción ──
+function metricasReingreso(devs){
+  const t={llegoKg:0,llegoU:0,reKg:0,reU:0,deKg:0,deU:0,pendientes:0,pendKg:0,revisadas:0}, porProd={};
+  devs.filter(esFresco).forEach(d=>{
+    const ls=lineasReutilizables(d); if(!ls.length) return;
+    // solo lo que ya llegó a fábrica (o ya revisó Producción); lo que todavía viene en camino no cuenta
+    if(!LLEGO_A_FABRICA.includes(d.estado) && !ls.some(x=>x.produccion)) return;
+    if(LLEGO_A_FABRICA.includes(d.estado) && ls.some(x=>!x.produccion)) t.pendientes++;
+    if(ls.every(x=>x.produccion)) t.revisadas++;
+    ls.forEach(x=>{
+      const kg=normNotif(x.unidad)==="kg", llego=_llegoCant(x);
+      if(kg) t.llegoKg+=llego; else t.llegoU+=llego;
+      const o=porProd[x.descripcion]=porProd[x.descripcion]||{re:0,de:0,unidad:kg?"kg":(x.unidad||"un.")};
+      if(x.produccion){
+        const r=+x.produccion.reingresa||0, ds=+x.produccion.descarte||0;
+        if(kg){ t.reKg+=r; t.deKg+=ds; } else { t.reU+=r; t.deU+=ds; }
+        o.re+=r; o.de+=ds;
+      } else if(LLEGO_A_FABRICA.includes(d.estado) && kg) t.pendKg+=llego;
+    });
+  });
+  const r1=v=>Math.round(v*10)/10;
+  const revisadoKg=t.reKg+t.deKg;
+  const filasRe=Object.entries(porProd).filter(([,o])=>o.re>0).sort((a,b)=>b[1].re-a[1].re).slice(0,8).map(([k,o])=>({label:k,valor:r1(o.re),unidad:o.unidad,color:"#2ecc7a",tip:`descartado: ${fmtNum(r1(o.de))} ${o.unidad}`}));
+  const filasDe=Object.entries(porProd).filter(([,o])=>o.de>0).sort((a,b)=>b[1].de-a[1].de).slice(0,8).map(([k,o])=>({label:k,valor:r1(o.de),unidad:o.unidad,color:"#f05252",tip:`reingresado: ${fmtNum(r1(o.re))} ${o.unidad}`}));
+  return {...t, pct:revisadoKg?Math.round(t.reKg/revisadoKg*100):null, filasRe, filasDe, hay:(t.llegoKg+t.llegoU)>0};
+}
+function renderCardReingreso(devs){
+  const m=metricasReingreso(devs); if(!m.hay) return "";
+  const r1=v=>fmtNum(Math.round(v*10)/10);
+  return `
+  <div id="cal-reingreso" class="card" style="margin-bottom:20px">
+    <div class="cfg-tit"><div><h3>🏭 Reingreso a producción</h3>
+      <p>Productos frescos reutilizables que volvieron: cuánto reingresó a producción y cuánto se descartó (lo decide Producción al llegar).</p></div></div>
+    <div class="tm-difs" style="margin-bottom:14px">
+      <div><strong>${r1(m.llegoKg)} kg</strong><span>reutilizables que llegaron${m.llegoU?` · y ${r1(m.llegoU)} un.`:""}</span></div>
+      <div class="ok"><strong>${r1(m.reKg)} kg</strong><span>reingresaron a producción${m.pct!==null?` · ${m.pct}% de lo revisado`:""}</span></div>
+      <div class="mal"><strong>${r1(m.deKg)} kg</strong><span>no reingresaron (descarte)</span></div>
+      <div class="${m.pendientes?"mal":""}"><strong>${m.pendientes}</strong><span>devolucion${m.pendientes!==1?"es":""} esperando a Producción${m.pendKg?` · ${r1(m.pendKg)} kg`:""}</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px">
+      <div><div class="rk-tit"><span>Lo que más vuelve a producción</span></div>${barrasHorizontales(m.filasRe,"#2ecc7a",m.filasRe.reduce((s,f)=>s+f.valor,0))}</div>
+      <div><div class="rk-tit"><span>Lo que más se descarta</span><em>de lo reutilizable</em></div>${barrasHorizontales(m.filasDe,"#f05252",m.filasDe.reduce((s,f)=>s+f.valor,0))}</div>
+    </div>
+  </div>`;
+}
+
 function renderDevoluciones(){
   const u = S.user;
   const esGestor = esGestorDevolucion();
@@ -4117,7 +4355,9 @@ function renderDevoluciones(){
     const norm = s=>normNotif(s);
     lista = lista.filter(d => norm(d.sucursal)===norm(u.area));
   } else {
-    lista = S.tabDevGestor==="historial" ? S.devoluciones.filter(devolucionFinal)
+    lista = (S.tabDevGestor==="produccion" && puedeRevisarProduccion())
+            ? S.devoluciones.filter(S.prodVista==="revisadas" ? revisadaPorProduccion : pideRevisionProduccion)
+          : S.tabDevGestor==="historial" ? S.devoluciones.filter(devolucionFinal)
           : (S.tabDevGestor==="clasificar" && puedeClasificarSecos()) ? S.devoluciones.filter(esSecosParaClasificar)
           : S.devoluciones.filter(d=>!devolucionFinal(d) && !esSecosParaClasificar(d));
     // Calidad solo ve Fresco, Depósito solo ve Secos — es su alcance fijo,
@@ -4158,8 +4398,14 @@ function renderDevoluciones(){
       <button class="tab ${S.tabDevGestor==="activas"?"active":""}" onclick="S.tabDevGestor='activas';render()">📋 Activas</button>
       ${puedeClasificarSecos()?`<button class="tab ${S.tabDevGestor==="clasificar"?"active":""}" onclick="S.tabDevGestor='clasificar';render()">🗂️ Para clasificar<span class="tab-n">${S.devoluciones.filter(esSecosParaClasificar).length}</span></button>`:""}
       ${puedeVerReclamos()?`<button class="tab ${S.tabDevGestor==="reclamo"?"active":""}" onclick="S.tabDevGestor='reclamo';render()">🔁 Reclamo a proveedor</button>`:""}
+      ${puedeRevisarProduccion()?`<button class="tab ${S.tabDevGestor==="produccion"?"active":""}" onclick="S.tabDevGestor='produccion';render()">🏭 Producción<span class="tab-n">${S.devoluciones.filter(pideRevisionProduccion).length}</span></button>`:""}
       <button class="tab ${S.tabDevGestor==="historial"?"active":""}" onclick="S.tabDevGestor='historial';render()">📚 Historial</button>
-    </div>`:""}
+    </div>
+    ${S.tabDevGestor==="produccion" && puedeRevisarProduccion()?`
+    <div class="tes-chips" style="margin:-4px 0 14px">
+      <button class="tes-chip ${S.prodVista!=="revisadas"?"on":""}" onclick="S.prodVista='pendientes';render()">Para revisar <b>${S.devoluciones.filter(pideRevisionProduccion).length}</b></button>
+      <button class="tes-chip ${S.prodVista==="revisadas"?"on":""}" onclick="S.prodVista='revisadas';render()">Revisadas <b>${S.devoluciones.filter(revisadaPorProduccion).length}</b></button>
+    </div>`:""}`:""}
 
     ${!esGestor && !esRepartidor && DEVOLUCIONES_NUEVAS_HABILITADAS?`
     <div class="card" style="margin-bottom:20px">
@@ -4321,6 +4567,7 @@ function renderDevoluciones(){
             <div style="display:flex;align-items:center;gap:6px">
               ${d.tipoDevolucion?badge(d.tipoDevolucion, {Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"}[d.tipoDevolucion]||"var(--muted)"):""}
               ${badge(d.estado, colorEstado(d.estado))}
+              ${pideRevisionProduccion(d) && puedeRevisarProduccion()?`<button class="btn btn-success btn-sm" onclick="abrirRevisionProduccion('${escH(d.id)}')">🏭 Revisar</button>`:pideRevisionProduccion(d)?`<span class="sk-chip amber" title="Producción decide si los reutilizables vuelven">🏭 espera a Producción</span>`:""}
               <button class="btn btn-ghost btn-sm" onclick="abrirDetalleDevolucion('${escH(d.id)}')" title="Ver fotos y trazabilidad">🔎 Detalle</button>
               ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
             </div>
@@ -4329,7 +4576,7 @@ function renderDevoluciones(){
           ${d.tipoDevolucion==="Secos" ? renderSecosBloque(d) : ""}
           ${(()=>{ const prods = productosDeDevolucion(d); return (prods.length && d.tipoDevolucion!=="Secos")?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}</div>`).join("")}
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}${esFresco(d)?` ${chipProduccion(p)}`:""}</div>`).join("")}
           </div>`:""; })()}
           ${miniaturasFotos(fotosDe(d),5)}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
@@ -4571,7 +4818,7 @@ let _navAnim = false;   // false | "tab" | "page"
 document.addEventListener("click", e=>{
   const el = e.target.closest("[onclick]"); if(!el) return;
   const oc = el.getAttribute("onclick")||"";
-  if(/S\.vista\s*=|abrir(Quejas|Devoluciones|PickeoArmar|PickeoControl|Clasificar)\(|salirPickeo\(|salirClasificar\(/.test(oc)) _navAnim = "page";
+  if(/S\.vista\s*=|abrir(Quejas|Devoluciones|PickeoArmar|PickeoControl|Clasificar|RevisionProduccion)\(|salirPickeo\(|salirClasificar\(|salirRevisionProduccion\(/.test(oc)) _navAnim = "page";
   else if(/S\.(tab\w*|subTab\w*|adminTab)\s*=/.test(oc)) _navAnim = "tab";
 }, true);
 function aplicarRenderDOM(){
@@ -4796,6 +5043,7 @@ function renderApp(){
     : S.vista==="devoluciones"   ? renderDevoluciones()
     : S.vista==="pickeo"         ? renderPickeoPagina()
     : S.vista==="clasificar"     ? renderClasificar()
+    : S.vista==="revProduccion"  ? renderRevisionProduccion()
     : u.rol==="logistica"      ? renderLogistica()
     : u.rol==="repartidor"     ? renderRepartidor()
     : u.rol==="planificacion"  ? renderPlanificacion()
@@ -5552,7 +5800,8 @@ function renderMetricasDevoluciones(){
     ${statCard("⚖️","TOTAL KG", fmtNum(Math.round(totalKg*10)/10), "var(--amber)")}
     ${statCard("🔢","TOTAL UNIDADES", fmtNum(Math.round(totalUnid)), "var(--blue)")}
     ${statCard("🏪","SUCURSALES", new Set(devs.map(d=>d.sucursal||"—")).size, "var(--purple)")}
-  </div>`;
+  </div>
+  ${renderCardReingreso(devs)}`;
 }
 
 function renderTesoreria(){
@@ -6236,6 +6485,8 @@ function renderAdminConfig(){
         </label>`;}).join("")}
       </div>
     </div>
+
+    ${renderConfigReingreso()}
 
     <div class="card cfg-card cfg-doble">
       <div class="cfg-tit"><div><h3>🏪 Sucursales tipo Market</h3>
