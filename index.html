@@ -828,6 +828,10 @@ tr[onclick]:active td{background:var(--s3)}
 .rp-tag button{background:none;border:0;color:var(--faint);cursor:pointer;font-size:12px;padding:2px 6px;border-radius:50%}
 .rp-tag button:hover{color:var(--red);background:var(--s3)}
 
+
+.nav-user-btn{cursor:pointer;font-family:var(--font);border:1px solid var(--border2);background:var(--s2)}
+.nav-user-btn:hover{border-color:var(--blue)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -852,7 +856,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261023-0643";
+const APP_VERSION = "20261026-0710";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -3429,6 +3433,7 @@ function renderPickeoPagina(){
 
 // ── Firma: DNI de quien confirma (Logística/Admin ya están identificados) ──
 function pickeoFirmante(){
+  const id=identidadSesion(); if(id) return {ok:true,nombre:id.nombre,dni:id.dni};
   if(S.user?.rol==="logistica"||S.user?.rol==="admin") return {ok:true,nombre:S.user.nombre||S.user.area,dni:S.user.dni||""};
   const dni=String($("pk-dni")?.value||S.pickeo?.dni||"").replace(/\D/g,"");
   if(!dni) return {ok:false,msg:"Ingresá tu DNI."};
@@ -3445,8 +3450,8 @@ function pickeoPedirConfirmacion(){
     if(!p.lineas.length){ p.err="Pickeá al menos un producto."; render(); return; }
   }
   p.err="";
-  // Logística y Admin ya se identificaron al entrar
-  if(S.user?.rol==="logistica"||S.user?.rol==="admin"){ p.modo==="armar" ? pickeoEnviar() : pickeoConfirmarControl(); return; }
+  // Ya se identificó al entrar: no hace falta volver a pedir el DNI
+  if(identidadSesion()||S.user?.rol==="logistica"||S.user?.rol==="admin"){ p.modo==="armar" ? pickeoEnviar() : pickeoConfirmarControl(); return; }
   const n=p.lineas.length;
   const resumen = p.modo==="armar"
     ? `<strong>${n}</strong> producto${n!==1?"s":""} · <strong>${fmtNum(p.lineas.reduce((x,l)=>x+(+l.cantidad||0),0))}</strong> en total`
@@ -3826,7 +3831,7 @@ function clasifPedirConfirmacion(){
   const c=S.clasif; if(!c||c.loading) return;
   if(c.lineas.some(l=>Math.abs(clasifDif(l))>0.0005)){ c.err="Asigná todo lo recibido antes de confirmar."; render(); return; }
   c.err="";
-  if(S.user?.rol==="logistica"||S.user?.rol==="admin"){ clasifGuardar(); return; }
+  if(identidadSesion()||S.user?.rol==="logistica"||S.user?.rol==="admin"){ clasifGuardar(); return; }
   const t=clasifResumen();
   S.pickeoDni={modo:"clasificar",dni:"",err:"",loading:false,titulo:"Confirmar la clasificación",boton:"✅ Confirmar",
     resumen:DESTINOS_SECOS.map(x=>`${x.icon} <strong>${fmtNum(t[x.k])}</strong> ${x.label.toLowerCase()}`).join(" · ")};
@@ -4008,7 +4013,7 @@ function reclamoMarcar(nombre,accion){
   const refs=[]; g.filas.forEach(p=>p.refs.forEach(r=>refs.push(r)));
   if(!refs.length) return;
   S.reclamoPend={proveedor:g.nombre,refs,accion,err:"",n:g.filas.length,totalTxt:g.totalTxt};
-  if(S.user?.rol==="logistica"||S.user?.rol==="admin"){
+  if(identidadSesion()||S.user?.rol==="logistica"||S.user?.rol==="admin"){
     if(!confirm(accion==="marcar"?`¿Marcar como reclamado a ${g.nombre}? (${g.filas.length} productos)`:`¿Volver a "para reclamar" lo de ${g.nombre}?`)){ S.reclamoPend=null; return; }
     reclamoGuardar(); return;
   }
@@ -4231,7 +4236,7 @@ function renderRevisionProduccion(){
 }
 function rpPedirConfirmacion(){
   const c=S.revProd; if(!c||c.loading) return;
-  if(S.user?.rol==="admin"||S.user?.rol==="logistica"){ rpGuardar(); return; }
+  if(identidadSesion()||S.user?.rol==="admin"||S.user?.rol==="logistica"){ rpGuardar(); return; }
   const res=rpResumen();
   S.pickeoDni={modo:"produccion",dni:"",err:"",loading:false,titulo:"Confirmar la revisión",boton:"✅ Confirmar",
     resumen:`↩️ Reingresan <strong>${res.re}</strong> · 🗑️ Descarte <strong>${res.de}</strong>`};
@@ -4240,7 +4245,7 @@ function rpPedirConfirmacion(){
 async function rpGuardar(firmaParam){
   const c=S.revProd; if(!c||c.loading) return false;
   const d=S.devoluciones.find(x=>String(x.id)===String(c.devId)); if(!d) return false;
-  const firma=firmaParam || {ok:true,nombre:S.user?.nombre||"",dni:S.user?.dni||""};
+  const firma=firmaParam || pickeoFirmante();
   c.loading=true; c.err=""; renderNow();
   const ahora=now(), prods=productosDeDevolucion(d).map(x=>({...x}));
   c.lineas.forEach(l=>{ const r=rpReingresa(l); prods[l.i]={...prods[l.i], produccion:{reingresa:r, descarte:Math.round((l.llego-r)*1000)/1000, por:firma.nombre, at:ahora}}; });
@@ -4863,6 +4868,7 @@ function aplicarRenderDOMInterno(){
     morphSeguro(elModal, `<div id="app-modal">${htmlModal}</div>`);
   }  actualizarIndicadoresTabs();
   ajustarAnchoGraficos();
+  rellenarDniIdentificado();
 }
 
 function render(){
@@ -5077,7 +5083,9 @@ function renderApp(){
       <button class="btn btn-ghost btn-sm" onclick="abrirNotificaciones()" title="Notificaciones">
         🔔${misNotificaciones().length>0?`<span class="nbadge">${misNotificaciones().length}</span>`:""}
       </button>
-      ${nombreSesionVisible()?`<span class="nav-user" title="Sesión identificada">👤 ${escH(nombreSesionVisible())}</span>`:""}
+      ${nombreSesionVisible()?(esRolIdentidadGeneral(S.user?.rol)||S.user?.rol==="tesoreria"
+        ?`<button class="nav-user nav-user-btn" onclick="cambiarIdentidadSesion()" title="Todo lo que hacés queda a tu nombre. Tocá para cambiar de persona">👤 ${escH(nombreSesionVisible())} <span class="rep-edit">✎</span></button>`
+        :`<span class="nav-user" title="Sesión identificada">👤 ${escH(nombreSesionVisible())}</span>`):""}
       <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">🚪<span class="nav-lbl">Salir</span></button>
     </div>
   </nav>
@@ -6964,8 +6972,9 @@ if(document.fonts && document.fonts.ready) document.fonts.ready.then(()=>actuali
 // muestran quién es la sesión.
 function nombreSesionVisible(){
   const r=S.user?.rol;
-  if(r==="tesoreria") return S.miIdentidadTesoreria?.nombre || "";   // ya se identificó con su DNI al entrar
-  return (r==="logistica"||r==="admin") ? (S.user.nombre||"") : "";
+  if(r==="repartidor") return "";                                     // el repartidor ya lo ve en su panel
+  if(r==="logistica"||r==="admin") return S.user.nombre||"";
+  return identidadSesion()?.nombre || "";
 }
 // A nombre de quién queda lo que se crea sin firma (quejas, devoluciones)
 function quienFirmaSesion(){
@@ -9043,7 +9052,10 @@ function renderModals(){
   if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
   if(S.modal==="detalle")   return wrapModal("m",`Detalle — ${escH(S.selId)}`,renderDetalle());
   if(S.modal==="gestionar") return wrapModal("m",`Gestionar — ${escH(S.selId)}`,renderGestionar());
-  if(S.modal==="dniConfirm")return wrapModal("m",escH(S.dniModal.title),renderDniModal(),400);
+  if(S.modal==="dniConfirm"){
+    if(identidadSesion() && S.dniModal && S.dniModal.cb && !S.dniModal.loading){ setTimeout(autoConfirmarDni,0); return ""; }
+    return wrapModal("m",escH(S.dniModal.title),renderDniModal(),400);
+  }
   if(S.modal==="tomar")     return wrapModal("m","Tomar transferencia",renderTomarModal(),420);
   if(S.modal==="tomarVarias") return wrapModal("m","Tomar varias transferencias",renderTomarVariasModal(),420);
   if(S.modal==="dejarBolsinesVarios") return wrapModal("m","Dejar bolsines",renderDejarBolsinesModal(),420);
@@ -13025,6 +13037,17 @@ async function doLogin(){
     return;
   }
 
+  // Todos los demás perfiles (sucursales, áreas, Recepción, Depósito, Producción, Calidad…):
+  // DNI una sola vez al entrar; después cada acción queda a su nombre sin volver a pedirlo.
+  if(esRolIdentidadGeneral(S.user.rol)){
+    try{ localStorage.removeItem("tl_identidad"); }catch(e){}
+    S.miIdentidad = null;
+    S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true, para:"general"};
+    S.modal = "identidadRep";
+    render();
+    return;
+  }
+
   // Tesorería: login compartido → DNI al ingresar, una sola vez; después todo lo que haga
   // (aprobar, marcar listo, crear lotes, confirmar retiros) queda a su nombre sin volver a pedirlo.
   if(S.user.rol==="tesoreria"){
@@ -13247,9 +13270,11 @@ function doLogout(){
   try{ localStorage.removeItem("tl_rep_identidad"); }catch(e){}
   try{ localStorage.removeItem("tl_fresco_identidad"); }catch(e){}
   try{ localStorage.removeItem("tl_tesoreria_identidad"); }catch(e){}
+  try{ localStorage.removeItem("tl_identidad"); }catch(e){}
   S.miIdentidadRep = null;
   S.miIdentidadFresco = null;
   S.miIdentidadTesoreria = null;
+  S.miIdentidad = null;
   try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
   stopAutoRefresh(); S.modal=null; S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
 }
@@ -13261,6 +13286,63 @@ function doLogout(){
 //  Con eso filtramos: lo no tomado lo ve cualquiera, lo ya tomado
 //  solo lo sigue viendo quien lo tomó.
 // ══════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════
+//  IDENTIDAD DE LA SESIÓN — en TODOS los perfiles se pide el DNI una sola vez
+//  al entrar (como en Logística). Después cada acción queda a nombre de esa
+//  persona sin volver a pedirlo, hasta que sale o cambia de persona.
+// ══════════════════════════════════════════════════════════
+const ROLES_CON_IDENTIDAD_PROPIA = ["admin","logistica","repartidor","tesoreria"];
+const esRolIdentidadGeneral = rol => !!rol && !ROLES_CON_IDENTIDAD_PROPIA.includes(rol);
+function identidadSesion(){
+  const u=S.user; if(!u) return null;
+  if(u.rol==="logistica"||u.rol==="admin") return u.dni ? {dni:String(u.dni), nombre:u.nombre||u.area||""} : null;
+  if(u.rol==="repartidor") return S.miIdentidadRep||null;
+  if(u.rol==="tesoreria")  return S.miIdentidadTesoreria||null;
+  return S.miIdentidad || (u.rol==="recepcionista" ? (S.miIdentidadFresco||S.miIdentidadRep||null) : null);
+}
+function cargarIdentidadGeneral(){
+  try{ const g=localStorage.getItem("tl_identidad"); if(g) S.miIdentidad=JSON.parse(g); }catch(e){}
+}
+function cambiarIdentidadSesion(){
+  const rol=S.user?.rol;
+  if(rol==="tesoreria") return cambiarIdentidadTesoreria();
+  if(rol==="repartidor") return cambiarIdentidadRepartidor();
+  if(!esRolIdentidadGeneral(rol)) return;
+  const previa=S.miIdentidad;
+  try{ localStorage.removeItem("tl_identidad"); }catch(e){}
+  S.miIdentidad=null;
+  S.identidadRepModal={dni:"",err:"",loading:false,obligatoria:true,alIngresar:false,previa,para:"general"};
+  S.modal="identidadRep"; render();
+}
+// Los campos "Tu DNI" de cualquier ventana se completan solos con la persona identificada y se ocultan
+const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni"]);
+function rellenarDniIdentificado(){
+  const id=identidadSesion(); if(!id || !id.dni) return;
+  document.querySelectorAll('#app-modal input[id$="-dni"], #app-modal input#dni-inp, #app input[id$="-dni"]').forEach(inp=>{
+    if(_DNI_NO_TOCAR.has(inp.id)) return;
+    if(!inp.value){ inp.value=id.dni; inp.dispatchEvent(new Event("input",{bubbles:true})); }
+    const cont=inp.closest(".field")||inp.parentElement;
+    if(cont && cont.style.display!=="none"){
+      cont.style.display="none";
+      const sig=cont.nextElementSibling;
+      if(!(sig && sig.classList && sig.classList.contains("dni-auto"))){
+        const nota=document.createElement("p"); nota.className="tes-firma dni-auto";
+        nota.innerHTML=`👤 Lo registrás como <strong>${escH(id.nombre||"")}</strong>`;
+        cont.insertAdjacentElement("afterend",nota);
+      }
+    }
+  });
+}
+// La ventanita genérica "Ingresá tu DNI": si ya hay alguien identificado, se confirma sola
+async function autoConfirmarDni(){
+  const d=S.dniModal, id=identidadSesion();
+  if(!d || d.loading || !d.cb || !id) return;
+  const cb=d.cb; d.cb=null; d.loading=true; S.modal=null; render();
+  const chk=validarDNI(id.dni);
+  await cb(id.dni, chk.ok ? chk.usuario : {nombre:id.nombre, dni:id.dni});
+  render();
+}
+
 function cargarIdentidadRepartidor(){
   try{
     const guardada = localStorage.getItem("tl_rep_identidad");
@@ -13284,7 +13366,9 @@ function renderIdentidadRepModal(){
   const d = S.identidadRepModal;
   return `
   ${d.obligatoria?`<div class="alert-info" style="margin-bottom:14px;font-size:13px">🔒 Para entrar tenés que identificarte con tu DNI.</div>`:""}
-  <p style="font-size:13px;color:var(--muted);margin-bottom:14px">${d.para==="tesoreria"
+  <p style="font-size:13px;color:var(--muted);margin-bottom:14px">${d.para==="general"
+    ? "Como este usuario lo usan varias personas, decinos quién sos. Todo lo que hagas queda a tu nombre y no te volvemos a pedir el DNI hasta que salgas."
+    : d.para==="tesoreria"
     ? "Como el login de Tesorería lo usan varias personas, necesitamos saber quién sos. Todo lo que hagas (aprobar, marcar listos, crear lotes, confirmar retiros) queda a tu nombre, y no te lo volvemos a pedir hasta que salgas."
     : "Como el login de reparto lo usan varias personas, necesitamos saber quién sos en este celular — así solo te mostramos lo que vos tomaste (lo que nadie tomó todavía lo ven todos)."}</p>
   <div class="field">
@@ -13311,6 +13395,13 @@ function confirmarIdentidadRepartidor(){
   if(d.para==="tesoreria"){
     S.miIdentidadTesoreria = {dni, nombre:check.nombre};
     try{ localStorage.setItem("tl_tesoreria_identidad", JSON.stringify(S.miIdentidadTesoreria)); }catch(e){}
+  } else if(d.para==="general"){
+    S.miIdentidad = {dni, nombre:check.nombre};
+    try{ localStorage.setItem("tl_identidad", JSON.stringify(S.miIdentidad)); }catch(e){}
+    if(S.user?.rol==="recepcionista"){            // Recepción ya usaba estas: quedan iguales
+      S.miIdentidadFresco = {...S.miIdentidad}; S.miIdentidadRep = {...S.miIdentidad};
+      try{ localStorage.setItem("tl_fresco_identidad", JSON.stringify(S.miIdentidad)); }catch(e){}
+    }
   } else {
     S.miIdentidadRep = {dni, nombre:check.nombre};
     try{ localStorage.setItem("tl_rep_identidad", JSON.stringify(S.miIdentidadRep)); }catch(e){}
@@ -13328,6 +13419,9 @@ function cancelarIdentidadRepartidor(){
     if(d.para==="tesoreria"){
       S.miIdentidadTesoreria = d.previa;
       try{ localStorage.setItem("tl_tesoreria_identidad", JSON.stringify(d.previa)); }catch(e){}
+    } else if(d.para==="general"){
+      S.miIdentidad = d.previa;
+      try{ localStorage.setItem("tl_identidad", JSON.stringify(d.previa)); }catch(e){}
     } else {
       S.miIdentidadRep = d.previa;
       try{ localStorage.setItem("tl_rep_identidad", JSON.stringify(d.previa)); }catch(e){}
@@ -13684,10 +13778,11 @@ if(_sesionRestaurada){
   S.view = "app";
   S.lastRefresh = Date.now();
   cargarIdentidadRepartidor();
-  if((S.user.rol==="repartidor" && !S.miIdentidadRep) || (S.user.rol==="tesoreria" && !S.miIdentidadTesoreria)){
+  cargarIdentidadGeneral();
+  if((S.user.rol==="repartidor" && !S.miIdentidadRep) || (S.user.rol==="tesoreria" && !S.miIdentidadTesoreria) || (esRolIdentidadGeneral(S.user.rol) && !S.miIdentidad)){
     // Recargó la página y no hay identidad guardada: se pide antes de mostrar nada
     S.view = "login";
-    S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true, para:S.user.rol==="tesoreria"?"tesoreria":"repartidor"};
+    S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true, para:S.user.rol==="tesoreria"?"tesoreria":S.user.rol==="repartidor"?"repartidor":"general"};
     S.modal = "identidadRep";
     render();
     if(USE_SHEETS) sheetsLoadUsuarios();   // hace falta para validar el DNI
