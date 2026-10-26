@@ -856,7 +856,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261026-0710";
+const APP_VERSION = "20261026-0713";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5083,7 +5083,7 @@ function renderApp(){
       <button class="btn btn-ghost btn-sm" onclick="abrirNotificaciones()" title="Notificaciones">
         🔔${misNotificaciones().length>0?`<span class="nbadge">${misNotificaciones().length}</span>`:""}
       </button>
-      ${nombreSesionVisible()?(esRolIdentidadGeneral(S.user?.rol)||S.user?.rol==="tesoreria"
+      ${nombreSesionVisible()?(pideIdentidadAlEntrar()||S.user?.rol==="tesoreria"
         ?`<button class="nav-user nav-user-btn" onclick="cambiarIdentidadSesion()" title="Todo lo que hacés queda a tu nombre. Tocá para cambiar de persona">👤 ${escH(nombreSesionVisible())} <span class="rep-edit">✎</span></button>`
         :`<span class="nav-user" title="Sesión identificada">👤 ${escH(nombreSesionVisible())}</span>`):""}
       <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">🚪<span class="nav-lbl">Salir</span></button>
@@ -13039,7 +13039,7 @@ async function doLogin(){
 
   // Todos los demás perfiles (sucursales, áreas, Recepción, Depósito, Producción, Calidad…):
   // DNI una sola vez al entrar; después cada acción queda a su nombre sin volver a pedirlo.
-  if(esRolIdentidadGeneral(S.user.rol)){
+  if(pideIdentidadAlEntrar(S.user)){
     try{ localStorage.removeItem("tl_identidad"); }catch(e){}
     S.miIdentidad = null;
     S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true, para:"general"};
@@ -13293,11 +13293,19 @@ function doLogout(){
 // ══════════════════════════════════════════════════════════
 const ROLES_CON_IDENTIDAD_PROPIA = ["admin","logistica","repartidor","tesoreria"];
 const esRolIdentidadGeneral = rol => !!rol && !ROLES_CON_IDENTIDAD_PROPIA.includes(rol);
+// Las SUCURSALES no: siguen pidiendo el DNI en cada acción, como siempre (Depósito, que puede
+// entrar con un usuario de sucursal, sí lo pide al entrar).
+function pideIdentidadAlEntrar(u){
+  u=u||S.user; if(!u || !esRolIdentidadGeneral(u.rol)) return false;
+  if(u.rol==="sucursal" && !esDeposito(u)) return false;
+  return true;
+}
 function identidadSesion(){
   const u=S.user; if(!u) return null;
   if(u.rol==="logistica"||u.rol==="admin") return u.dni ? {dni:String(u.dni), nombre:u.nombre||u.area||""} : null;
   if(u.rol==="repartidor") return S.miIdentidadRep||null;
   if(u.rol==="tesoreria")  return S.miIdentidadTesoreria||null;
+  if(!pideIdentidadAlEntrar(u)) return null;           // sucursales: DNI en cada acción
   return S.miIdentidad || (u.rol==="recepcionista" ? (S.miIdentidadFresco||S.miIdentidadRep||null) : null);
 }
 function cargarIdentidadGeneral(){
@@ -13307,7 +13315,7 @@ function cambiarIdentidadSesion(){
   const rol=S.user?.rol;
   if(rol==="tesoreria") return cambiarIdentidadTesoreria();
   if(rol==="repartidor") return cambiarIdentidadRepartidor();
-  if(!esRolIdentidadGeneral(rol)) return;
+  if(!pideIdentidadAlEntrar()) return;
   const previa=S.miIdentidad;
   try{ localStorage.removeItem("tl_identidad"); }catch(e){}
   S.miIdentidad=null;
@@ -13779,7 +13787,7 @@ if(_sesionRestaurada){
   S.lastRefresh = Date.now();
   cargarIdentidadRepartidor();
   cargarIdentidadGeneral();
-  if((S.user.rol==="repartidor" && !S.miIdentidadRep) || (S.user.rol==="tesoreria" && !S.miIdentidadTesoreria) || (esRolIdentidadGeneral(S.user.rol) && !S.miIdentidad)){
+  if((S.user.rol==="repartidor" && !S.miIdentidadRep) || (S.user.rol==="tesoreria" && !S.miIdentidadTesoreria) || (pideIdentidadAlEntrar(S.user) && !S.miIdentidad)){
     // Recargó la página y no hay identidad guardada: se pide antes de mostrar nada
     S.view = "login";
     S.identidadRepModal = {dni:"", err:"", loading:false, obligatoria:true, alIngresar:true, para:S.user.rol==="tesoreria"?"tesoreria":S.user.rol==="repartidor"?"repartidor":"general"};
