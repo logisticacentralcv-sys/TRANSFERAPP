@@ -856,7 +856,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261026-0713";
+const APP_VERSION = "20261030-0803";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8297,6 +8297,41 @@ function renderArmarRecorrido(){
   </div>`;
 }
 
+
+// ═══ Métricas por repartidor: cada "tramo" que un repartidor tomó y cómo terminó ═══
+// Tramo 1 = desde el origen (quien la levantó). Tramo 2 = desde fábrica, si pasa por fábrica.
+//   entrego    → la dejó (en destino, en el buzón, o en fábrica si era el 1er tramo)
+//   lleva      → la tiene ahora (en tránsito)
+//   no_entrego → la tomó y no la dejó (No entregada, volvió atrás, cancelada…)
+//   manual     → la tomó, pero la cerró otra persona a mano ("Cambiado a Entregada")
+const _RES_TRAMO={entrego:{t:"Entregó",c:"#2ecc7a"},lleva:{t:"La lleva ahora",c:"#4f9eff"},no_entrego:{t:"No la dejó",c:"#f05252"},manual:{t:"Cerrada a mano por otro",c:"#f5a623"}};
+function tramosDeSolicitud(r){
+  const out=[], pasa=_pasaPorFab(r), entregados=["Entregada","Entregada (sin confirmar)","En el buzón"];
+  const resultadoFinal=()=> r.estado==="En tránsito" ? "lleva"
+    : entregados.includes(r.estado) ? (r.cambioManualEstado==="Entregada" ? "manual" : "entrego")
+    : "no_entrego";
+  const n1=String(r.nombreQuienLevanto||"").trim();
+  if(n1 && r.estado!=="No levantada"){
+    const res = (pasa && r.fabricaAt) ? "entrego" : resultadoFinal();
+    out.push({tramo:1, nombre:n1, dni:_dniLimpio(r.dniRepartidor), res, at:r.levantadoAt||"", r});
+  }
+  const n2=String(r.nombreQuienEntrego||"").trim();
+  if(pasa && r.fabricaAt && r.salidaFabricaAt && (n2||r.dniEntrega)){
+    out.push({tramo:2, nombre:n2||"—", dni:_dniLimpio(r.dniEntrega), res:resultadoFinal(), at:r.salidaFabricaAt||"", r});
+  }
+  return out;
+}
+const claveRepartidor=t=>t.dni?("d:"+t.dni):("n:"+normNotif(t.nombre));
+function metricasPorRepartidor(reqs){
+  const m={};
+  reqs.forEach(r=>tramosDeSolicitud(r).forEach(t=>{
+    const k=claveRepartidor(t), o=m[k]=m[k]||{clave:k,nombre:t.nombre,tomo:0,entrego:0,lleva:0,no_entrego:0,manual:0,tramos:[]};
+    if(t.at>=(o._ult||"")){ o.nombre=t.nombre; o._ult=t.at; }
+    o.tomo++; o[t.res]++; o.tramos.push(t);
+  }));
+  return Object.values(m).sort((a,b)=>b.tomo-a.tomo||a.nombre.localeCompare(b.nombre,"es"));
+}
+
 function renderMetricas(){
   let reqs = S.requests;
 
@@ -8305,6 +8340,10 @@ function renderMetricas(){
   if(S.metHasta) reqs = reqs.filter(r=>r.createdAt && r.createdAt.slice(0,10) <= S.metHasta);
   if(S.metSucursal) reqs = reqs.filter(r=>(r.sucursal||r.area)===S.metSucursal || r.destino===S.metSucursal);
   if(S.metRecorrido) reqs = reqs.filter(r=>r.recorrido===S.metRecorrido);
+  // repartidores (de lo filtrado hasta acá, sin el filtro de repartidor)
+  const repsTodos = metricasPorRepartidor(reqs);
+  if(S.metRepartidor) reqs = reqs.filter(r=>tramosDeSolicitud(r).some(t=>claveRepartidor(t)===S.metRepartidor));
+  const repSel = S.metRepartidor ? repsTodos.find(o=>o.clave===S.metRepartidor) : null;
 
   const total=reqs.length||1;
   const byS={},byE={};
@@ -8422,7 +8461,14 @@ function renderMetricas(){
         ${recorridosOpts.map(r=>`<option ${S.metRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
       </select>
     </div>
-    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';S.metEstadoSel='';S.metDiaSel='';render()">✕ Limpiar filtros</button>`:""}
+    <div class="field" style="margin-bottom:0;min-width:200px">
+      <label>Repartidor</label>
+      <select onchange="S.metRepartidor=this.value;render()">
+        <option value="">Todos</option>
+        ${repsTodos.map(o=>`<option value="${escH(o.clave)}" ${S.metRepartidor===o.clave?"selected":""}>${escH(o.nombre)} (${o.tomo})</option>`).join("")}
+      </select>
+    </div>
+    ${(S.metDesde||S.metHasta||S.metSucursal||S.metRecorrido||S.metRepartidor)?`<button class="btn btn-ghost btn-sm" onclick="S.metDesde='';S.metHasta='';S.metSucursal='';S.metRecorrido='';S.metRepartidor='';S.metEstadoSel='';S.metDiaSel='';render()">✕ Limpiar filtros</button>`:""}
   </div>
   <div class="metrics-grid">
     <div id="met-resumen" class="card" style="${cardL}">
@@ -8441,6 +8487,47 @@ function renderMetricas(){
         <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">📅 Entregadas fuera de fecha</span><span class="mono" style="color:${fueraDeFecha.length?"var(--red)":"var(--green)"}">${fueraDeFecha.length} <span style="color:var(--faint);font-weight:400">(${pctFuera}% de las entregadas con fecha)</span></span></div>
       </div>
     </div>
+    <div id="met-rep" class="card" style="${cardL}">
+      ${tituloGrafico(repSel?`🚚 ${escH(repSel.nombre)}`:"🚚 Por repartidor", repSel
+        ? "Todo lo que tomó en el período y cómo terminó cada una"
+        : "Lo que tomó cada repartidor y cómo terminó · tocá uno para ver el detalle")}
+      ${!repsTodos.length?`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Ningún repartidor tomó solicitudes en este período.</p>`:repSel?(()=>{
+        const orden={lleva:0,no_entrego:1,manual:2,entrego:3};
+        const ts=[...repSel.tramos].sort((a,b)=>orden[a.res]-orden[b.res]||String(b.at).localeCompare(String(a.at)));
+        return `
+        <div class="kpi-mini-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr));margin-bottom:16px">
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--blue)">${repSel.tomo}</div><div class="kpi-mini-lbl">Tomó</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:#2ecc7a">${repSel.entrego}</div><div class="kpi-mini-lbl">Entregó</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:#4f9eff">${repSel.lleva}</div><div class="kpi-mini-lbl">La lleva ahora</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f05252">${repSel.no_entrego}</div><div class="kpi-mini-lbl">Tomó y no dejó</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f5a623">${repSel.manual}</div><div class="kpi-mini-lbl">Cerradas a mano</div></div>
+        </div>
+        <div class="table-wrap"><table style="font-size:14px">
+          <thead><tr><th>N°</th><th>Origen → Destino</th><th>Tramo</th><th>La tomó</th><th>Cómo terminó</th><th>Estado actual</th></tr></thead>
+          <tbody>${ts.map(t=>`<tr onclick="openDetalle('${escH(t.r.id)}')" style="cursor:pointer">
+            <td class="id-cell">${escH(t.r.id)}</td>
+            <td>${escH(t.r.sucursal||t.r.area||"—")} → ${escH(t.r.destino||"—")}${t.r.tipoPedido==="bolsin"?` <span class="sk-chip amber">bolsín</span>`:""}</td>
+            <td class="muted-cell">${t.tramo===2?"Desde fábrica":(_pasaPorFab(t.r)?"Hasta fábrica":"Directo")}</td>
+            <td class="muted-cell">${t.at?fdt(t.at):"—"}</td>
+            <td><span class="dv-chip" style="color:${_RES_TRAMO[t.res].c};border-color:${_RES_TRAMO[t.res].c}55;background:${_RES_TRAMO[t.res].c}14">${_RES_TRAMO[t.res].t}</span></td>
+            <td>${estadoBadges(t.r)}</td></tr>`).join("")}</tbody>
+        </table></div>`;
+      })():`
+      <div class="table-wrap"><table style="font-size:14px">
+        <thead><tr><th>Repartidor</th><th>Tomó</th><th>Entregó</th><th>La lleva ahora</th><th>Tomó y no dejó</th><th>Cerradas a mano</th><th>% entregó</th></tr></thead>
+        <tbody>${repsTodos.map(o=>{
+          const cerr=o.entrego+o.no_entrego+o.manual, pct=cerr?Math.round(o.entrego/cerr*100):null;
+          return `<tr onclick="S.metRepartidor='${escH(o.clave)}';render()" style="cursor:pointer" title="Ver lo que tomó ${escH(o.nombre)}">
+          <td><strong>${escH(o.nombre)}</strong></td><td class="mono">${o.tomo}</td>
+          <td class="mono" style="color:#2ecc7a">${o.entrego||"—"}</td>
+          <td class="mono" style="color:#4f9eff">${o.lleva||"—"}</td>
+          <td class="mono" style="color:${o.no_entrego?"#f05252":"inherit"};font-weight:${o.no_entrego?700:400}">${o.no_entrego||"—"}</td>
+          <td class="mono" style="color:${o.manual?"#f5a623":"inherit"}">${o.manual||"—"}</td>
+          <td class="mono">${pct===null?"—":pct+"%"}</td></tr>`; }).join("")}</tbody>
+      </table></div>
+      <p style="font-size:12.5px;color:#a9b8d0;margin-top:10px">"Tomó y no dejó": la levantó pero terminó como no entregada, volvió atrás o se canceló. "Cerradas a mano": la tomó, pero la pasó a Entregada otra persona. El % es sobre las que ya terminaron (sin contar las que lleva ahora).</p>`}
+    </div>
+
     <div id="met-evo" class="card" style="${cardL}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         ${tituloGrafico("Evolución en el tiempo", serie==="creadas"?"solicitudes creadas por día":"solicitudes entregadas por día")}
