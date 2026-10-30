@@ -832,6 +832,36 @@ tr[onclick]:active td{background:var(--s3)}
 .nav-user-btn{cursor:pointer;font-family:var(--font);border:1px solid var(--border2);background:var(--s2)}
 .nav-user-btn:hover{border-color:var(--blue)}
 
+
+/* ── QR en TransferLog ── */
+.qr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
+.qr-card{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}
+.qr-card-top{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.qr-card-ruta{font-size:15px}
+.qr-card-desc{font-size:13px;color:var(--muted)}
+.qr-card-acc{margin-top:8px;display:flex}
+.qr-card-acc .btn{flex:1;justify-content:center;min-height:46px;font-size:15px}
+.qr-banner{padding:12px 14px;border-radius:12px;font-size:15px;margin-bottom:14px;line-height:1.4}
+.qr-banner.ok{background:#2ecc7a14;border:1px solid #2ecc7a44;color:#c8f5dd}
+.qr-banner.warn{background:#f5a62314;border:1px solid #f5a62355;color:#fde7b0}
+.qr-iniciar{padding:20px}
+.qr-iniciar-tit{font-size:18px;font-weight:800;margin-bottom:12px}
+.qr-sel{font-size:17px;height:52px}
+.qr-paradas{display:flex;flex-wrap:wrap;gap:6px 12px;margin:10px 0 4px;font-size:13px;color:var(--muted)}
+.qr-paradas b{color:var(--amber)}
+.qr-llevar{margin:14px 0;padding:12px 14px;background:var(--s2);border-radius:10px;font-size:14px;color:var(--muted)}
+.qr-llevar strong{color:var(--text)}
+.qr-llevar ul{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:13px;line-height:1.6}
+.qr-acomp{margin:6px 0 12px;font-size:13px;color:var(--muted)}
+.qr-acomp summary{cursor:pointer;padding:6px 0}
+.qr-salir{min-height:54px;font-size:16px}
+.qr-nota{font-size:12.5px;color:var(--faint);margin:10px 0 0;text-align:center}
+.qr-otros{background:none;border:0;color:var(--blue);font-family:var(--font);font-size:13.5px;cursor:pointer;padding:8px 0;margin-bottom:6px}
+.qr-fin{margin-top:22px}
+.qr-fin .btn{min-height:52px;font-size:15px;justify-content:center}
+.ef-res{background:var(--s2);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:14px}
+.ef-cerrada{display:block;width:100%;background:none;border:0;color:var(--muted);font-family:var(--font);font-size:13px;text-decoration:underline;cursor:pointer;margin-top:14px;padding:6px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -856,7 +886,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261030-0803";
+const APP_VERSION = "20261030-0921";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8607,7 +8637,7 @@ function aplicarQRPendiente(){
   S.estoyEn={sucursal:oficial, fabrica:esFab, viaje:q.v||"", at:Date.now(), estado:"verificando", motivo:""};
   S.vista="main"; S.modoSeleccionRep=false;
   if(S.devolucionesLoaded) cargarDevoluciones().then(()=>render()).catch(()=>{});
-  verificarPresenciaEstoyEn();
+  iniciarEstoyEn();
 }
 // "Estás en…" solo se abre si la persona realmente escaneó el QR ahí: la página del QR deja una
 // LLEGADA o PRESENCIA (con GPS verificado) en el viaje activo de esta persona. Abrir un enlace guardado
@@ -8632,6 +8662,215 @@ async function verificarPresenciaEstoyEn(){
   }catch(err){ console.warn("Presencia:",err); e.estado="bloqueado"; e.motivo="error"; }
   render();
 }
+// ═══════════════════════════════════════════════════════════════════
+//  QR → TRANSFERLOG (todo en un solo lugar)
+//  El QR de cada lugar abre esta pantalla con el repartidor ya identificado.
+//   · FÁBRICA: si no tiene viaje, elige el recorrido y sale; ahí mismo ve lo
+//     que tiene que salir para ese recorrido y lo toma ("Tomar todo").
+//     Al volver: deja lo que trae y termina el recorrido.
+//   · SUCURSAL: al escanear se registra la hora de llegada (para Flota). Si
+//     hay algo para retirar lo toma; si hay algo para dejar, lo entrega con
+//     el DNI de quien lo recibe en la sucursal.
+//  Escribe en las mismas tablas de Flota que la página del QR (viajes y
+//  registros), así los análisis siguen igual.
+// ═══════════════════════════════════════════════════════════════════
+const RADIO_QR_M = 300, RADIO_QR_OK_M = 50;
+let _coordsSuc=null, _hojasRuta=null, _recorridosQR=null;
+async function cargarDatosQR(forzar){
+  if(_coordsSuc && _hojasRuta && !forzar) return;
+  const [s,h,rc]=await Promise.all([
+    sb.from("sucursales").select("nombre,lat,lon"),
+    sb.from("flota_tiempos_viaje").select("*"),
+    sb.from("recorridos").select("nombre")]);
+  _coordsSuc=s.data||[]; _hojasRuta=h.data||[];
+  const conHoja=new Set(_hojasRuta.map(p=>normNotif(p.recorrido)));
+  _recorridosQR=(rc.data||[]).map(r=>r.nombre).filter(n=>n && conHoja.has(normNotif(n)));
+}
+const paradasDe=rec=>(_hojasRuta||[]).filter(p=>normNotif(p.recorrido)===normNotif(rec)).sort((a,b)=>(+a.orden_parada||0)-(+b.orden_parada||0));
+const _esVerduleria=rec=>normNotif(rec).indexOf("verduleria")!==-1;
+function ubicacionActual(){
+  return new Promise(res=>{
+    if(!navigator.geolocation) return res(null);
+    let listo=false; const fin=v=>{ if(!listo){ listo=true; res(v); } };
+    setTimeout(()=>fin(null),12000);
+    try{ navigator.geolocation.getCurrentPosition(p=>fin({lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy||0}),()=>fin(null),{enableHighAccuracy:true,timeout:11000,maximumAge:0}); }
+    catch(e){ fin(null); }
+  });
+}
+function _distM(a,b,c,d){ const R=6371000,t=x=>x*Math.PI/180, dl=t(c-a), dn=t(d-b); const h=Math.sin(dl/2)**2+Math.cos(t(a))*Math.cos(t(c))*Math.sin(dn/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+const _lugarCoords=lugar=>(_coordsSuc||[]).find(x=>normNotif(x.nombre)===normNotif(lugar==="FABRICA"?"Fábrica":lugar));
+// ¿Está realmente ahí? (misma regla que la página del QR: hasta 300 m, con holgura por la precisión del GPS)
+async function verificarEstoyAca(lugar){
+  const u=await ubicacionActual();
+  if(!u) return {ok:false, motivo:"sin-gps", obs:"GPS: sin datos"};
+  const s=_lugarCoords(lugar);
+  if(!s || s.lat==null || s.lon==null) return {ok:true, u, obs:"GPS: sin datos"};
+  const dist=Math.round(_distM(u.lat,u.lon,+s.lat,+s.lon));
+  const obs=dist<=RADIO_QR_OK_M?`GPS: OK (${dist}m)`:`GPS: fuera de rango (${dist}m)`;
+  if(dist-Math.min(u.acc||0,100) > RADIO_QR_M) return {ok:false, motivo:"lejos", dist, obs};
+  return {ok:true, u, dist, obs};
+}
+async function miViajeActivo(){
+  const dni=_dniLimpio(S.miIdentidadRep?.dni); if(!dni) return null;
+  const { data, error } = await sb.from("flota_viajes").select("*").eq("estado","ACTIVO").or(`dni_rep1.eq.${dni},dni_rep2.eq.${dni}`).order("hora_salida",{ascending:false}).limit(1);
+  if(error) throw error;
+  return (data && data[0]) || null;
+}
+async function _proximoIdViaje(){
+  const { data } = await sb.from("flota_viajes").select("id").order("created_at",{ascending:false}).limit(50);
+  let max=0; (data||[]).forEach(r=>{ const m=/^V(\d+)$/.exec(r.id||""); if(m) max=Math.max(max,parseInt(m[1],10)); });
+  return "V"+String(max+1).padStart(6,"0");
+}
+function _idCelularQR(){ try{ let id=localStorage.getItem("tl_device_id"); if(!id){ id=Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("tl_device_id",id); } return id; }catch(e){ return ""; } }
+
+// ── Abrir desde el QR ──
+async function iniciarEstoyEn(){
+  const e=S.estoyEn; if(!e) return;
+  e.estado="cargando"; e.motivo=""; render();
+  try{
+    await cargarDatosQR();
+    if(!e.fabrica){ const of=_lugarCoords(e.sucursal); if(of) e.oficial=of.nombre; }
+    e.viaje=await miViajeActivo();
+    if(e.fabrica){
+      e.estado = e.viaje ? "ok" : "iniciar";
+      if(!e.viaje && !e.recSel) e.recSel=_recorridosQR[0]||"";
+    } else {
+      const pres=await verificarEstoyAca(e.oficial||e.sucursal);
+      if(!pres.ok){ e.estado="bloqueado"; e.motivo=pres.motivo; e.dist=pres.dist; render(); return; }
+      if(e.viaje) e.llegada=await qrRegistrarLlegada(e.viaje, e.oficial||e.sucursal, pres.obs);
+      e.estado="ok";
+    }
+  }catch(err){ console.warn("QR:",err); e.estado="bloqueado"; e.motivo="error"; }
+  render();
+}
+// Hora de llegada (una por viaje y sucursal: si vuelve a escanear se conserva la primera)
+async function qrRegistrarLlegada(v, lugar, obs){
+  const { data:ya } = await sb.from("flota_registros_qr").select("id,ts").eq("id_viaje",v.id).eq("sucursal",lugar).eq("evento","LLEGADA").limit(1);
+  if(ya && ya.length) return {ts:ya[0].ts, yaEstaba:true};
+  const ts=new Date().toISOString();
+  const { error } = await sb.from("flota_registros_qr").insert({ts, id_viaje:v.id, sucursal:lugar, evento:"LLEGADA", gps_obs:obs, recorrido:v.recorrido});
+  if(error) throw error;
+  return {ts, yaEstaba:false};
+}
+// ── Fábrica: iniciar y terminar el recorrido ──
+async function qrIniciarViaje(){
+  const e=S.estoyEn; if(!e || e.loading) return;
+  const yo=S.miIdentidadRep; if(!yo){ e.err="No sabemos quién sos: volvé a entrar con tu DNI."; render(); return; }
+  if(!e.recSel){ e.err="Elegí el recorrido."; render(); return; }
+  let dni2=_dniLimpio(e.dni2), nombre2=null;
+  if(dni2){
+    if(dni2===_dniLimpio(yo.dni)){ e.err="El acompañante tiene que ser otra persona."; render(); return; }
+    const a=S.usuarios.find(u=>_dniLimpio(u.dni)===dni2 && u.tipo==="REPARTIDOR" && u.activo!=="no");
+    if(!a){ e.err="No encontramos ese DNI entre los repartidores."; render(); return; }
+    nombre2=a.nombre;
+  }
+  e.loading=true; e.err=""; renderNow();
+  try{
+    const ya=await miViajeActivo();
+    if(ya){ e.viaje=ya; e.estado="ok"; e.loading=false; render(); return; }
+    if(dni2){
+      const { data:ocup } = await sb.from("flota_viajes").select("id").eq("estado","ACTIVO").or(`dni_rep1.eq.${dni2},dni_rep2.eq.${dni2}`).limit(1);
+      if(ocup && ocup.length) throw new Error(`${nombre2} ya tiene un viaje activo (${ocup[0].id}).`);
+    }
+    const pres=await verificarEstoyAca("FABRICA");
+    const id=await _proximoIdViaje(), ahora=new Date().toISOString();
+    const fila={id, fecha:fechaISO(), recorrido:e.recSel, dni_rep1:_dniLimpio(yo.dni), nombre_rep1:yo.nombre, dni_rep2:dni2||null, nombre_rep2:nombre2,
+      hora_salida:ahora, estado:"ACTIVO", celular_id:_idCelularQR(), fase_verd:_esVerduleria(e.recSel)?"SALIDA_MERCADO":""};
+    const { error } = await sb.from("flota_viajes").insert(fila);
+    if(error) throw error;
+    await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:id, sucursal:"FABRICA", evento:"SALIDA FABRICA", gps_obs:pres.obs, recorrido:e.recSel});
+    e.viaje=fila; e.estado="ok"; e.loading=false;
+    toast(`🚛 Salida registrada · ${e.recSel} · ${id}`);
+  }catch(err){ console.warn("Iniciar viaje:",err); e.loading=false; e.err=err.message||"No se pudo registrar la salida."; }
+  render();
+}
+async function qrFinalizarViaje(){
+  const e=S.estoyEn, v=e&&e.viaje; if(!v || e.loading) return;
+  const L=estoyEnLista();
+  if(L.dejar.length && !confirm(`Todavía tenés ${L.dejar.length} para dejar acá. ¿Terminar el recorrido igual?`)) return;
+  if(!L.dejar.length && !confirm(`¿Terminar el recorrido ${v.recorrido} (${v.id})?`)) return;
+  e.loading=true; renderNow();
+  try{
+    const pres=await verificarEstoyAca("FABRICA"), ahora=new Date().toISOString();
+    const { error } = await sb.from("flota_viajes").update({hora_llegada:ahora, estado:"FINALIZADO"}).eq("id",v.id);
+    if(error) throw error;
+    await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:"FABRICA", evento:"REGRESO FABRICA", gps_obs:pres.obs, recorrido:v.recorrido});
+    toast(`🏁 Recorrido ${v.recorrido} terminado`);
+    S.estoyEn=null;
+  }catch(err){ console.warn("Finalizar viaje:",err); e.loading=false; toast("⚠️ No se pudo terminar el recorrido — probá de nuevo","warn"); }
+  render();
+}
+// ── Tomar (uno o todos) con el DNI del repartidor ──
+async function qrTomar(ids){
+  const yo=S.miIdentidadRep; if(!yo||!ids.length) return;
+  const ts=now();
+  const cambios=ids.map(id=>{ const x=S.requests.find(r=>r.id===id); const seg=x&&x.estado==="En fábrica";
+    return {id, changes: seg ? {estado:"En tránsito", nombreQuienEntrego:yo.nombre, dniEntrega:yo.dni, salidaFabricaAt:ts, pasaPorFabrica:true, updatedAt:ts}
+                             : {estado:"En tránsito", nombreQuienLevanto:yo.nombre, dniRepartidor:yo.dni, levantadoAt:ts, updatedAt:ts}}; });
+  S.qrOcupado=true; render();
+  const res=await Promise.all(cambios.map(c=>sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id)));
+  const okIds=new Set(cambios.filter((c,i)=>!res[i].error).map(c=>c.id));
+  S.requests=S.requests.map(x=>okIds.has(x.id)?{...x,...cambios.find(c=>c.id===x.id).changes}:x);
+  S.qrOcupado=false;
+  toast(okIds.size===ids.length ? `🚚 Tomaste ${okIds.size===1?`la ${ids[0]}`:`${okIds.size}`}` : `⚠️ Se tomaron ${okIds.size} de ${ids.length} — probá de nuevo con las que faltan`, okIds.size===ids.length?undefined:"warn");
+  render();
+}
+// ── Entregar con el DNI de quien recibe ──
+function abrirEntregaFirma(id){
+  S.entregaFirma={id, dni:"", err:"", loading:false};
+  S.modal="entregaFirma"; render(); setTimeout(()=>$("ef-dni")?.focus(),120);
+}
+function renderEntregaFirmaModal(){
+  const d=S.entregaFirma, r=S.requests.find(x=>x.id===d.id); if(!r) return "";
+  return `
+  <div class="ef-res"><div><span class="mono" style="color:var(--blue)">${escH(r.id)}</span> · ${escH(origenLabel(r))} → <strong>${escH(r.destino)}</strong></div>
+    <div style="color:var(--muted);font-size:13px;margin-top:2px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}</div></div>
+  <div class="field"><label>DNI de quien lo recibe en ${escH(r.destino)} <span class="req">*</span></label>
+    <input id="ef-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba la persona que recibe" value="${escH(d.dni)}"
+      oninput="S.entregaFirma.dni=this.value;S.entregaFirma.err=''" onkeydown="if(event.key==='Enter')confirmarEntregaFirma()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
+  <p class="tes-firma">🚚 Lo entregás vos: <strong>${escH(S.miIdentidadRep?.nombre||"")}</strong></p>
+  <div class="cc-acciones">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="confirmarEntregaFirma()" ${d.loading?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:"✅ Entregado"}</button>
+  </div>
+  <button class="ef-cerrada" onclick="closeModal();openDejarCerrado('${escH(r.id)}')">¿No hay nadie para recibir? Dejarlo sin firma (sucursal cerrada)</button>`;
+}
+async function confirmarEntregaFirma(){
+  const d=S.entregaFirma; if(!d||d.loading) return;
+  const r=S.requests.find(x=>x.id===d.id), yo=S.miIdentidadRep; if(!r||!yo) return;
+  const dni=_dniLimpio(d.dni);
+  if(!dni){ d.err="Que la persona que recibe escriba su DNI."; render(); return; }
+  if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
+  const chk=validarDNI(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
+  const fila=chk.usuario||{};
+  const esDeAhi=[fila.usuario,fila.area].some(v=>v && normNotif(v)===normNotif(r.destino));
+  if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}${fila.usuario||fila.area?` (${fila.usuario||fila.area})`:""}, no de ${r.destino}.`; render(); return; }
+  d.loading=true; renderNow();
+  const ts=now(), seg=_pasaPorFab(r) && !!r.fabricaAt;
+  const changes={estado:"Entregada", deliveredAt:ts, confirmadaSucursalAt:ts, nombreQuienRecibio:chk.nombre, dniQuienRecibio:dni, updatedAt:ts};
+  if(!seg){ changes.nombreQuienEntrego=yo.nombre; changes.dniEntrega=yo.dni; }
+  const { error } = await sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",r.id);
+  if(error){ console.warn("Entrega:",error); d.loading=false; d.err="No se pudo guardar — probá de nuevo."; render(); return; }
+  S.requests=S.requests.map(x=>x.id===r.id?{...x,...changes}:x);
+  S.modal=null; S.entregaFirma=null;
+  toast(`✅ ${r.id} entregada · recibió ${chk.nombre}`);
+  render();
+}
+// Tarjeta simple para la pantalla del QR
+function cardQR(r, accion){
+  const btn = accion==="tomar"
+    ? `<button class="btn btn-warn btn-md" onclick="qrTomar(['${escH(r.id)}'])" ${S.qrOcupado?"disabled":""}>🤲 Tomar</button>`
+    : `<button class="btn btn-success btn-md" onclick="abrirEntregaFirma('${escH(r.id)}')">✅ Entregar</button>`;
+  return `<div class="qr-card">
+    <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>
+      ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}${r.prioridad==="Urgente"?`<span class="sk-chip red">Urgente</span>`:""}</div>
+    <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
+    <div class="qr-card-desc">${escH(r.descripcion||"")}${r.cantidad?` · ${escH(String(r.cantidad))} ${escH(r.unidad||"")}`:""}</div>
+    <div class="qr-card-acc">${btn}</div>
+  </div>`;
+}
+
 function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
 // Lo que este repartidor puede ver y hacer (sin los filtros de pantalla)
@@ -8654,7 +8893,16 @@ function estoyEnLista(){
   });
   const devTomar=S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===n);
   const devFabrica=e.fabrica ? S.devoluciones.filter(d=>d.estado==="En camino" && portadorDevolucion(d) && devolucionVisibleParaRepartidor(d)) : [];
-  return {retirar,dejar,devTomar,devFabrica};
+  // En fábrica: solo lo del recorrido elegido (por su recorrido, o si no tiene, por las paradas del recorrido)
+  let retirarFinal=retirar, otrosRec=0;
+  const rec = e.fabrica ? (e.viaje ? e.viaje.recorrido : e.recSel) : "";
+  if(rec){
+    const par=new Set(paradasDe(rec).map(p=>normNotif(p.sucursal)));
+    const mios=retirar.filter(r=> r.recorrido ? normNotif(r.recorrido)===normNotif(rec) : par.has(normNotif(r.destino)));
+    otrosRec=retirar.length-mios.length;
+    if(!e.verOtros) retirarFinal=mios;
+  }
+  return {retirar:retirarFinal,dejar,devTomar,devFabrica,otrosRec,rec};
 }
 function cardDevolucionEstoy(d,accion){
   const prods=productosDeDevolucion(d);
@@ -8674,56 +8922,84 @@ function cardDevolucionEstoy(d,accion){
     </div>
   </div>`;
 }
-function renderEstoyEnBloqueo(){
-  const e=S.estoyEn, verif=e.estado==="verificando";
-  const msg={
-    "sin-viaje":"No encontramos un viaje activo a tu nombre. Iniciá el recorrido desde el QR de Fábrica y después escaneá el de la sucursal.",
-    "sin-presencia":`No registramos que hayas escaneado el QR de ${escH(e.sucursal)} hace poco. Escaneá el QR que está en la sucursal (con la ubicación activada) y se abre solo.`,
-    "sin-dni":"No pudimos identificarte. Volvé a entrar con tu DNI.",
-    "error":"No pudimos verificar tu presencia (¿sin conexión?). Probá de nuevo."
-  }[e.motivo]||"";
-  return `
-  <div style="animation:fadeUp .3s ease" class="estoy-page">
+function renderEstoyEn(){
+  const e=S.estoyEn, L=estoyEnLista();
+  const hm=iso=>{ try{ return new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }catch(x){ return ""; } };
+  const lugar=e.fabrica?"Fábrica":(e.oficial||e.sucursal);
+  const cab=`
     <div class="estoy-head">
-      <div style="min-width:0"><div class="estoy-lbl">📍 ${verif?"Verificando…":"Estás en"}</div><div class="estoy-suc">${escH(e.sucursal)}</div></div>
+      <div style="min-width:0"><div class="estoy-lbl">📍 ${e.estado==="cargando"?"Verificando…":"Estás en"}</div><div class="estoy-suc">${escH(lugar)}</div></div>
       <button class="btn btn-ghost btn-md" onclick="salirEstoyEn()">Ver todo →</button>
     </div>
-    ${verif?`<div class="pk-vacio"><span class="spinner"></span> Confirmando tu llegada…</div>`:`
-    <div class="card" style="text-align:center;padding:28px 20px">
-      <div style="font-size:34px;margin-bottom:8px">🔒</div>
+    ${S.miIdentidadRep?`<div class="rep-toolbar"><button class="rep-yo" onclick="cambiarIdentidadRepartidor()" title="Tocá para cambiar de persona">👤 <strong>${escH(S.miIdentidadRep.nombre)}</strong><span class="rep-edit">✎</span></button></div>`:""}`;
+  const pagina=html=>`<div style="animation:fadeUp .3s ease" class="estoy-page">${cab}${html}</div>`;
+  if(e.estado==="cargando") return pagina(`<div class="pk-vacio"><span class="spinner"></span> ${e.fabrica?"Buscando tu recorrido…":`Confirmando que estás en ${escH(lugar)}…`}</div>`);
+  if(e.estado==="bloqueado"){
+    const msg={"sin-gps":"Necesitamos tu ubicación para registrar la llegada. Activá el GPS y permití que el navegador la use, y tocá Reintentar.",
+      "lejos":`Estás a unos <strong>${fmtNum(e.dist||0)} metros</strong> de ${escH(lugar)}. Acercate y volvé a escanear el QR.`,
+      "error":"No pudimos verificar (¿sin conexión?). Probá de nuevo."}[e.motivo]||"";
+    return pagina(`<div class="card" style="text-align:center;padding:28px 20px">
+      <div style="font-size:34px;margin-bottom:8px">📍🔒</div>
       <div style="font-size:17px;font-weight:700;margin-bottom:8px">No pudimos confirmar que estés acá</div>
       <p style="font-size:14px;color:var(--muted);line-height:1.5;margin-bottom:16px">${msg}</p>
-      <button class="btn btn-primary btn-md" onclick="verificarPresenciaEstoyEn()">🔄 Reintentar</button>
-    </div>`}
-  </div>`;
-}
-function renderEstoyEn(){
-  if(S.estoyEn.estado!=="ok") return renderEstoyEnBloqueo();
-  const e=S.estoyEn, L=estoyEnLista();
-  const total=L.retirar.length+L.dejar.length+L.devTomar.length+L.devFabrica.length;
-  const hora=new Date(e.at).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"});
-  const seccion=(titulo,items,html)=> items.length ? `
+      <button class="btn btn-primary btn-md" onclick="iniciarEstoyEn()">🔄 Reintentar</button></div>`);
+  }
+  const seccion=(titulo,items,html,extra)=> items.length ? `
     <div class="estoy-sec">
-      <div class="estoy-tit"><span>${titulo}</span><span class="tab-n" style="margin:0">${items.length}</span></div>
-      <div id="estoy-${titulo.replace(/\W+/g,"")}" class="del-grid">${html}</div>
+      <div class="estoy-tit"><span>${titulo}</span><span style="display:flex;gap:8px;align-items:center">${extra||""}<span class="tab-n" style="margin:0">${items.length}</span></span></div>
+      <div class="qr-grid">${html}</div>
     </div>` : "";
-  return `
-  <div style="animation:fadeUp .3s ease" class="estoy-page">
-    <div class="estoy-head">
-      <div style="min-width:0">
-        <div class="estoy-lbl">📍 Estás en</div>
-        <div class="estoy-suc">${escH(e.sucursal)}</div>
-        <div class="estoy-sub">desde las ${hora}${e.viaje?` · Viaje ${escH(e.viaje)}`:""}</div>
-      </div>
-      <button class="btn btn-ghost btn-md" onclick="salirEstoyEn()">Ver todo →</button>
-    </div>
-    ${S.miIdentidadRep?`<div class="rep-toolbar"><button class="rep-yo" onclick="cambiarIdentidadRepartidor()" title="Tocá para cambiar de persona">👤 <strong>${escH(S.miIdentidadRep.nombre)}</strong><span class="rep-edit">✎</span></button></div>`:""}
-    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(cardRepartidorHtml).join(""))}
+  const tomarTodo=items=> items.length>1 ? `<button class="btn btn-warn btn-sm" onclick='qrTomar(${JSON.stringify(items.map(r=>r.id)).replace(/'/g,"&#39;")})' ${S.qrOcupado?"disabled":""}>🤲 Tomar todo</button>` : "";
+
+  // ── Fábrica sin recorrido: elegirlo y salir ──
+  if(e.fabrica && e.estado==="iniciar"){
+    const recs=_recorridosQR||[], par=e.recSel?paradasDe(e.recSel):[];
+    return pagina(`
+    <div class="card qr-iniciar">
+      <div class="qr-iniciar-tit">🚛 Elegí tu recorrido</div>
+      ${!recs.length?`<p style="color:#fbbf24;font-size:14px">Todavía no hay recorridos armados con su orden de paradas. Pedile a Logística que los arme en Flota → "Armar recorrido".</p>`:`
+      <select class="inp qr-sel" onchange="S.estoyEn.recSel=this.value;S.estoyEn.verOtros=false;render()">
+        ${recs.map(r=>`<option ${normNotif(r)===normNotif(e.recSel)?"selected":""}>${escH(r)}</option>`).join("")}
+      </select>
+      ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p.sucursal)}</span>`).join("")}</div>`:""}
+      <div class="qr-llevar">${L.retirar.length
+        ? `<strong>📦 Sale de acá para ${escH(e.recSel)}: ${L.retirar.length}</strong><ul>${L.retirar.slice(0,8).map(r=>`<li>${escH(r.destino)} · ${escH(r.descripcion||"")}</li>`).join("")}${L.retirar.length>8?`<li>…y ${L.retirar.length-8} más</li>`:""}</ul>`
+        : `No hay nada esperando en Fábrica para ${escH(e.recSel)}.`}</div>
+      <details class="qr-acomp"><summary>¿Vas con acompañante?</summary>
+        <input id="qr-acomp" class="inp" type="number" inputmode="numeric" placeholder="DNI del acompañante" value="${escH(e.dni2||"")}" oninput="S.estoyEn.dni2=this.value"/></details>
+      ${e.err?`<div class="err-msg" style="display:block;margin:10px 0">${escH(e.err)}</div>`:""}
+      <button class="btn btn-success btn-md btn-full qr-salir" onclick="qrIniciarViaje()" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:"✅ Salir con este recorrido"}</button>
+      <p class="qr-nota">Después de salir vas a poder tomar todo lo de ${escH(e.recSel||"tu recorrido")} desde esta misma pantalla.</p>`}
+    </div>`);
+  }
+
+  // ── Fábrica con recorrido: llevar, dejar y terminar ──
+  if(e.fabrica){
+    const v=e.viaje, verd=_esVerduleria(v.recorrido);
+    return pagina(`
+    <div class="qr-banner ok">🏁 <strong>${escH(v.recorrido)}</strong> · ${escH(v.id)} · saliste a las ${hm(v.hora_salida)}</div>
+    ${seccion(`📦 Para llevar en ${escH(v.recorrido)}`,L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
+    ${!L.retirar.length?`<div class="pk-vacio">No queda nada en Fábrica para ${escH(v.recorrido)}. ✅</div>`:""}
+    ${L.otrosRec?`<button class="qr-otros" onclick="S.estoyEn.verOtros=!S.estoyEn.verOtros;render()">${e.verOtros?"Ver solo lo de mi recorrido":`Hay ${L.otrosRec} para otros recorridos · ver`}</button>`:""}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(cardRepartidorHtml).join(""))}
-    ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
     ${seccion("🔁 Devoluciones para dejar",L.devFabrica,L.devFabrica.map(d=>cardDevolucionEstoy(d,"fabrica")).join(""))}
-    ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(e.sucursal)}. ✅</div>`:""}
-  </div>`;
+    <div class="qr-fin">${verd
+      ? `<a class="btn btn-ghost btn-md btn-full" href="https://dashboard-wheat-pi-94.vercel.app/qr.html?s=Fabrica&directo=1">🥦 Registrar avance de Verdulería →</a>`
+      : (Date.now()-new Date(v.hora_salida).getTime() < 30*60000)
+        ? `<p class="qr-nota">Cuando vuelvas del recorrido, escaneá este mismo QR para terminarlo.</p>`   // recién salió: que no lo cierre sin querer
+        : `<button class="btn btn-danger btn-md btn-full" onclick="qrFinalizarViaje()" ${e.loading?"disabled":""}>🏁 Terminé el recorrido · Llegué a fábrica</button>`}</div>`);
+  }
+
+  // ── Sucursal ──
+  const total=L.retirar.length+L.dejar.length+L.devTomar.length;
+  return pagina(`
+    ${e.viaje
+      ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
+      : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
+    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
+    ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""))}
+    ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
+    ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
 }
 
 // ── Trazabilidad por recorrido: quién hizo el viaje ese día (lo registra el QR de Flota con DNI) ──
@@ -9134,6 +9410,7 @@ function renderModals(){
 
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
+  if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
   if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
   if(S.modal==="nuevaSol")  return wrapModal("m",S.user?.rol==="logistica"?"Nueva transferencia":"Nueva Solicitud de Transferencia",renderFormNueva(),620);
@@ -13410,7 +13687,7 @@ function cambiarIdentidadSesion(){
   S.modal="identidadRep"; render();
 }
 // Los campos "Tu DNI" de cualquier ventana se completan solos con la persona identificada y se ocultan
-const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni"]);
+const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni"]);
 function rellenarDniIdentificado(){
   const id=identidadSesion(); if(!id || !id.dni) return;
   document.querySelectorAll('#app-modal input[id$="-dni"], #app-modal input#dni-inp, #app input[id$="-dni"]').forEach(inp=>{
