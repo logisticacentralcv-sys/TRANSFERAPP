@@ -862,6 +862,21 @@ tr[onclick]:active td{background:var(--s3)}
 .ef-res{background:var(--s2);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:14px}
 .ef-cerrada{display:block;width:100%;background:none;border:0;color:var(--muted);font-family:var(--font);font-size:13px;text-decoration:underline;cursor:pointer;margin-top:14px;padding:6px}
 
+
+.rp-corr{background:none;border:1px solid var(--border2);color:var(--blue);font-family:var(--font);font-size:12.5px;font-weight:600;border-radius:8px;padding:5px 10px;cursor:pointer;margin-top:6px;white-space:nowrap}
+.rp-corr:hover{border-color:var(--blue)}
+.rp-otra{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--border)}
+.rp-otra .rp-corr{margin-top:0}
+.rp-prod{display:flex;flex-direction:column;gap:2px;background:var(--s2);border:1px solid var(--border);border-radius:10px;padding:10px 12px}
+.rp-prod.ok{border-color:#2ecc7a66}
+.rp-prod .mono{font-size:12px;color:var(--muted)}
+.rp-prod-tag{font-size:12px;color:var(--muted)}
+.rp-prod.ok .rp-prod-tag{color:#4ade80;font-weight:600}
+.rp-res{display:flex;flex-direction:column;margin-top:6px;border:1px solid var(--border);border-radius:10px;overflow:hidden;max-height:240px;overflow-y:auto}
+.rp-res-it{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;background:var(--s1);border:0;border-bottom:1px solid var(--border);color:var(--text);font-family:var(--font);font-size:14px;text-align:left;cursor:pointer}
+.rp-res-it:hover{background:var(--s2)}
+.rp-res-it .mono{font-size:12px;color:var(--muted);flex-shrink:0}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -886,7 +901,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261030-0921";
+const APP_VERSION = "20261103-0655";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2801,6 +2816,12 @@ function trazaDevolucion(d){
     const t={cambio:0,comedor:0,stock:0}; clas.forEach(x=>DESTINOS_SECOS.forEach(k=>{ t[k.k]+=+x.clasificacion[k.k]||0; }));
     pasos.push({dot:col.ok, t:"🗂️ Clasificada", m:unir(hora(ult), clas[0].clasificadoPor?`por ${clas[0].clasificadoPor}`:"", DESTINOS_SECOS.filter(k=>t[k.k]>0).map(k=>`${k.icon} ${k.label} ${fmtNum(t[k.k])}`).join("  "))});
   }
+  // Fresco: correcciones de Producción
+  const corrP=prods.filter(x=>x.correccionProduccion);
+  if(corrP.length){
+    const cp=corrP[0].correccionProduccion;
+    pasos.push({dot:col.warn, t:"✏️ Corregida por Producción", m:unir(hora(cp.at), cp.por?`por ${cp.por}`:"", corrP.map(x=>`${x.correccionProduccion.antes?.descripcion||"?"} ${fmtNum(x.correccionProduccion.antes?.cantidad??"")} ${x.correccionProduccion.antes?.unidad||""} → ${x.descripcion} ${fmtNum(_llegoCant(x))} ${x.unidad||""}`).join("; "))});
+  }
   // Fresco: revisión de Producción de lo reutilizable
   const reut=lineasReutilizables(d);
   if(reut.length){
@@ -4200,61 +4221,151 @@ function chipProduccion(p){
 }
 
 // ── Pantalla de revisión ──
+// Producción ve TODAS las líneas de la devolución: decide las reutilizables y puede
+// corregir cualquiera (producto o cantidad) si la sucursal la cargó mal. Si corrige un
+// producto y pasa a ser reutilizable, entra a la revisión; si deja de serlo, se descarta.
 function abrirRevisionProduccion(id){
   const d=S.devoluciones.find(x=>String(x.id)===String(id)); if(!d||!puedeRevisarProduccion()) return;
-  const otras=productosDeDevolucion(d).filter(x=>!esReutilizable(x));
-  S.revProd={devId:id, sucursal:d.sucursal, otras, err:"", loading:false,
-    lineas:lineasReutilizables(d).map(x=>{
-      const llego=_llegoCant(x), pr=x.produccion;
-      const decision = pr ? ((+pr.reingresa||0)>=llego ? "si" : (+pr.reingresa||0)>0 ? "parcial" : "no") : "";
-      return {i:x._i, descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", unidad:x.unidad||"", motivo:String(x.motivo||"").split(" — ")[0], llego, decision, cant:pr?String(pr.reingresa):""};
-    })};
+  const prods=productosDeDevolucion(d).map(x=>({...x}));
+  const dec={};
+  prods.forEach((x,i)=>{ const pr=x.produccion; if(!pr) return; const llego=_llegoCant(x);
+    dec[i]={decision:(+pr.reingresa||0)>=llego?"si":(+pr.reingresa||0)>0?"parcial":"no", cant:String(pr.reingresa)}; });
+  S.revProd={devId:id, sucursal:d.sucursal, prods, dec, err:"", loading:false};
   S.vista="revProduccion"; render(); window.scrollTo({top:0,behavior:"instant"});
 }
-function salirRevisionProduccion(){ S.revProd=null; S.vista="devoluciones"; render(); }
-function rpDecidir(i,dec){ const l=S.revProd.lineas[i]; if(!l) return; l.decision=dec; if(dec==="parcial" && !l.cant) l.cant=""; S.revProd.err=""; render(); }
+function salirRevisionProduccion(){ S.revProd=null; S.rpEdit=null; S.vista="devoluciones"; render(); }
+// Las líneas que Producción tiene que decidir (con lo que hay ahora, corregido o no)
+function rpLineas(){
+  const c=S.revProd; if(!c) return [];
+  return c.prods.map((x,i)=>({x,i})).filter(({x})=>esReutilizable(x) && _llegoCant(x)>0).map(({x,i})=>{
+    const dd=c.dec[i]||{decision:"",cant:""};
+    return {i, descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", unidad:x.unidad||"", motivo:String(x.motivo||"").split(" — ")[0], llego:_llegoCant(x), decision:dd.decision, cant:dd.cant, corr:x._corr};
+  });
+}
+function rpOtras(){ const c=S.revProd; return c ? c.prods.map((x,i)=>({x,i})).filter(({x})=>!(esReutilizable(x) && _llegoCant(x)>0)) : []; }
+function rpDecidir(i,dec){ const c=S.revProd; c.dec[i]={...(c.dec[i]||{cant:""}), decision:dec}; c.err=""; render(); }
+function rpCant(i,v){ const c=S.revProd; c.dec[i]={...(c.dec[i]||{decision:"parcial"}), cant:v}; }
 function rpReingresa(l){ return l.decision==="si"?l.llego:l.decision==="no"?0:Math.max(0,Math.min(l.llego,+String(l.cant).replace(",",".")||0)); }
 function rpResumen(){
   const t={reKg:0,deKg:0,reU:0,deU:0};
-  (S.revProd?.lineas||[]).forEach(l=>{ if(!l.decision) return; const r=rpReingresa(l), kg=normNotif(l.unidad)==="kg";
+  rpLineas().forEach(l=>{ if(!l.decision) return; const r=rpReingresa(l), kg=normNotif(l.unidad)==="kg";
     if(kg){ t.reKg+=r; t.deKg+=l.llego-r; } else { t.reU+=r; t.deU+=l.llego-r; } });
   const f=(kg,u)=>[kg?`${fmtNum(Math.round(kg*10)/10)} kg`:"",u?`${fmtNum(Math.round(u*10)/10)} un.`:""].filter(Boolean).join(" · ")||"0";
   return {re:f(t.reKg,t.reU), de:f(t.deKg,t.deU)};
 }
+const _chipCorr=x=>x&&x._corr?`<span class="sk-chip amber" title="Corregido por Producción">✏️ era ${escH(x._corr.descripcion)}${x._corr.cantidad!==undefined?` · ${fmtNum(x._corr.cantidad)} ${escH(x._corr.unidad||"")}`:""}</span>`:"";
+
+// ── Corregir una línea (producto y/o cantidad) ──
+let _timerRpBusq=null;
+function rpAbrirEdicion(i){
+  const x=S.revProd.prods[i]; if(!x) return;
+  S.rpEdit={i, q:"", res:[], buscando:false, prod:{id:x.productoId||null, descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", codigoBarras:x.codigoBarras||""},
+    cant:String(_llegoCant(x)), unidad:x.unidad||"Kg", err:""};
+  S.modal="rpEdit"; render(); setTimeout(()=>$("rp-busq")?.focus(),120);
+}
+function rpBuscar(q){
+  const e=S.rpEdit; e.q=q; clearTimeout(_timerRpBusq);
+  const t=q.trim(); if(t.length<2){ e.res=[]; e.buscando=false; render(); return; }
+  e.buscando=true; render();
+  _timerRpBusq=setTimeout(async()=>{
+    try{
+      const l=t.replace(/[%,()]/g," ");
+      const { data, error } = await sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras")
+        .or(`descripcion.ilike.%${l}%,codigo_interno.ilike.%${l}%,codigo_barras.ilike.%${l}%`).limit(15);
+      if(error) throw error;
+      if(S.rpEdit===e){ e.res=toCamelRows(data||[]); }
+    }catch(err){ console.warn("Buscar producto:",err); e.res=[]; }
+    e.buscando=false; render();
+  },300);
+}
+function rpElegir(k){ const e=S.rpEdit, p=e.res[k]; if(!p) return; e.prod={id:p.id, descripcion:p.descripcion, codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||""}; e.q=""; e.res=[]; render(); }
+function renderRpEditModal(){
+  const e=S.rpEdit, c=S.revProd, x=c&&c.prods[e.i]; if(!x) return "";
+  const original=x._corr||{descripcion:x.descripcion, codigoInterno:x.codigoInterno, cantidad:_llegoCant(x), unidad:x.unidad};
+  const reut=esReutilizable(e.prod);
+  return `
+  <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Cargado por la sucursal: <strong style="color:var(--text)">${escH(original.descripcion)}</strong>${original.codigoInterno?` (Int. ${escH(original.codigoInterno)})`:""} · ${fmtNum(original.cantidad)} ${escH(original.unidad||"")}</p>
+  <div class="field"><label>Producto</label>
+    <div class="rp-prod ${reut?"ok":""}"><strong>${escH(e.prod.descripcion)}</strong><span class="mono">${e.prod.codigoInterno?`Int. ${escH(e.prod.codigoInterno)}`:""}${e.prod.codigoBarras?` · ${escH(e.prod.codigoBarras)}`:""}</span>
+      <span class="rp-prod-tag">${reut?"🏭 reutilizable":"no se reutiliza (se descarta)"}</span></div>
+    <input id="rp-busq" class="inp" style="margin-top:8px" type="text" placeholder="🔎 Cambiar: buscá por nombre, código interno o de barras…" value="${escH(e.q)}" oninput="rpBuscar(this.value)" autocomplete="off"/>
+    ${e.buscando?`<div style="font-size:13px;color:var(--muted);margin-top:6px"><span class="spinner"></span> Buscando…</div>`:""}
+    ${e.res.length?`<div class="rp-res">${e.res.map((p,k)=>`<button class="rp-res-it" onclick="rpElegir(${k})"><span>${escH(p.descripcion)}</span><span class="mono">${p.codigoInterno?`Int. ${escH(p.codigoInterno)}`:""}${esReutilizable(p)?" · 🏭":""}</span></button>`).join("")}</div>`:(e.q.trim().length>=2&&!e.buscando?`<div style="font-size:13px;color:var(--muted);margin-top:6px">No se encontró «${escH(e.q)}».</div>`:"")}
+  </div>
+  <div class="tes-2col">
+    <div class="field"><label>Cantidad que llegó</label>
+      <input id="rp-cant" class="inp" type="number" min="0" step="any" inputmode="decimal" value="${escH(e.cant)}" oninput="S.rpEdit.cant=this.value"/></div>
+    <div class="field"><label>Unidad</label>
+      <select class="inp" onchange="S.rpEdit.unidad=this.value">${UNIDADES.map(u=>`<option ${normNotif(u)===normNotif(e.unidad)?"selected":""}>${u}</option>`).join("")}</select></div>
+  </div>
+  ${e.err?`<div class="err-msg" style="display:block;margin-bottom:10px">${escH(e.err)}</div>`:""}
+  <div class="cc-acciones">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="rpGuardarEdicion()">✅ Usar esta corrección</button>
+  </div>`;
+}
+function rpGuardarEdicion(){
+  const e=S.rpEdit, c=S.revProd, x=c&&c.prods[e.i]; if(!x) return;
+  const cant=+String(e.cant).replace(",",".");
+  if(!(cant>=0) || String(e.cant).trim()===""){ e.err="Poné la cantidad que llegó."; render(); return; }
+  const cambiaProd = String(e.prod.codigoInterno||"")!==String(x.codigoInterno||"") || e.prod.descripcion!==x.descripcion;
+  const antes=_llegoCant(x);
+  if(!cambiaProd && cant===antes && normNotif(e.unidad)===normNotif(x.unidad)){ S.modal=null; S.rpEdit=null; render(); return; }
+  const corr = x._corr || {descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", productoId:x.productoId||null, cantidad:antes, unidad:x.unidad||""};
+  const nuevo={...x, _corr:corr, unidad:e.unidad};
+  if(cambiaProd){ nuevo.productoId=e.prod.id; nuevo.descripcion=e.prod.descripcion; nuevo.codigoInterno=e.prod.codigoInterno; nuevo.codigoBarras=e.prod.codigoBarras; }
+  if(x.cantidadRecibida!==undefined && x.cantidadRecibida!==null) nuevo.cantidadRecibida=cant; else nuevo.cantidad=cant;
+  c.prods[e.i]=nuevo;
+  if(cambiaProd || cant!==antes) delete c.dec[e.i];                     // hay que volver a decidir
+  S.modal=null; S.rpEdit=null;
+  toast(esReutilizable(nuevo)?"✏️ Corregido — decidí si reingresa":"✏️ Corregido — ese producto no se reutiliza: se descarta");
+  render();
+}
+
 function renderRevisionProduccion(){
   const c=S.revProd; if(!c) return "";
-  const faltan=c.lineas.filter(l=>!l.decision || (l.decision==="parcial" && !(rpReingresa(l)>0 && rpReingresa(l)<l.llego))).length;
+  const lineas=rpLineas(), otras=rpOtras();
+  const malParcial=l=>l.decision==="parcial" && !(rpReingresa(l)>0 && rpReingresa(l)<l.llego);
+  const faltan=lineas.filter(l=>!l.decision || malParcial(l)).length;
   const res=rpResumen();
   return `
   <div style="animation:fadeUp .3s ease" class="pk-page">
     ${pageHead("🏭 Revisión de Producción", `${escH(c.sucursal||"")} · <strong style="color:var(--teal)">Fresco</strong> · N° ${escH(c.devId)}`,
       `<button class="btn btn-ghost btn-md" onclick="salirRevisionProduccion()">← Volver</button>`)}
-    <p class="rp-ayuda">Marcá, producto por producto, si lo que llegó <strong>vuelve a producción</strong>. Lo que no reingresa se descarta.</p>
+    <p class="rp-ayuda">Marcá, producto por producto, si lo que llegó <strong>vuelve a producción</strong>. Si la sucursal cargó mal algún producto o la cantidad, tocá <strong>✏️ Corregir</strong>.</p>
     <div class="pk-orden">
-      ${c.lineas.map((l,i)=>{
-        const ok = l.decision && !(l.decision==="parcial" && !(rpReingresa(l)>0 && rpReingresa(l)<l.llego));
+      ${!lineas.length?`<div class="pk-vacio">Ningún producto de esta devolución es reutilizable${otras.length?" (si alguno está mal cargado, corregilo abajo)":""}.</div>`:""}
+      ${lineas.map(l=>{
+        const ok = l.decision && !malParcial(l);
         return `
         <div class="cl-line ${ok?"ok":"falta"}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
             <div style="min-width:0">
               <div class="pk-name">${escH(l.descripcion)}</div>
               <div class="pk-code">${l.codigoInterno?`Int. ${escH(l.codigoInterno)}`:""}${l.motivo?` · ${escH(l.motivo)}`:""}</div>
+              ${_chipCorr(c.prods[l.i])}
             </div>
-            <div class="cl-rec"><strong>${fmtNum(l.llego)}</strong> ${escH(l.unidad)}</div>
+            <div style="text-align:right;flex-shrink:0">
+              <div class="cl-rec"><strong>${fmtNum(l.llego)}</strong> ${escH(l.unidad)}</div>
+              <button class="rp-corr" onclick="rpAbrirEdicion(${l.i})">✏️ Corregir</button>
+            </div>
           </div>
           <div class="cl-dest-row">
-            <button class="cl-dest ${l.decision==="si"?"on":""}" style="--c:#2ecc7a" onclick="rpDecidir(${i},'si')">↩️ Reingresa todo</button>
-            <button class="cl-dest ${l.decision==="parcial"?"on":""}" style="--c:#f5a623" onclick="rpDecidir(${i},'parcial')">✂ Una parte</button>
-            <button class="cl-dest ${l.decision==="no"?"on":""}" style="--c:#f05252" onclick="rpDecidir(${i},'no')">🗑️ No reingresa</button>
+            <button class="cl-dest ${l.decision==="si"?"on":""}" style="--c:#2ecc7a" onclick="rpDecidir(${l.i},'si')">↩️ Reingresa todo</button>
+            <button class="cl-dest ${l.decision==="parcial"?"on":""}" style="--c:#f5a623" onclick="rpDecidir(${l.i},'parcial')">✂ Una parte</button>
+            <button class="cl-dest ${l.decision==="no"?"on":""}" style="--c:#f05252" onclick="rpDecidir(${l.i},'no')">🗑️ No reingresa</button>
           </div>
           ${l.decision==="parcial"?`
           <div class="rp-parte">Reingresan
-            <input type="number" min="0" step="any" inputmode="decimal" value="${escH(l.cant)}" oninput="S.revProd.lineas[${i}].cant=this.value" onchange="render()"/>
+            <input type="number" min="0" step="any" inputmode="decimal" value="${escH(l.cant)}" oninput="rpCant(${l.i},this.value)" onchange="render()"/>
             de ${fmtNum(l.llego)} ${escH(l.unidad)} <span style="color:var(--muted)">— el resto se descarta</span></div>`:""}
           ${!ok && l.decision==="parcial"?`<div class="cl-falta" style="margin-top:8px;font-size:13px">Poné cuánto reingresa (más de 0 y menos de ${fmtNum(l.llego)})</div>`:""}
         </div>`; }).join("")}
     </div>
-    ${c.otras.length?`<div class="rp-otras"><strong>Se descartan sin revisión</strong> (no están en la lista de reutilizables): ${c.otras.map(x=>`${escH(x.descripcion)} ${fmtNum(_llegoCant(x))} ${escH(x.unidad||"")}`).join(" · ")}</div>`:""}
+    ${otras.length?`<div class="rp-otras">
+      <div style="margin-bottom:6px"><strong>Se descartan sin revisión</strong> (no son reutilizables). Si alguno está mal cargado, corregilo:</div>
+      ${otras.map(({x,i})=>`<div class="rp-otra"><span>${escH(x.descripcion)} · ${fmtNum(_llegoCant(x))} ${escH(x.unidad||"")} ${_chipCorr(x)}</span><button class="rp-corr" onclick="rpAbrirEdicion(${i})">✏️ Corregir</button></div>`).join("")}
+    </div>`:""}
     ${c.err?`<div class="err-msg" style="display:block;margin-top:12px">${escH(c.err)}</div>`:""}
     <div class="pk-foot">
       <div class="pk-resumen cl-tot"><span style="color:#2ecc7a">↩️ <strong>${res.re}</strong></span><span style="color:#f05252">🗑️ <strong>${res.de}</strong></span></div>
@@ -4277,17 +4388,26 @@ async function rpGuardar(firmaParam){
   const d=S.devoluciones.find(x=>String(x.id)===String(c.devId)); if(!d) return false;
   const firma=firmaParam || pickeoFirmante();
   c.loading=true; c.err=""; renderNow();
-  const ahora=now(), prods=productosDeDevolucion(d).map(x=>({...x}));
-  c.lineas.forEach(l=>{ const r=rpReingresa(l); prods[l.i]={...prods[l.i], produccion:{reingresa:r, descarte:Math.round((l.llego-r)*1000)/1000, por:firma.nombre, at:ahora}}; });
+  const ahora=now(), lineas=rpLineas();
+  const res=rpResumen();
+  const prods=c.prods.map((x,i)=>{
+    const {_corr, ...y}=x;
+    if(_corr && !y.correccionProduccion) y.correccionProduccion={antes:_corr, por:firma.nombre, at:ahora};
+    else if(_corr && y.correccionProduccion) y.correccionProduccion={...y.correccionProduccion, por:firma.nombre, at:ahora};
+    const l=lineas.find(z=>z.i===i);
+    if(l){ const r=rpReingresa(l); y.produccion={reingresa:r, descarte:Math.round((l.llego-r)*1000)/1000, por:firma.nombre, at:ahora}; }
+    else if(y.produccion) delete y.produccion;               // ya no es reutilizable (lo corrigieron)
+    return y;
+  });
   const changes={productosJson:JSON.stringify(prods), updatedAt:ahora};
   try{
     const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
     if(error) throw error;
     S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
-    const res=rpResumen();
+    const nCorr=prods.filter(x=>x.correccionProduccion && x.correccionProduccion.at===ahora).length;
     S.revProd=null; S.vista="devoluciones"; S.tabDevGestor="produccion";
     window.scrollTo({top:0,behavior:"instant"});
-    toast(`🏭 Revisada · ↩️ ${res.re} · 🗑️ ${res.de}`);
+    toast(`🏭 Revisada · ↩️ ${res.re} · 🗑️ ${res.de}${nCorr?` · ✏️ ${nCorr} corregido${nCorr!==1?"s":""}`:""}`);
     render(); return true;
   }catch(e){ console.warn("Revisión producción:",e); c.loading=false; c.err="No se pudo guardar — probá de nuevo."; }
   render(); return false;
@@ -4602,7 +4722,9 @@ function renderDevoluciones(){
             <div style="display:flex;align-items:center;gap:6px">
               ${d.tipoDevolucion?badge(d.tipoDevolucion, {Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"}[d.tipoDevolucion]||"var(--muted)"):""}
               ${badge(d.estado, colorEstado(d.estado))}
-              ${pideRevisionProduccion(d) && puedeRevisarProduccion()?`<button class="btn btn-success btn-sm" onclick="abrirRevisionProduccion('${escH(d.id)}')">🏭 Revisar</button>`:pideRevisionProduccion(d)?`<span class="sk-chip amber" title="Producción decide si los reutilizables vuelven">🏭 espera a Producción</span>`:""}
+              ${pideRevisionProduccion(d) && puedeRevisarProduccion()?`<button class="btn btn-success btn-sm" onclick="abrirRevisionProduccion('${escH(d.id)}')">🏭 Revisar</button>`
+                :(puedeRevisarProduccion() && esFresco(d) && LLEGO_A_FABRICA.includes(d.estado))?`<button class="btn btn-ghost btn-sm" onclick="abrirRevisionProduccion('${escH(d.id)}')" title="Corregir productos mal cargados o cambiar lo que decidió Producción">✏️ Revisar / corregir</button>`
+                :pideRevisionProduccion(d)?`<span class="sk-chip amber" title="Producción decide si los reutilizables vuelven">🏭 espera a Producción</span>`:""}
               <button class="btn btn-ghost btn-sm" onclick="abrirDetalleDevolucion('${escH(d.id)}')" title="Ver fotos y trazabilidad">🔎 Detalle</button>
               ${u.rol==="admin"?`<button class="btn btn-ghost btn-sm" onclick="openEditarDevolucion('${escH(d.id)}')">✏️ Editar</button>`:""}
             </div>
@@ -4611,7 +4733,7 @@ function renderDevoluciones(){
           ${d.tipoDevolucion==="Secos" ? renderSecosBloque(d) : ""}
           ${(()=>{ const prods = productosDeDevolucion(d); return (prods.length && d.tipoDevolucion!=="Secos")?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}${esFresco(d)?` ${chipProduccion(p)}`:""}</div>`).join("")}
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}${esFresco(d)?` ${chipProduccion(p)}`:""}${p.correccionProduccion?` <span class="sk-chip amber" title="Corregido por ${escH(p.correccionProduccion.por||"Producción")}">✏️ era ${escH(p.correccionProduccion.antes?.descripcion||"")}${p.correccionProduccion.antes?.cantidad!==undefined?` · ${fmtNum(p.correccionProduccion.antes.cantidad)} ${escH(p.correccionProduccion.antes.unidad||"")}`:""}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
           ${miniaturasFotos(fotosDe(d),5)}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
@@ -9410,6 +9532,7 @@ function renderModals(){
 
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
+  if(S.modal==="rpEdit")        return wrapModal("m","✏️ Corregir producto",renderRpEditModal(),560);
   if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
   if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
