@@ -908,7 +908,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261104-0728";
+const APP_VERSION = "20261104-0743";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7497,6 +7497,7 @@ function renderLogTabla(){
         </tbody>
       </table>
     </div>
+    ${botonVerMas("log",filtered.length,"padding:12px 16px")}
   </div>`;
 }
 
@@ -8790,7 +8791,6 @@ function renderMetricas(){
           </tbody>
         </table>
       </div>
-      ${botonVerMas("log",filtered.length,"padding:12px 16px")}
     </div>`:""}
   </div>`;
 }
@@ -8832,37 +8832,6 @@ function aplicarQRPendiente(){
 // LLEGADA o PRESENCIA (con GPS verificado) en el viaje activo de esta persona. Abrir un enlace guardado
 // no alcanza: sin registro reciente se muestra el candado.
 const VENTANA_PRESENCIA_MIN = 60;
-async function verificarPresenciaEstoyEn(){
-  const e=S.estoyEn; if(!e) return;
-  e.estado="verificando"; e.motivo="";
-  try{
-    const dni=String(S.miIdentidadRep?.dni||"").replace(/\D/g,"");
-    if(!dni){ e.estado="bloqueado"; e.motivo="sin-dni"; render(); return; }
-    const { data:viajes, error:e1 } = await sb.from("flota_viajes").select("id,estado")
-      .eq("estado","ACTIVO").or(`dni_rep1.eq.${dni},dni_rep2.eq.${dni}`).limit(5);
-    if(e1) throw e1;
-    if(!viajes||!viajes.length){ e.estado="bloqueado"; e.motivo="sin-viaje"; render(); return; }
-    const { data:regs, error:e2 } = await sb.from("flota_registros_qr").select("ts,id_viaje,sucursal,evento")
-      .in("id_viaje",viajes.map(v=>v.id)).in("evento",["LLEGADA","PRESENCIA"]).order("ts",{ascending:false}).limit(80);
-    if(e2) throw e2;
-    const n=normNotif(e.fabrica?"Fabrica":e.sucursal), desde=Date.now()-VENTANA_PRESENCIA_MIN*60000;
-    const hay=(regs||[]).some(r=>normNotif(r.sucursal)===n && new Date(r.ts).getTime()>=desde);
-    e.estado=hay?"ok":"bloqueado"; e.motivo=hay?"":"sin-presencia";
-  }catch(err){ console.warn("Presencia:",err); e.estado="bloqueado"; e.motivo="error"; }
-  render();
-}
-// ═══════════════════════════════════════════════════════════════════
-//  QR → TRANSFERLOG (todo en un solo lugar)
-//  El QR de cada lugar abre esta pantalla con el repartidor ya identificado.
-//   · FÁBRICA: si no tiene viaje, elige el recorrido y sale; ahí mismo ve lo
-//     que tiene que salir para ese recorrido y lo toma ("Tomar todo").
-//     Al volver: deja lo que trae y termina el recorrido.
-//   · SUCURSAL: al escanear se registra la hora de llegada (para Flota). Si
-//     hay algo para retirar lo toma; si hay algo para dejar, lo entrega con
-//     el DNI de quien lo recibe en la sucursal.
-//  Escribe en las mismas tablas de Flota que la página del QR (viajes y
-//  registros), así los análisis siguen igual.
-// ═══════════════════════════════════════════════════════════════════
 const RADIO_QR_M = 300, RADIO_QR_OK_M = 50;
 let _coordsSuc=null, _hojasRuta=null, _recorridosQR=null;
 async function cargarDatosQR(forzar){
@@ -11254,8 +11223,10 @@ function toggleLogSeleccionTodos(checked){
     if(f.fSolicitante && !(solicitanteLabel(r)||"").toLowerCase().includes(f.fSolicitante.trim().toLowerCase())) return false;
     return true;
   });
-  if(checked) filtered.forEach(r=>S.logSeleccion.add(r.id));
-  else filtered.forEach(r=>S.logSeleccion.delete(r.id));
+  // Solo lo que está a la vista (las primeras 50); si querés más, tocá "Ver más" y volvé a marcar
+  const visibles=paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto].join("|"));
+  if(checked) visibles.forEach(r=>S.logSeleccion.add(r.id));
+  else visibles.forEach(r=>S.logSeleccion.delete(r.id));
   render();
 }
 
