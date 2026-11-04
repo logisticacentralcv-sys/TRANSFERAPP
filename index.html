@@ -908,7 +908,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261104-0743";
+const APP_VERSION = "20261104-0756";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8723,14 +8723,15 @@ function renderMetricas(){
         </div>
         <div class="table-wrap"><table style="font-size:14px">
           <thead><tr><th>N°</th><th>Origen → Destino</th><th>Tramo</th><th>La tomó</th><th>Cómo terminó</th><th>Estado actual</th></tr></thead>
-          <tbody>${ts.map(t=>`<tr onclick="openDetalle('${escH(t.r.id)}')" style="cursor:pointer">
+          <tbody>${paginar("metRepDet",ts,[S.metDesde,S.metHasta,S.metSucursal,S.metRecorrido,S.metRepartidor].join("|")).map(t=>`<tr onclick="openDetalle('${escH(t.r.id)}')" style="cursor:pointer">
             <td class="id-cell">${escH(t.r.id)}</td>
             <td>${escH(t.r.sucursal||t.r.area||"—")} → ${escH(t.r.destino||"—")}${t.r.tipoPedido==="bolsin"?` <span class="sk-chip amber">bolsín</span>`:""}</td>
             <td class="muted-cell">${t.tramo===2?"Desde fábrica":(_pasaPorFab(t.r)?"Hasta fábrica":"Directo")}</td>
             <td class="muted-cell">${t.at?fdt(t.at):"—"}</td>
             <td><span class="dv-chip" style="color:${_RES_TRAMO[t.res].c};border-color:${_RES_TRAMO[t.res].c}55;background:${_RES_TRAMO[t.res].c}14">${_RES_TRAMO[t.res].t}</span></td>
             <td>${estadoBadges(t.r)}</td></tr>`).join("")}</tbody>
-        </table></div>`;
+        </table></div>
+        ${botonVerMas("metRepDet",ts.length,"padding:12px 0 0")}`;
       })():`
       <div class="table-wrap"><table style="font-size:14px">
         <thead><tr><th>Repartidor</th><th>Tomó</th><th>Entregó</th><th>La lleva ahora</th><th>Tomó y no dejó</th><th>Cerradas a mano</th><th>% entregó</th></tr></thead>
@@ -8780,7 +8781,7 @@ function renderMetricas(){
         <table>
           <thead><tr><th>N°</th><th>Sucursal/Área</th><th>Destino</th><th>Fecha requerida</th><th>Entregada</th></tr></thead>
           <tbody>
-            ${fueraDeFecha.sort((a,b)=>(b.deliveredAt||"").localeCompare(a.deliveredAt||"")).map(r=>`
+            ${paginar("fueraFecha",fueraDeFecha.sort((a,b)=>(b.deliveredAt||"").localeCompare(a.deliveredAt||"")),[S.metDesde,S.metHasta,S.metSucursal,S.metRecorrido,S.metRepartidor].join("|")).map(r=>`
             <tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td>${escH(r.sucursal||r.area)}</td>
@@ -8791,6 +8792,7 @@ function renderMetricas(){
           </tbody>
         </table>
       </div>
+      ${botonVerMas("fueraFecha",fueraDeFecha.length,"padding:12px 0 0")}
     </div>`:""}
   </div>`;
 }
