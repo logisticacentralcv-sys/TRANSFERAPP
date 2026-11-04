@@ -877,6 +877,13 @@ tr[onclick]:active td{background:var(--s3)}
 .rp-res-it:hover{background:var(--s2)}
 .rp-res-it .mono{font-size:12px;color:var(--muted);flex-shrink:0}
 
+
+.ver-mas{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;padding:14px 0}
+.ver-mas span{font-size:13px;color:var(--muted)}
+
+
+.hist-aviso{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:18px 0 6px;font-size:13px;color:var(--muted)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -901,7 +908,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261103-0655";
+const APP_VERSION = "20261104-0728";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1326,7 +1333,7 @@ let S = {
   imagenAmpliada: "", // URL de la imagen mostrada en grande, o "" si no hay ninguna
   devoluciones: [],
   devolucionesLoaded: false,
-  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, revProd:null, prodVista:"pendientes", tabTes:"operacion", tesMetInit:false, tesMetDesde:"", tesMetHasta:"", tesMetSucursal:"", tesMetSerieSel:"enviados", catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
+  devolucionForm: {tipo:"", items:[], fotos:[], loading:false, err:"", productoQuery:"", productoResultados:[], productoBuscando:false}, galeria: null, devListaMax: 25, historialCompleto:false, cargandoHistorial:false, revProd:null, prodVista:"pendientes", tabTes:"operacion", tesMetInit:false, tesMetDesde:"", tesMetHasta:"", tesMetSucursal:"", tesMetSerieSel:"enviados", catQuery:"", catResultados:null, catTotal:null, catCargando:false, catErr:"", catModal:null, catImport:null, catProveedores:[],
   devolucionFiltroSucursal: "",
   devolucionFiltroEstado: "",
   devolucionFiltroFecha: "",
@@ -1656,18 +1663,53 @@ async function fetchTodasLasFilas(tabla, query){
   return todas;
 }
 
+// ── Qué se trae de la base ──
+// Al entrar: TODO lo que sigue abierto (de cualquier fecha) + todo lo de los últimos 90 días.
+// Lo viejo y ya cerrado no cambia: se trae después en segundo plano (Logística, Admin,
+// Tesorería, Calidad) o a pedido ("Ver también lo anterior"). Antes se traía toda la
+// historia cada vez que se entraba o se volvía a la app.
+const DIAS_CARGA_INICIAL = 90;
+const ESTADOS_CERRADOS_SOL = ["Entregada","Cancelada","Rechazada","No entregada"];
+const _inicioVentana = () => new Date(Date.now()-DIAS_CARGA_INICIAL*864e5).toISOString();
+const _listaCerrados = () => `(${ESTADOS_CERRADOS_SOL.map(e=>`"${e}"`).join(",")})`;
+const _ordenarPorFecha = arr => arr.sort((a,b)=>String(b.createdAt||"").localeCompare(String(a.createdAt||"")));
+async function cargarHistorialCompleto(){
+  if(!USE_SHEETS || S.historialCompleto || S.cargandoHistorial) return;
+  S.cargandoHistorial=true; renderDiferido();
+  try{
+    const viejas = await fetchTodasLasFilas("solicitudes", q=>q.in("estado",ESTADOS_CERRADOS_SOL).lt("created_at",_inicioVentana()).order("created_at",{ascending:false}));
+    const ya=new Set(S.requests.map(r=>r.id));
+    S.requests=_ordenarPorFecha([...S.requests, ...toCamelRows(viejas).filter(r=>r.id && !ya.has(r.id))]);
+    S.historialCompleto=true;
+  }catch(e){ console.warn("Historial completo:",e); toast("⚠️ No se pudo traer el historial anterior","warn"); }
+  S.cargandoHistorial=false; renderDiferido();
+}
+function avisoHistorialHtml(){
+  if(S.historialCompleto) return "";
+  const enHistorial = S.tabSuc==="historial" || (S.user?.rol==="repartidor" && S.tabRep==="entregadas");
+  if(!enHistorial) return "";
+  return `<div class="hist-aviso">${S.cargandoHistorial?`<span class="spinner"></span> Trayendo lo anterior…`
+    :`📅 Se muestra lo de los últimos ${DIAS_CARGA_INICIAL} días. <button class="btn btn-ghost btn-sm" onclick="cargarHistorialCompleto()">Ver también lo anterior</button>`}</div>`;
+}
 // FASE 2: cargar el resto en background una vez que ya entraste
 async function sheetsLoadDatos(){
   if(!USE_SHEETS) return;
   try{
-    const [rsData,recs,dests]=await Promise.all([
-      fetchTodasLasFilas("solicitudes", q=>q.order("created_at",{ascending:false})),
+    const desde=_inicioVentana();
+    const [recientes,abiertasViejas,recs,dests]=await Promise.all([
+      fetchTodasLasFilas("solicitudes", q=>q.gte("created_at",desde).order("created_at",{ascending:false})),
+      fetchTodasLasFilas("solicitudes", q=>q.not("estado","in",_listaCerrados()).lt("created_at",desde).order("created_at",{ascending:false})),
       sb.from("recorridos").select("*"),
       sb.from("destinos").select("*"),
     ]);
     if(recs.error) throw recs.error;
     if(dests.error) throw dests.error;
-    S.requests   = toCamelRows(rsData).filter(r=>r.id);
+    const frescas = toCamelRows([...recientes,...abiertasViejas]).filter(r=>r.id);
+    // si ya estaba traído el historial, se conserva lo viejo y cerrado (no cambia)
+    const idsFrescas = new Set(frescas.map(r=>r.id));
+    const viejasCerradas = S.historialCompleto ? S.requests.filter(r=>!idsFrescas.has(r.id) && String(r.createdAt||"")<desde && ESTADOS_CERRADOS_SOL.includes(r.estado)) : [];
+    S.requests   = _ordenarPorFecha([...frescas, ...viejasCerradas]);
+
     S.recorridos = toCamelRows(recs.data).filter(r=>r.nombre).map(r=>r.nombre);
     S.destinos   = toCamelRows(dests.data).filter(r=>r.nombre&&r.activo!=="no").map(r=>r.nombre);
   }catch(e){console.warn("Supabase load datos:",e);}
@@ -1682,6 +1724,8 @@ async function sheetsLoadDatos(){
   const cargaDevolucionesAlEntrar = S.user?.rol==="calidad" || S.user?.rol==="repartidor" || S.user?.rol==="logistica"
     || esDeposito() || puedeVerMetricasDevoluciones();
   if(cargaDevolucionesAlEntrar && !S.devolucionesLoaded) cargarDevoluciones().then(()=>render());
+  // Quienes miran historial y métricas tienen todo, pero sin frenar la entrada: se trae después
+  if(!S.historialCompleto && ["logistica","admin","tesoreria","calidad"].includes(S.user?.rol)) setTimeout(cargarHistorialCompleto, 4000);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -4708,7 +4752,7 @@ function renderDevoluciones(){
     ${enReclamo ? `<div class="vt-content">${renderReclamoProveedor()}</div>` : `
     <div class="vt-content" style="display:flex;flex-direction:column;gap:10px">
       ${lista.length===0?`<p style="color:var(--muted);font-size:13px">No hay devoluciones${S.devolucionFiltroSucursal||S.devolucionFiltroEstado||S.devolucionFiltroProducto?" con ese filtro":""}.</p>`:""}
-      ${lista.map(d=>`
+      ${paginar("dev",lista,[S.tabDevGestor,S.prodVista,S.devolucionFiltroSucursal,S.devolucionFiltroEstado,S.devolucionFiltroProducto,S.devolucionFiltroFecha,S.devolucionFiltroTipo,S.tabRep,S.vista].join("|")).map(d=>`
         <div class="card" style="padding:14px 16px">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
             <div style="display:flex;align-items:flex-start;gap:8px">
@@ -4773,6 +4817,7 @@ function renderDevoluciones(){
             </div>
             `}`:""}
         </div>`).join("")}
+      ${botonVerMas("dev",lista.length)}
     </div>`}
   </div>`;
 }
@@ -5241,7 +5286,7 @@ function renderApp(){
       <button class="btn btn-ghost btn-sm" onclick="doLogout()" title="Cerrar sesión">🚪<span class="nav-lbl">Salir</span></button>
     </div>
   </nav>
-  <main>${mainContent}</main>
+  <main>${mainContent}${avisoHistorialHtml()}</main>
   ${S.toast?renderToast():""}`;
 }
 
@@ -6686,7 +6731,7 @@ function renderAdminSolicitudes(){
           </tr></thead>
           <tbody>
             ${lista.length===0?`<tr class="empty-row"><td colspan="8">Sin resultados</td></tr>`:""}
-            ${lista.map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+            ${paginar("admin",lista,S.adminFiltroTexto).map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
               <td class="id-cell">${escH(r.id)}</td>
               <td class="muted-cell">${fd(r.createdAt)}</td>
               <td>${escH(origenLabel(r))}</td>
@@ -6704,6 +6749,7 @@ function renderAdminSolicitudes(){
           </tbody>
         </table>
       </div>
+      ${botonVerMas("admin",lista.length,"padding:12px 16px")}
     </div>`;
 }
 
@@ -7278,6 +7324,26 @@ function renderLogistica(){
   </div>`;
 }
 
+
+// ══════════════════════════════════════════════════════════
+//  LISTAS DE A 50 — dibujar miles de filas trababa la app (Admin con 20.000
+//  solicitudes tardaba casi 2 s en cada redibujo). Se muestran 50 y "Ver más".
+//  Si cambian los filtros (la "firma"), vuelve a empezar por las primeras 50.
+// ══════════════════════════════════════════════════════════
+const PAGINA_LISTA = 50;
+S.pag = S.pag || {};
+function paginar(clave, lista, firma){
+  const p = S.pag[clave] = S.pag[clave] || {n:PAGINA_LISTA, firma:""};
+  const f = String(firma??"");
+  if(p.firma!==f){ p.n=PAGINA_LISTA; p.firma=f; }
+  return lista.length>p.n ? lista.slice(0,p.n) : lista;
+}
+function botonVerMas(clave, total, estilo){
+  const p=S.pag[clave]; const n=p?p.n:PAGINA_LISTA; const resto=total-n;
+  if(resto<=0) return "";
+  return `<div class="ver-mas" style="${estilo||""}"><button class="btn btn-ghost btn-md" onclick="S.pag['${clave}'].n+=${PAGINA_LISTA};render()">Ver ${Math.min(PAGINA_LISTA,resto)} más</button><span>Mostrando ${fmtNum(n)} de ${fmtNum(total)}</span></div>`;
+}
+
 function renderLogTabla(){
   const f=S;
   const filtered=S.requests.filter(r=>{
@@ -7410,7 +7476,7 @@ function renderLogTabla(){
         </tr></thead>
         <tbody>
           ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?14:13}">Sin resultados</td></tr>`:""}
-          ${filtered.map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+          ${paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto].join("|")).map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
             ${S.modoSeleccion?`<td onclick="event.stopPropagation()"><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
             <td class="id-cell">${escH(r.id)}</td>
             <td class="muted-cell">${fdt(r.createdAt)}</td>
@@ -8724,6 +8790,7 @@ function renderMetricas(){
           </tbody>
         </table>
       </div>
+      ${botonVerMas("log",filtered.length,"padding:12px 16px")}
     </div>`:""}
   </div>`;
 }
@@ -9481,12 +9548,12 @@ function renderRepartidor(){
       })():""}
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
       ${(()=>{ const _cardRepHtml = cardRepartidorHtml;
-      if(S.tabRep!=="bolsines") return list.map(_cardRepHtml).join("");
+      if(S.tabRep!=="bolsines") return paginar("rep",list,S.tabRep).map(_cardRepHtml).join("")+botonVerMas("rep",list.length,"grid-column:1/-1");
       const alBuzon    = list.filter(r=>esDestinoBuzon(r.destino));
       const desdeBuzon = list.filter(r=>!esDestinoBuzon(r.destino));
       const activa = S.subTabBolsines==="entregar" ? desdeBuzon : alBuzon;
       if(!activa.length) return `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted)">${S.subTabBolsines==="entregar"?"No hay bolsines para entregar en sucursal":"No hay bolsines para llevar al buzón"}</div>`;
-      return activa.map(_cardRepHtml).join("");
+      return paginar("rep",activa,"bolsines|"+S.subTabBolsines).map(_cardRepHtml).join("")+botonVerMas("rep",activa.length,"grid-column:1/-1");
       })()}
     </div>
     `}
@@ -13603,6 +13670,18 @@ function submitIdentificarLogistica(){
 // Tiempo real: en vez de "preguntar cada 90 segundos si pasó algo nuevo",
 // la app se suscribe a la tabla y Supabase le avisa apenas algo cambia —
 // se termina el parpadeo del refresco periódico.
+// Los cambios que llegan en vivo (de cualquier persona) se juntan: un solo redibujo cada 300 ms,
+// y ninguno mientras la app está en segundo plano (se dibuja al volver). Antes cada cambio
+// redibujaba toda la pantalla de todos al instante.
+let _timerRenderRT=null, _renderPendienteRT=false;
+function renderDiferido(){
+  if(document.visibilityState==="hidden"){ _renderPendienteRT=true; return; }
+  if(_timerRenderRT) return;
+  _timerRenderRT=setTimeout(()=>{ _timerRenderRT=null; if(S.modal){ _renderPendienteRT=true; return; } render(); },300);
+}
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible" && _renderPendienteRT && !S.modal){ _renderPendienteRT=false; render(); }
+});
 let _rtChannel = null;
 function startAutoRefresh(){
   if(!USE_SHEETS) return;
@@ -13619,7 +13698,7 @@ function startAutoRefresh(){
           ? S.requests.map(r=>r.id===fila.id?fila:r)
           : [fila, ...S.requests];
       }
-      if(!S.modal) render(); // si hay un modal abierto, no interrumpir — se actualiza solo al cerrarlo
+      renderDiferido();
     })
     .on("postgres_changes", {event:"*", schema:"public", table:"quejas"}, (payload)=>{
       if(S.view!=="app" || !S.quejasLoaded) return;
@@ -13630,7 +13709,7 @@ function startAutoRefresh(){
         const existe = S.quejas.some(q=>q.id===fila.id);
         S.quejas = existe ? S.quejas.map(q=>q.id===fila.id?fila:q) : [fila, ...S.quejas];
       }
-      if(!S.modal) render();
+      renderDiferido();
     })
     .on("postgres_changes", {event:"*", schema:"public", table:"devoluciones"}, (payload)=>{
       if(S.view!=="app" || !S.devolucionesLoaded) return;
@@ -13641,7 +13720,7 @@ function startAutoRefresh(){
         const existe = S.devoluciones.some(d=>d.id===fila.id);
         S.devoluciones = existe ? S.devoluciones.map(d=>d.id===fila.id?fila:d) : [fila, ...S.devoluciones];
       }
-      if(!S.modal) render();
+      renderDiferido();
     })
     .on("postgres_changes", {event:"*", schema:"public", table:"notificaciones"}, (payload)=>{
       if(S.view!=="app") return;
@@ -13657,7 +13736,7 @@ function startAutoRefresh(){
           if(!existe && notifEsMia(fila)) toast(fila.mensaje);
         }
       }
-      if(!S.modal) render();
+      renderDiferido();
     })
     .on("postgres_changes", {event:"*", schema:"public", table:"flota_viajes"}, ()=>{
       if(S.view!=="app") return;
@@ -13762,6 +13841,7 @@ function doLogout(){
   S.miIdentidadFresco = null;
   S.miIdentidadTesoreria = null;
   S.miIdentidad = null;
+  S.historialCompleto = false;
   try{ sb.auth.signOut(); }catch(e){} // no rompe nada si no había sesión de Auth
   stopAutoRefresh(); S.modal=null; S.view="login"; S.user=null; S.loginErr=""; S.loginUser=""; S.loginLoading=false; render();
 }
