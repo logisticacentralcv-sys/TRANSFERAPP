@@ -884,6 +884,26 @@ tr[onclick]:active td{background:var(--s3)}
 
 .hist-aviso{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;margin:18px 0 6px;font-size:13px;color:var(--muted)}
 
+
+/* ── Donas: dona grande + leyenda en grilla, todo centrado ── */
+.dona-ley{display:flex;gap:36px;align-items:center;justify-content:center;flex-wrap:wrap}
+.ley-grid{columns:2 240px;column-gap:18px;flex:1;min-width:240px;max-width:620px}
+.ley-grid .ley-it{break-inside:avoid;margin-bottom:4px}
+.ley-it{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:10px;cursor:pointer;border:1px solid transparent;transition:background .15s}
+.ley-it:hover{background:var(--s3)}
+.ley-it.on{background:var(--s3);border-color:var(--c)}
+.ley-dot{width:14px;height:14px;border-radius:4px;background:var(--c);flex-shrink:0}
+.ley-lbl{flex:1;min-width:0;font-size:15px;font-weight:600;color:var(--text);display:flex;flex-direction:column}
+.ley-lbl small{font-size:12.5px;font-weight:400;color:#a9b8d0}
+.ley-val{display:flex;align-items:baseline;gap:6px;font-size:16px;font-weight:700;color:var(--text);font-variant-numeric:tabular-nums;flex-shrink:0}
+.ley-val em{font-style:normal;font-size:12.5px;font-weight:700;color:var(--c)}
+/* ── Barras compactas: varias columnas y barras finas ── */
+.hbar-list.compacta{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px 32px}
+.hbar-list.compacta .hbar-label{font-size:14px}
+.hbar-list.compacta .hbar-val strong{font-size:15px}
+.hbar-list.compacta .hbar-track{height:7px}
+.hbar-list.compacta .hbar-top{margin-bottom:4px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -908,7 +928,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261104-0756";
+const APP_VERSION = "20261104-0805";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5484,32 +5504,25 @@ function donutClick(id,i){
 }
 function leyendaPorcentajes(id, datos, sel){
   const total = datos.reduce((a,d)=>a+d.valor,0);
-  return `<div style="flex:1;min-width:230px;display:flex;flex-direction:column;gap:6px">
+  // En grilla de 2 columnas (o 1 en celular): el número queda al lado del nombre y no perdido a la derecha
+  return `<div class="ley-grid">
     ${datos.map((d,i)=>`
-      <div onmouseenter="donutResaltar('${id}',${i})" onmouseleave="donutRestaurar('${id}')" onclick="donutClick('${id}',${i})"
-        style="display:flex;align-items:center;gap:12px;padding:9px 12px;border-radius:10px;cursor:pointer;border:1px solid ${sel===d.label?d.color:"transparent"};background:${sel===d.label?"var(--s3)":"transparent"};transition:background .12s"
-        onmouseover="this.style.background='var(--s3)'" onmouseout="this.style.background='${sel===d.label?"var(--s3)":"transparent"}'">
-        <span style="width:16px;height:16px;border-radius:5px;background:${d.color};flex-shrink:0"></span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:16px;font-weight:600;color:var(--text)">${escH(d.label)}</div>
-          ${d.extra?`<div style="font-size:13px;color:#a9b8d0">${d.extra}</div>`:""}
-        </div>
-        <div style="text-align:right;flex-shrink:0">
-          <div style="font-size:17px;font-weight:700;color:var(--text)">${fmtNum(d.valor)}</div>
-          <div style="font-size:13px;font-weight:700;color:${d.color}">${pctTxt(d.valor,total)}</div>
-        </div>
+      <div class="ley-it ${sel===d.label?"on":""}" style="--c:${d.color}" onmouseenter="donutResaltar('${id}',${i})" onmouseleave="donutRestaurar('${id}')" onclick="donutClick('${id}',${i})">
+        <span class="ley-dot"></span>
+        <span class="ley-lbl">${escH(d.label)}${d.extra?`<small>${d.extra}</small>`:""}</span>
+        <span class="ley-val">${fmtNum(d.valor)}<em>${pctTxt(d.valor,total)}</em></span>
       </div>`).join("")}
   </div>`;
 }
 
 // Barras horizontales: nombre a la izquierda, valor y % a la derecha
-function barrasHorizontales(filas, color, total){
+function barrasHorizontales(filas, color, total, compacto){
   if(!filas.length) return `<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`;
   // Si hay un valor muy por encima del resto (ej: un kilo mal cargado), las demás barras se miden contra el siguiente
   // más grande y ese queda marcado: así no se ven todas como puntitos.
   const normales=filas.filter(f=>!f.atipico);
   const max=Math.max(...(normales.length?normales:filas).map(f=>f.valor),1);
-  return `<div class="hbar-list">${filas.map(f=>{
+  return `<div class="hbar-list${compacto?" compacta":""}">${filas.map(f=>{
     const w=f.atipico?100:Math.max(f.valor/max*100,2);
     const c=f.color||color||PALETA_CALIDAD[0];
     return `<div class="hbar-row" ${f.onclickAttr||""} ${f.tip?`title="${escH(f.tip)}"`:""} style="${f.onclickAttr?"cursor:pointer":""}">
@@ -8762,17 +8775,17 @@ function renderMetricas(){
     <div id="met-estado" class="card" style="${cardL}">
       ${tituloGrafico("Estado de las solicitudes","Tocá una porción para ver de dónde sale ese porcentaje")}
       ${datosEstado.length?`
-      <div style="display:flex;gap:32px;align-items:center;flex-wrap:wrap;justify-content:center">
-        ${donutPorcentajes("estado",datosEstado,280,"solicitudes",estSel?estSel.label:"","metSeleccionarEstado")}
+      <div class="dona-ley">
+        ${donutPorcentajes("estado",datosEstado,340,"solicitudes",estSel?estSel.label:"","metSeleccionarEstado")}
         ${leyendaPorcentajes("estado",datosEstado,estSel?estSel.label:"")}
       </div>`:`<p style="color:#a9b8d0;font-size:14px;text-align:center;padding:20px">Sin datos.</p>`}
     </div>
 
     <div id="met-slot-estado" style="display:contents">${detalleEstado}</div>
 
-    <div id="met-suc" class="card" style="${cardL}">
+    <div id="met-suc" class="card" style="padding:18px 22px;grid-column:1/-1">
       ${tituloGrafico("Por sucursal / área","Solicitudes creadas por cada una")}
-      ${barrasHorizontales(filasSucL,"#4f9eff",reqs.length)}
+      ${barrasHorizontales(filasSucL,"#4f9eff",reqs.length,true)}
     </div>
     ${fueraDeFecha.length?`
     <div class="card" style="${cardL}">
