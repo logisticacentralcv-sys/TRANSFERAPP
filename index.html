@@ -904,6 +904,19 @@ tr[onclick]:active td{background:var(--s3)}
 .hbar-list.compacta .hbar-track{height:7px}
 .hbar-list.compacta .hbar-top{margin-bottom:4px}
 
+
+/* ── Tabla principal de Logística: entra a lo ancho sin scroll ── */
+.log-tabla{font-size:13.5px}
+.log-tabla th{padding:10px 10px;font-size:11.5px}
+.log-tabla td{padding:9px 10px;vertical-align:middle}
+.log-tabla .lt-sub{font-size:12px;color:var(--muted);margin-top:2px;white-space:nowrap}
+.log-tabla .lt-ruta{min-width:150px;line-height:1.35}
+.log-tabla .lt-sub.sol{white-space:normal}
+@media(max-width:1400px){ .log-tabla td,.log-tabla th{padding-left:8px;padding-right:8px} .log-tabla .lt-desc{max-width:260px} }
+.log-tabla .lt-desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-width:160px;max-width:340px;line-height:1.35}
+.log-tabla .lt-nw{white-space:nowrap}
+.log-tabla td .badge,.log-tabla td .btn{white-space:nowrap}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -928,7 +941,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261104-0805";
+const APP_VERSION = "20261104-0808";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7480,25 +7493,20 @@ function renderLogTabla(){
   </div>`; })():""}</div>
   <div id="log-tabla" class="card-flush">
     <div class="table-wrap">
-      <table>
+      <table class="log-tabla">
         <thead><tr>
           ${S.modoSeleccion?`<th><input type="checkbox" class="chk-round" ${filtered.length&&filtered.every(r=>S.logSeleccion.has(r.id))?"checked":""} onchange="toggleLogSeleccionTodos(this.checked)"/></th>`:""}
-          <th>N°</th><th>Fecha</th><th>Origen</th><th>Solicitante</th>
-          <th>Destino</th><th>Descripción</th><th>Cant.</th><th>F.Req.</th>
-          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>¿Quién la tiene?</th><th>Acción</th>
+          <th>N° · Fecha</th><th>Origen → Destino</th><th>Descripción</th><th>F.Req.</th>
+          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>¿Quién la tiene?</th><th></th>
         </tr></thead>
         <tbody>
-          ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?14:13}">Sin resultados</td></tr>`:""}
+          ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?10:9}">Sin resultados</td></tr>`:""}
           ${paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto].join("|")).map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
             ${S.modoSeleccion?`<td onclick="event.stopPropagation()"><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
-            <td class="id-cell">${escH(r.id)}</td>
-            <td class="muted-cell">${fdt(r.createdAt)}</td>
-            <td style="font-weight:500">${escH(origenLabel(r))}</td>
-            <td class="muted-cell">${escH(solicitanteLabel(r))}</td>
-            <td class="muted-cell">${escH(r.destino)}</td>
-            <td><div class="trunc">${escH(r.descripcion)}</div></td>
-            <td class="mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</td>
-            <td class="muted-cell">${fd(r.fechaRequerida)}</td>
+            <td><div class="id-cell">${escH(r.id)}</div><div class="lt-sub">${fdt(r.createdAt)}</div></td>
+            <td><div class="lt-ruta"><strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino||"—")}</div><div class="lt-sub sol">${escH(solicitanteLabel(r))}</div></td>
+            <td><div class="lt-desc" title="${escH(r.descripcion||"")}">${escH(r.descripcion)}</div><div class="lt-sub mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</div></td>
+            <td class="muted-cell lt-nw">${fd(r.fechaRequerida)}</td>
             <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
             <td>${estadoBadges(r)}</td>
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
