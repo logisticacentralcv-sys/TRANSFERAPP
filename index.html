@@ -917,6 +917,17 @@ tr[onclick]:active td{background:var(--s3)}
 .log-tabla .lt-nw{white-space:nowrap}
 .log-tabla td .badge,.log-tabla td .btn{white-space:nowrap}
 
+
+/* ── Perfiles y permisos ── */
+.perm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:8px}
+.perm-it{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:var(--s2);cursor:pointer;font-size:14px}
+.perm-it input{display:none}
+.perm-sw{width:36px;height:20px;border-radius:999px;background:var(--s3);border:1px solid var(--border2);position:relative;flex-shrink:0;transition:background .2s}
+.perm-sw::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:#8ea2c4;transition:transform .2s,background .2s}
+.perm-it.on{border-color:#2ecc7a55}
+.perm-it.on .perm-sw{background:#2ecc7a33;border-color:#2ecc7a}
+.perm-it.on .perm-sw::after{transform:translateX(16px);background:#2ecc7a}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -941,7 +952,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261104-0808";
+const APP_VERSION = "20261106-0646";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2158,6 +2169,7 @@ function areaGestionadaPorUsuario(){
 }
 
 async function abrirQuejas(){
+  if(!puede("quejas")){ avisoSinPermiso(); return; }
   S.vista = "quejas";
   render();
   if(!S.quejasLoaded) await cargarQuejas();
@@ -2464,6 +2476,7 @@ function tiposDevolucionDisponibles(sucursal){
 }
 
 async function abrirDevoluciones(){
+  if(!puede("devoluciones")){ avisoSinPermiso(); return; }
   S.vista = "devoluciones";
   render();
   if(!S.devolucionesLoaded) await cargarDevoluciones();
@@ -5263,7 +5276,7 @@ function renderApp(){
   const u=S.user;
   const tagClass = {logistica:"ntag-log",sucursal:"ntag-suc",area:"ntag-adm",repartidor:"ntag-rep",planificacion:"ntag-adm",recepcionista:"ntag-teal",tesoreria:"ntag-teal",calidad:"ntag-adm"}[u.rol]||"ntag-suc";
   const tagLabel = {
-    logistica:     "LOGÍSTICA",
+    logistica:     u.perfil&&PERFILES[u.perfil] ? PERFILES[u.perfil].label.toUpperCase() : "LOGÍSTICA",
     sucursal:      u.area||"SUCURSAL",
     area:          u.area?.toUpperCase()||"ÁREA",
     repartidor:    "REPARTIDOR",
@@ -5299,11 +5312,11 @@ function renderApp(){
       <span class="ntag ${tagClass}">${tagLabel}</span>
     </div>
     <div class="nav-actions">
-      ${S.user?.rol==="logistica"?`
+      ${S.user?.rol==="logistica" && puede("flota")?`
       <a class="btn btn-ghost btn-sm" href="https://dashboard-wheat-pi-94.vercel.app/" target="_blank" rel="noopener" style="text-decoration:none" title="Flota">
         🚛 <span class="nav-lbl">Flota</span>
       </a>`:""}
-      ${S.user?.rol==="logistica"?(()=>{
+      ${S.user?.rol==="logistica" && puede("quejas")?(()=>{
         const ag=areaGestionadaPorUsuario();
         const nq=ag?S.quejas.filter(q=>q.estado==="Pendiente"&&q.areaDestino===ag).length:0;
         return `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-ghost"} btn-sm" onclick="abrirQuejas()" title="Quejas">
@@ -6717,6 +6730,8 @@ function renderAdminConfig(){
       </div>
     </div>
 
+    ${renderConfigPerfiles()}
+
     ${renderConfigReingreso()}
 
     <div class="card cfg-card cfg-doble">
@@ -6849,7 +6864,7 @@ function abrirEditarUsuario(dniId){
   render();
 }
 
-const TIPOS_USUARIO = ["SUCURSAL","LOGISTICA","REPARTIDOR","AREA","PLANIFICACION","ADMINISTRACION","COMPRAS","TESORERIA","CALIDAD","RECEPCIONISTA","ADMIN"];
+const TIPOS_USUARIO = ["SUCURSAL","LOGISTICA","ENCARGADO_FRESCO","REPARTIDOR","AREA","PLANIFICACION","ADMINISTRACION","COMPRAS","TESORERIA","CALIDAD","RECEPCIONISTA","ADMIN"];
 
 function renderUsuarioFormModal(){
   const f = S.usuarioForm;
@@ -7151,6 +7166,69 @@ function renderRecepcionFresco(){
 
 // Quejas y Devoluciones viven junto a los demás botones de acción de cada
 // pantalla (misma forma, misma fila) en vez de en la barra de arriba.
+// ═══════════════════════════════════════════════════════════════════
+//  PERFILES CON PERMISOS — "Encargada de Fresco"
+//  Trabaja con la pantalla de Logística, pero Admin elige qué funciones
+//  tiene (Admin → Configuración → Perfiles y permisos). Por defecto: puede
+//  gestionar solicitudes, crear transferencias y manejar devoluciones, y
+//  NO ve nada de métricas ni el dashboard de Flota.
+// ═══════════════════════════════════════════════════════════════════
+const PERFILES = {
+  encargadoFresco: { label:"Encargada de Fresco", tipo:"ENCARGADO_FRESCO", permisos:[
+    ["solicitudes",       "📋 Gestionar solicitudes (editar, cambiar estado)", true],
+    ["nuevaTransferencia","➕ Crear transferencias",                              true],
+    ["cambioMasivo",      "☑ Selección múltiple y cambio de estado masivo",       true],
+    ["devoluciones",      "📦 Devoluciones (aceptar, controlar, clasificar)",    true],
+    ["recorridos",        "🗺️ Armar recorridos",                                  true],
+    ["quejas",            "💬 Quejas",                                             true],
+    ["metricas",          "📊 Métricas de transferencias",                         false],
+    ["devMetricas",       "📉 Métricas de devoluciones",                           false],
+    ["flota",             "🚚 Dashboard y Flota",                                  false],
+  ]}
+};
+function permisosDePerfil(pf){
+  const def=Object.fromEntries((PERFILES[pf]?.permisos||[]).map(([k,,v])=>[k,v]));
+  try{ const g=JSON.parse(S.config?.["permisos_"+pf]||"null"); if(g && typeof g==="object") return {...def,...g}; }catch(e){}
+  return def;
+}
+// ¿Este usuario puede usar esta función? (los perfiles comunes pueden todo lo de siempre)
+function puede(func){
+  const pf=S.user?.perfil; if(!pf || !PERFILES[pf]) return true;
+  return permisosDePerfil(pf)[func]!==false;
+}
+function avisoSinPermiso(){ toast("🔒 Tu perfil no tiene habilitada esa función. Pedíselo a Admin.","warn"); }
+async function guardarPermisoPerfil(pf, func, valor){
+  const actual={...permisosDePerfil(pf), [func]:!!valor};
+  const val=JSON.stringify(actual);
+  try{
+    const { error } = await sb.from("config").upsert({clave:"permisos_"+pf, valor:val});
+    if(error) throw error;
+    S.config={...S.config, ["permisos_"+pf]:val};
+    toast(`✅ ${PERFILES[pf].label}: ${valor?"habilitado":"deshabilitado"}`);
+  }catch(e){ console.warn("Permisos:",e); toast("⚠️ No se pudo guardar","warn"); }
+  render();
+}
+function renderConfigPerfiles(){
+  return Object.entries(PERFILES).map(([pf,def])=>{
+    const p=permisosDePerfil(pf);
+    const usuarios=S.usuarios.filter(u=>u.tipo===def.tipo && u.activo!=="no");
+    return `
+    <div class="card cfg-card cfg-doble">
+      <div class="cfg-tit"><div><h3>👤 Perfil: ${escH(def.label)}</h3>
+        <p>Trabaja con la pantalla de Logística. Activá o desactivá lo que puede hacer. Se aplica al instante (los que ya están adentro lo ven al recargar).
+        Para darle este perfil a alguien: Admin → Usuarios → tipo <strong>${escH(def.tipo)}</strong>.</p></div>
+        <span class="dv-res ${usuarios.length?"ok":""}">${usuarios.length} usuario${usuarios.length!==1?"s":""}</span></div>
+      <div class="perm-grid">
+        ${def.permisos.map(([k,txt])=>`
+        <label class="perm-it ${p[k]?"on":""}">
+          <input type="checkbox" ${p[k]?"checked":""} onchange="guardarPermisoPerfil('${pf}','${k}',this.checked)"/>
+          <span class="perm-sw"></span><span>${txt}</span>
+        </label>`).join("")}
+      </div>
+    </div>`;
+  }).join("");
+}
+
 function accesosRapidosHtml(){
   const u=S.user; if(!u) return "";
   if(u.rol==="repartidor") return ""; // el repartidor no maneja quejas ni devoluciones desde acá
@@ -7165,7 +7243,7 @@ function accesosRapidosHtml(){
   const botonQuejas = u.rol==="logistica" ? "" :
     `<button class="btn ${S.vista==="quejas"?"btn-primary":"btn-purple"} btn-md" onclick="abrirQuejas()">💬 Quejas${nq>0?`<span class="nbadge">${nq}</span>`:""}</button>`;
   return botonQuejas
-    + (puedeVerDevoluciones() && u.rol!=="repartidor"
+    + (puedeVerDevoluciones() && u.rol!=="repartidor" && puede("devoluciones")
         ? `<button class="btn ${S.vista==="devoluciones"?"btn-primary":"btn-purple"} btn-md" onclick="abrirDevoluciones()">📦 Devoluciones${nd>0?`<span class="nbadge">${nd}</span>`:""}</button>`
         : "");
 }
@@ -7330,19 +7408,19 @@ function renderSucursalArea(opts){
 //  VISTA LOGÍSTICA
 // ══════════════════════════════════════════════════════════
 function renderLogistica(){
+  // Pestañas según lo que tenga habilitado el perfil (Logística común: todas)
+  const tabs=[["solicitudes","📋 Solicitudes",true],["metricas","📊 Métricas",puede("metricas")],["recorridos","🗺️ Recorridos",puede("recorridos")],
+    ["flotaDash","🚚 Dashboard",puede("flota")],["devMetricas","📉 Métricas de devoluciones",puede("devMetricas")]].filter(t=>t[2]);
+  if(!tabs.some(t=>t[0]===S.tabLog)) S.tabLog="solicitudes";
   return `
   <div style="animation:fadeUp .3s ease">
-    <div id="flota-slot">${renderWidgetFlotaHoy()}</div>
+    ${puede("flota")?`<div id="flota-slot">${renderWidgetFlotaHoy()}</div>`:""}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div class="tabs" style="margin-bottom:0">
-        <button class="tab ${S.tabLog==="solicitudes"?"active":""}" onclick="S.tabLog='solicitudes';render()">📋 Solicitudes</button>
-        <button class="tab ${S.tabLog==="metricas"?"active":""}" onclick="S.tabLog='metricas';render()">📊 Métricas</button>
-        <button class="tab ${S.tabLog==="recorridos"?"active":""}" onclick="S.tabLog='recorridos';render()">🗺️ Recorridos</button>
-        <button class="tab ${S.tabLog==="flotaDash"?"active":""}" onclick="S.tabLog='flotaDash';if(!S.flotaDash)cargarDashboardFlota();render()">🚚 Dashboard</button>
-        <button class="tab ${S.tabLog==="devMetricas"?"active":""}" onclick="S.tabLog='devMetricas';render()">📉 Métricas de devoluciones</button>
+        ${tabs.map(([k,txt])=>`<button class="tab ${S.tabLog===k?"active":""}" onclick="S.tabLog='${k}';${k==="flotaDash"?"if(!S.flotaDash)cargarDashboardFlota();":""}render()">${txt}</button>`).join("")}
       </div>
       <div class="actions-bar">
-        ${!["recorridos","flotaDash","devMetricas"].includes(S.tabLog)?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva transferencia</button>`:""}
+        ${!["recorridos","flotaDash","devMetricas"].includes(S.tabLog) && puede("nuevaTransferencia")?`<button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva transferencia</button>`:""}
         ${accesosRapidosHtml()}
       </div>
     </div>
@@ -7467,9 +7545,9 @@ function renderLogTabla(){
     ${hasF?`<div class="filter-bar"><span>${filtered.length} resultado${filtered.length!==1?"s":""}</span><button class="btn btn-ghost btn-sm" onclick="clearFilters()">✕ Limpiar</button></div>`:""}
   </div>
   <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-    <button class="btn ${S.modoSeleccion?"btn-primary":"btn-ghost"} btn-sm" onclick="S.modoSeleccion=!S.modoSeleccion; if(!S.modoSeleccion) S.logSeleccion=new Set(); render()">
+    ${puede("cambioMasivo")?`<button class="btn ${S.modoSeleccion?"btn-primary":"btn-ghost"} btn-sm" onclick="S.modoSeleccion=!S.modoSeleccion; if(!S.modoSeleccion) S.logSeleccion=new Set(); render()">
       ${S.modoSeleccion?"✕ Cancelar selección":"◯ Seleccionar"}
-    </button>
+    </button>`:""}
   </div>
   <div id="log-bar-slot">${S.modoSeleccion && S.logSeleccion.size>0?(()=>{
     const seleccionadas = [...S.logSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
@@ -7512,7 +7590,7 @@ function renderLogTabla(){
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
             <td class="muted-cell">${["En tránsito","En fábrica"].includes(r.estado) && r.nombreQuienLevanto?escH(r.nombreQuienLevanto):"—"}</td>
             <td style="white-space:nowrap" onclick="event.stopPropagation()">
-              ${r.estado!=="Entregada"&&r.estado!=="Rechazada"&&r.estado!=="Cancelada"?`<button class="btn btn-primary btn-sm" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
+              ${puede("solicitudes")&&r.estado!=="Entregada"&&r.estado!=="Rechazada"&&r.estado!=="Cancelada"?`<button class="btn btn-primary btn-sm" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
             </td>
           </tr>`).join("")}
         </tbody>
@@ -11254,6 +11332,7 @@ function toggleLogSeleccionTodos(checked){
 }
 
 function openCambioEstadoMasivo(){
+  if(!puede("cambioMasivo")){ avisoSinPermiso(); return; }
   const estado = ($("log-estado-masivo")?.value||"").trim();
   const recorrido = ($("log-recorrido-masivo")?.value||"").trim();
   if((!estado && !recorrido) || S.logSeleccion.size===0){
@@ -11374,9 +11453,11 @@ function closeModal(){
   S.modal=null; S.selId=null; render();
 }
 function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
-function openModal(m){ S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
+function openModal(m){
+  if(arguments[0]==="nuevaSol" && !puede("nuevaTransferencia")){ avisoSinPermiso(); return; } S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
 function openDetalle(id){ S.selId=id; S.modal="detalle"; render(); }
 function openGestionar(id){
+  if(!puede("solicitudes")){ avisoSinPermiso(); return; }
   // Buscar la solicitud con su id exacto
   const r=S.requests.find(x=>x.id===id);
   if(!r){ console.warn("No se encontró solicitud:",id); return; }
@@ -13535,6 +13616,9 @@ async function doLogin(){
     S.user = {rol:"sucursal", area:resultado.area, nombre:resultado.nombre, dni:resultado.dni||""};
   } else if(tipo === "LOGISTICA"){
     S.user = {rol:"logistica", area:"Logística", nombre:resultado.nombre, dni:resultado.dni||""};
+  } else if(tipo === "ENCARGADO_FRESCO" || tipo === "ENCARGADA_FRESCO"){
+    // Usa la pantalla de Logística, con las funciones que Admin le habilite
+    S.user = {rol:"logistica", perfil:"encargadoFresco", area:"Logística", nombre:resultado.nombre, dni:resultado.dni||""};
   } else if(tipo === "REPARTIDOR"){
     S.user = {rol:"repartidor", area:"Reparto", nombre:resultado.nombre, dni:resultado.dni||"", recorrido:resultado.recorrido||""};
   } else if(tipo === "AREA"){
