@@ -928,6 +928,13 @@ tr[onclick]:active td{background:var(--s3)}
 .perm-it.on .perm-sw{background:#2ecc7a33;border-color:#2ecc7a}
 .perm-it.on .perm-sw::after{transform:translateX(16px);background:#2ecc7a}
 
+
+.perm-tipos{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);font-size:14px}
+.perm-tipos>span{color:var(--muted);margin-right:4px}
+.perm-chip{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:999px;border:1px solid var(--border2);background:var(--s2);cursor:pointer;font-size:13.5px;font-weight:600;color:var(--muted)}
+.perm-chip input{display:none}
+.perm-chip.on{border-color:#2ecc7a;color:#4ade80;background:#2ecc7a14}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -952,7 +959,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261106-0646";
+const APP_VERSION = "20261106-0722";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2487,7 +2494,7 @@ async function cargarDevoluciones(){
   if(!USE_SHEETS) return;
   try{
     const data = await fetchTodasLasFilas("devoluciones", q=>q.order("created_at",{ascending:false}));
-    S.devoluciones = toCamelRows(data);
+    S.devoluciones = toCamelRows(data).filter(devolucionVisiblePerfil);   // perfiles con tipos limitados (ej: Encargada de Fresco)
     S.devolucionesLoaded = true;
   }catch(e){ console.warn("Cargar devoluciones:",e); }
 }
@@ -4789,7 +4796,7 @@ function renderDevoluciones(){
         return `<select class="inp" style="width:160px" onchange="S.devolucionFiltroTipo=this.value;render()">
           <option value="">Todas las categorías</option>
           <option ${S.devolucionFiltroTipo==="Fresco"?"selected":""}>Fresco</option>
-          <option ${S.devolucionFiltroTipo==="Secos"?"selected":""}>Secos</option>
+          ${!tiposDevolucionVisibles()||tiposDevolucionVisibles().includes("Secos")?`<option ${S.devolucionFiltroTipo==="Secos"?"selected":""}>Secos</option>`:""}
           <option ${S.devolucionFiltroTipo==="Congelado"?"selected":""}>Congelado</option>
         </select>`;
       })()}`:""}
@@ -5947,7 +5954,7 @@ function renderMetricasDevoluciones(){
     ${!catFija?`
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
       <span style="font-size:13px;font-weight:700;color:#a9b8d0;text-transform:uppercase;letter-spacing:.07em;margin-right:6px">Categoría</span>
-      ${["","Fresco","Secos","Congelado"].map(k=>`<button class="btn ${cat===k?"btn-primary":"btn-ghost"} btn-sm" ${cat===k&&k?`style="border-color:${COLOR_CAT[k]}"`:""} onclick="S.devMetCategoria='${k}';S.calidadMotivoSel='';S.calidadProducto='';S.calidadSucursal='';S.calidadDiaSel='';render()">${k||"Todas"}</button>`).join("")}
+      ${["","Fresco","Secos","Congelado"].filter(k=>!k||!tiposDevolucionVisibles()||tiposDevolucionVisibles().includes(k)).map(k=>`<button class="btn ${cat===k?"btn-primary":"btn-ghost"} btn-sm" ${cat===k&&k?`style="border-color:${COLOR_CAT[k]}"`:""} onclick="S.devMetCategoria='${k}';S.calidadMotivoSel='';S.calidadProducto='';S.calidadSucursal='';S.calidadDiaSel='';render()">${k||"Todas"}</button>`).join("")}
     </div>`:""}
     <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
       <div class="field" style="margin-bottom:0">
@@ -7174,7 +7181,7 @@ function renderRecepcionFresco(){
 //  NO ve nada de métricas ni el dashboard de Flota.
 // ═══════════════════════════════════════════════════════════════════
 const PERFILES = {
-  encargadoFresco: { label:"Encargada de Fresco", tipo:"ENCARGADO_FRESCO", permisos:[
+  encargadoFresco: { label:"Encargada de Fresco", tipo:"ENCARGADO_FRESCO", tiposDev:["Fresco","Congelado"], permisos:[
     ["solicitudes",       "📋 Gestionar solicitudes (editar, cambiar estado)", true],
     ["nuevaTransferencia","➕ Crear transferencias",                              true],
     ["cambioMasivo",      "☑ Selección múltiple y cambio de estado masivo",       true],
@@ -7188,6 +7195,7 @@ const PERFILES = {
 };
 function permisosDePerfil(pf){
   const def=Object.fromEntries((PERFILES[pf]?.permisos||[]).map(([k,,v])=>[k,v]));
+  if(PERFILES[pf]?.tiposDev) def.tiposDev=[...PERFILES[pf].tiposDev];
   try{ const g=JSON.parse(S.config?.["permisos_"+pf]||"null"); if(g && typeof g==="object") return {...def,...g}; }catch(e){}
   return def;
 }
@@ -7196,17 +7204,36 @@ function puede(func){
   const pf=S.user?.perfil; if(!pf || !PERFILES[pf]) return true;
   return permisosDePerfil(pf)[func]!==false;
 }
-function avisoSinPermiso(){ toast("🔒 Tu perfil no tiene habilitada esa función. Pedíselo a Admin.","warn"); }
-async function guardarPermisoPerfil(pf, func, valor){
-  const actual={...permisosDePerfil(pf), [func]:!!valor};
-  const val=JSON.stringify(actual);
+// Tipos de devolución que ve este usuario (null = todos, como siempre)
+function tiposDevolucionVisibles(){
+  const pf=S.user?.perfil; if(!pf || !PERFILES[pf]?.tiposDev) return null;
+  const t=permisosDePerfil(pf).tiposDev;
+  return Array.isArray(t) && t.length ? t : PERFILES[pf].tiposDev;
+}
+const devolucionVisiblePerfil = d => { const t=tiposDevolucionVisibles(); return !t || t.includes(d.tipoDevolucion||"Fresco"); };
+async function guardarTiposDevPerfil(pf, tipo, on){
+  const actual=permisosDePerfil(pf);
+  let t=new Set(actual.tiposDev||[]); on ? t.add(tipo) : t.delete(tipo);
+  if(!t.size){ toast("Tiene que ver al menos un tipo de devolución","warn"); render(); return; }
+  const val=JSON.stringify({...actual, tiposDev:["Fresco","Congelado","Secos"].filter(x=>t.has(x))});
+  const antes=S.config?.["permisos_"+pf];
+  S.config={...S.config, ["permisos_"+pf]:val}; render();
   try{
     const { error } = await sb.from("config").upsert({clave:"permisos_"+pf, valor:val});
     if(error) throw error;
-    S.config={...S.config, ["permisos_"+pf]:val};
+    toast(`✅ ${PERFILES[pf].label}: ve devoluciones de ${[...t].join(" y ")}`);
+  }catch(e){ console.warn("Permisos:",e); S.config={...S.config, ["permisos_"+pf]:antes}; toast("⚠️ No se pudo guardar","warn"); render(); }
+}
+function avisoSinPermiso(){ toast("🔒 Tu perfil no tiene habilitada esa función. Pedíselo a Admin.","warn"); }
+async function guardarPermisoPerfil(pf, func, valor){
+  const actual={...permisosDePerfil(pf), [func]:!!valor};
+  const val=JSON.stringify(actual), antes=S.config?.["permisos_"+pf];
+  S.config={...S.config, ["permisos_"+pf]:val}; render();
+  try{
+    const { error } = await sb.from("config").upsert({clave:"permisos_"+pf, valor:val});
+    if(error) throw error;
     toast(`✅ ${PERFILES[pf].label}: ${valor?"habilitado":"deshabilitado"}`);
-  }catch(e){ console.warn("Permisos:",e); toast("⚠️ No se pudo guardar","warn"); }
-  render();
+  }catch(e){ console.warn("Permisos:",e); S.config={...S.config, ["permisos_"+pf]:antes}; toast("⚠️ No se pudo guardar","warn"); render(); }
 }
 function renderConfigPerfiles(){
   return Object.entries(PERFILES).map(([pf,def])=>{
@@ -7225,6 +7252,10 @@ function renderConfigPerfiles(){
           <span class="perm-sw"></span><span>${txt}</span>
         </label>`).join("")}
       </div>
+      ${def.tiposDev?`<div class="perm-tipos"><span>📦 Devoluciones que ve:</span>
+        ${["Fresco","Congelado","Secos"].map(t=>`<label class="perm-chip ${(p.tiposDev||[]).includes(t)?"on":""}">
+          <input type="checkbox" ${(p.tiposDev||[]).includes(t)?"checked":""} onchange="guardarTiposDevPerfil('${pf}','${t}',this.checked)"/>${t}</label>`).join("")}
+      </div>`:""}
     </div>`;
   }).join("");
 }
@@ -13796,7 +13827,8 @@ function startAutoRefresh(){
       } else {
         const fila = toCamelRow(payload.new);
         const existe = S.devoluciones.some(d=>d.id===fila.id);
-        S.devoluciones = existe ? S.devoluciones.map(d=>d.id===fila.id?fila:d) : [fila, ...S.devoluciones];
+        if(!devolucionVisiblePerfil(fila)) S.devoluciones = S.devoluciones.filter(d=>d.id!==fila.id);
+        else S.devoluciones = existe ? S.devoluciones.map(d=>d.id===fila.id?fila:d) : [fila, ...S.devoluciones];
       }
       renderDiferido();
     })
