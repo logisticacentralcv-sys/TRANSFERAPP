@@ -935,6 +935,40 @@ tr[onclick]:active td{background:var(--s3)}
 .perm-chip input{display:none}
 .perm-chip.on{border-color:#2ecc7a;color:#4ade80;background:#2ecc7a14}
 
+
+/* ── Armar recorridos del día ── */
+.ar-wrap{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+@media(max-width:1000px){ .ar-wrap{grid-template-columns:1fr} }
+.ar-col{padding:16px}
+.ar-col-tit{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.ar-col-tit h3{font-size:16px;margin:0}
+.ar-ayuda{font-size:13px;color:var(--muted);margin:4px 0 10px}
+.ar-lista{display:flex;flex-direction:column;gap:6px;max-height:70vh;overflow-y:auto}
+.ar-it{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--s2)}
+.ar-it.sug{border-color:#2ecc7a55}
+.ar-it.mia{cursor:pointer;background:var(--s1)}
+.ar-ruta{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ar-ruta .mono{color:var(--blue);font-size:12px}
+.ar-sub{font-size:12.5px;color:var(--muted);margin-top:2px}
+.ar-chips{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.ar-chip{display:flex;flex-direction:column;align-items:flex-start;padding:7px 12px;border-radius:10px;border:1px solid var(--border2);background:var(--s2);color:var(--text);font-family:var(--font);font-weight:700;cursor:pointer}
+.ar-chip small{font-weight:500;font-size:11.5px;color:var(--muted)}
+.ar-chip.on{border-color:var(--blue);background:#4f9eff1a}
+.ar-nuevo{display:flex;gap:6px;margin-left:auto}
+.ar-nuevo .inp{height:36px;padding:4px 10px}
+.ar-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--border)}
+.ar-rec{font-size:18px;font-weight:800;display:flex;align-items:center;gap:8px}
+.ar-parada{border-left:3px solid var(--border2);padding:6px 0 8px 12px;margin:10px 0;display:flex;flex-direction:column;gap:6px}
+.ar-parada.ok{border-left-color:#2ecc7a}
+.ar-par-tit{font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:8px}
+.ar-num{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;border-radius:50%;background:var(--s3);font-size:12px}
+.ar-ll{font-size:12px;color:#4ade80;font-weight:600}
+.ar-mini{font-size:11.5px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.05em}
+.ar-vacia{font-size:12.5px;color:var(--faint)}
+.qr-armado{border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;background:var(--s2)}
+.qr-armado-tit{font-size:18px;font-weight:800;display:flex;justify-content:space-between;align-items:baseline}
+.qr-armado-tit span{font-size:13px;font-weight:600;color:var(--muted)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -959,7 +993,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261106-0732";
+const APP_VERSION = "20261106-0802";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7479,7 +7513,7 @@ function renderLogistica(){
         ${accesosRapidosHtml()}
       </div>
     </div>
-    <div class="vt-content">${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderArmarRecorrido():S.tabLog==="devMetricas"?renderMetricasDevoluciones():renderDashboardFlota()}</div>
+    <div class="vt-content">${S.tabLog==="solicitudes"?renderLogTabla():S.tabLog==="metricas"?renderMetricas():S.tabLog==="recorridos"?renderRecorridosTab():S.tabLog==="devMetricas"?renderMetricasDevoluciones():renderDashboardFlota()}</div>
   </div>`;
 }
 
@@ -9045,6 +9079,8 @@ async function iniciarEstoyEn(){
     await cargarDatosQR();
     if(!e.fabrica){ const of=_lugarCoords(e.sucursal); if(of) e.oficial=of.nombre; }
     e.viaje=await miViajeActivo();
+    await cargarArmados();
+    e.armado = e.viaje ? ((S.armados||[]).find(a=>a.idViaje===e.viaje.id && a.estado==="EN_CURSO")||null) : null;
     if(e.fabrica){
       e.estado = e.viaje ? "ok" : "iniciar";
       if(!e.viaje && !e.recSel) e.recSel=_recorridosQR[0]||"";
@@ -9109,18 +9145,22 @@ async function qrFinalizarViaje(){
     const { error } = await sb.from("flota_viajes").update({hora_llegada:ahora, estado:"FINALIZADO"}).eq("id",v.id);
     if(error) throw error;
     await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:"FABRICA", evento:"REGRESO FABRICA", gps_obs:pres.obs, recorrido:v.recorrido});
+    if(e.armado) await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id",e.armado.id);
     toast(`🏁 Recorrido ${v.recorrido} terminado`);
     S.estoyEn=null;
   }catch(err){ console.warn("Finalizar viaje:",err); e.loading=false; toast("⚠️ No se pudo terminar el recorrido — probá de nuevo","warn"); }
   render();
 }
 // ── Tomar (uno o todos) con el DNI del repartidor ──
-async function qrTomar(ids){
+async function qrTomar(ids, firmaOrigen){
   const yo=S.miIdentidadRep; if(!yo||!ids.length) return;
-  const ts=now();
+  const ts=now(), arm=S.estoyEn?.armado;
   const cambios=ids.map(id=>{ const x=S.requests.find(r=>r.id===id); const seg=x&&x.estado==="En fábrica";
-    return {id, changes: seg ? {estado:"En tránsito", nombreQuienEntrego:yo.nombre, dniEntrega:yo.dni, salidaFabricaAt:ts, pasaPorFabrica:true, updatedAt:ts}
-                             : {estado:"En tránsito", nombreQuienLevanto:yo.nombre, dniRepartidor:yo.dni, levantadoAt:ts, updatedAt:ts}}; });
+    const ch = seg ? {estado:"En tránsito", nombreQuienEntrego:yo.nombre, dniEntrega:yo.dni, salidaFabricaAt:ts, pasaPorFabrica:true, updatedAt:ts}
+                   : {estado:"En tránsito", nombreQuienLevanto:yo.nombre, dniRepartidor:yo.dni, levantadoAt:ts, updatedAt:ts};
+    if(firmaOrigen){ ch.nombreEntregoOrigen=firmaOrigen.nombre; ch.dniEntregoOrigen=firmaOrigen.dni; }   // quién se lo dio en la sucursal
+    if(arm && x && !x.armadoId){ ch.armadoId=arm.id; ch.recorrido=arm.recorrido; }                     // queda en su recorrido
+    return {id, changes:ch}; });
   S.qrOcupado=true; render();
   const res=await Promise.all(cambios.map(c=>sb.from("solicitudes").update(toSnakeRow(c.changes)).eq("id",c.id)));
   const okIds=new Set(cambios.filter((c,i)=>!res[i].error).map(c=>c.id));
@@ -9175,6 +9215,8 @@ async function confirmarEntregaFirma(){
 function cardQR(r, accion){
   const btn = accion==="tomar"
     ? `<button class="btn btn-warn btn-md" onclick="qrTomar(['${escH(r.id)}'])" ${S.qrOcupado?"disabled":""}>🤲 Tomar</button>`
+    : accion==="retirar"
+    ? `<button class="btn btn-warn btn-md" onclick="abrirRetiroFirma(['${escH(r.id)}'])">🤲 Retirar</button>`
     : `<button class="btn btn-success btn-md" onclick="abrirEntregaFirma('${escH(r.id)}')">✅ Entregar</button>`;
   return `<div class="qr-card">
     <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>
@@ -9185,6 +9227,220 @@ function cardQR(r, accion){
   </div>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  RECORRIDOS ARMADOS — una salida concreta con sus transferencias
+//  Logística arma el recorrido (mitad izquierda: transferencias; mitad
+//  derecha: el recorrido con sus paradas). Queda PREPARADO; el repartidor
+//  lo toma en el QR de Fábrica (EN_CURSO, a su nombre); lo cierra al
+//  volver (CERRADO) o se cierra solo a las 5 horas (CERRADO_AUTO).
+// ═══════════════════════════════════════════════════════════════════
+const HORAS_CIERRE_AUTO = 5;
+const ESTADOS_ARMABLES = ["Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En fábrica"];
+const _armadoAbierto = a => a && (a.estado==="PREPARADO" || a.estado==="EN_CURSO");
+const armadoDe = id => (S.armados||[]).find(a=>a.id===id);
+// ¿esta transferencia ya está en un recorrido que sigue abierto?
+const enArmadoAbierto = r => !!r.armadoId && _armadoAbierto(armadoDe(r.armadoId));
+
+async function cerrarRecorridosVencidos(){
+  try{ const r=await sb.rpc("cerrar_recorridos_vencidos"); if(!r.error) return; }catch(e){}
+  // Si la función de la base no está, lo hace la app
+  const lim=new Date(Date.now()-HORAS_CIERRE_AUTO*3600e3).toISOString();
+  try{
+    const { data:venc } = await sb.from("recorridos_armados").select("id,id_viaje,recorrido").eq("estado","EN_CURSO").lt("tomado_at",lim);
+    for(const a of (venc||[])){
+      await sb.from("recorridos_armados").update({estado:"CERRADO_AUTO",cerrado_at:new Date().toISOString(),cierre_automatico:true}).eq("id",a.id).eq("estado","EN_CURSO");
+      if(a.id_viaje){
+        await sb.from("flota_viajes").update({estado:"FINALIZADO",cierre_automatico:true}).eq("id",a.id_viaje).eq("estado","ACTIVO");
+        await sb.from("flota_registros_qr").insert({ts:new Date().toISOString(),id_viaje:a.id_viaje,sucursal:"FABRICA",evento:"CIERRE AUTOMATICO",gps_obs:`Cerrado solo a las ${HORAS_CIERRE_AUTO} horas`,recorrido:a.recorrido});
+      }
+    }
+  }catch(e){ console.warn("Cierre automático:",e); }
+}
+async function cargarArmados(){
+  await cerrarRecorridosVencidos();
+  try{
+    const desde=new Date(Date.now()-2*864e5).toISOString().slice(0,10);
+    const { data, error } = await sb.from("recorridos_armados").select("*").or(`estado.eq.PREPARADO,estado.eq.EN_CURSO,fecha.gte.${desde}`).order("created_at",{ascending:false}).limit(200);
+    if(error) throw error;
+    S.armados=toCamelRows(data||[]); S.armadosFalta=false;
+  }catch(e){ console.warn("Recorridos armados:",e); S.armados=S.armados||[]; S.armadosFalta=true; }
+}
+async function abrirArmarDelDia(){
+  S.subTabRec="armar";
+  await Promise.all([cargarArmados(), cargarDatosQR().catch(()=>{})]);
+  if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
+  if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
+  render();
+}
+async function cargarAvanceArmado(id){
+  const a=armadoDe(id); if(!a||!a.idViaje){ S.avanceArmado=null; return; }
+  try{
+    const { data } = await sb.from("flota_registros_qr").select("sucursal,evento,ts").eq("id_viaje",a.idViaje).order("ts",{ascending:true});
+    S.avanceArmado={id, regs:data||[]}; render();
+  }catch(e){}
+}
+async function crearArmado(){
+  const rec=String(S.nuevoArmadoRec||"").trim(); if(!rec){ toast("Elegí el recorrido","warn"); return; }
+  const d=new Date(), p=n=>String(n).padStart(2,"0");
+  const id=`RA-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
+  const fila={id, fecha:fechaISO(), recorrido:rec, estado:"PREPARADO", creado_por:quienFirmaSesion?.()||S.user?.nombre||""};
+  const { error } = await sb.from("recorridos_armados").insert(fila);
+  if(error){ console.warn(error); toast(/recorridos_armados/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo crear","warn"); return; }
+  S.armados=[toCamelRow(fila),...(S.armados||[])]; S.armadoSel=id; S.nuevoArmadoRec="";
+  toast(`✅ Recorrido ${rec} armado — sumale las transferencias`); render();
+}
+async function asignarAArmado(reqId){
+  const a=armadoDe(S.armadoSel); if(!_armadoAbierto(a)) return;
+  if(a.estado==="EN_CURSO" && !confirm(`El recorrido ${a.recorrido} ya salió con ${a.nombreRep||"el repartidor"}. ¿Sumarle esta transferencia? La va a ver en su próxima parada.`)) return;
+  const ch={armadoId:a.id, recorrido:a.recorrido, updatedAt:now()};
+  const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",reqId);
+  if(error){ toast(/armado_id/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo asignar","warn"); return; }
+  S.requests=S.requests.map(r=>r.id===reqId?{...r,...ch}:r); render();
+}
+async function quitarDeArmado(reqId){
+  const ch={armadoId:null, updatedAt:now()};
+  const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",reqId);
+  if(error){ toast("⚠️ No se pudo quitar","warn"); return; }
+  S.requests=S.requests.map(r=>r.id===reqId?{...r,...ch}:r); render();
+}
+async function cancelarArmado(id){
+  const a=armadoDe(id); if(!a||a.estado!=="PREPARADO") return;
+  if(!confirm(`¿Dar de baja el recorrido ${a.recorrido}? Sus transferencias quedan sin recorrido para volver a asignarlas.`)) return;
+  await sb.from("recorridos_armados").update({estado:"CANCELADO"}).eq("id",id).eq("estado","PREPARADO");
+  const ids=S.requests.filter(r=>r.armadoId===id).map(r=>r.id);
+  if(ids.length) await sb.from("solicitudes").update({armado_id:null}).in("id",ids);
+  S.requests=S.requests.map(r=>r.armadoId===id?{...r,armadoId:null}:r);
+  S.armados=S.armados.map(x=>x.id===id?{...x,estado:"CANCELADO"}:x);
+  S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||""; toast("Recorrido dado de baja"); render();
+}
+
+function renderRecorridosTab(){
+  const sub=S.subTabRec||"armar";
+  if(sub==="armar" && !S.armadosCargados){ S.armadosCargados=true; setTimeout(abrirArmarDelDia,0); }
+  return `<div class="tabs" style="margin-bottom:14px">
+      <button class="tab ${sub==="armar"?"active":""}" onclick="abrirArmarDelDia()">🚛 Armar recorridos del día</button>
+      <button class="tab ${sub==="paradas"?"active":""}" onclick="S.subTabRec='paradas';render()">🧭 Paradas y tiempos</button>
+    </div>${sub==="armar"?renderArmarDelDia():renderArmarRecorrido()}`;
+}
+function renderArmarDelDia(){
+  if(S.armadosFalta) return `<div class="card" style="padding:20px">⚠️ Para armar recorridos falta correr una vez <strong>recorridos_01_armados.sql</strong> en Supabase.</div>`;
+  const abiertos=(S.armados||[]).filter(_armadoAbierto);
+  const a=armadoDe(S.armadoSel);
+  const q=normNotif(S.armadoBusq||"");
+  const par=a?paradasDe(a.recorrido).map(p=>p.sucursal):[];
+  const parN=new Set(par.map(normNotif));
+  // Izquierda: lo que todavía no está en un recorrido abierto
+  let libres=S.requests.filter(r=>ESTADOS_ARMABLES.includes(r.estado) && !enArmadoAbierto(r) && r.tipoPedido!=="devolucion");
+  if(q) libres=libres.filter(r=>[r.id,r.sucursal,r.area,r.destino,r.descripcion,r.recorrido].some(v=>normNotif(v||"").includes(q)));
+  const sugerida=r=> a && (normNotif(r.recorrido)===normNotif(a.recorrido) || parN.has(normNotif(r.destino)) || parN.has(normNotif(origenLabel(r))));
+  libres.sort((x,y)=>(sugerida(y)?1:0)-(sugerida(x)?1:0));
+  const editable=_armadoAbierto(a);
+  const filaLibre=r=>`<div class="ar-it ${sugerida(r)?"sug":""}">
+      <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> <strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino||"")}</div>
+        <div class="ar-sub">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.recorrido?` · ${escH(r.recorrido)}`:""} · ${escH(r.estado)}</div></div>
+      ${editable?`<button class="btn btn-success btn-sm" onclick="asignarAArmado('${escH(r.id)}')" title="Sumar a ${escH(a.recorrido)}">➕</button>`:""}
+    </div>`;
+  // Derecha: el recorrido con sus paradas
+  const mias=a?S.requests.filter(r=>r.armadoId===a.id):[];
+  const enFab=mias.filter(r=>esOrigenFabrica(r)||r.estado==="En fábrica");
+  const filaMia=r=>`<div class="ar-it mia" onclick="openDetalle('${escH(r.id)}')">
+      <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
+        <div class="ar-sub">${escH(r.descripcion||"")} · ${estadoBadges(r)}</div></div>
+      ${editable&&!["En tránsito","Entregada"].includes(r.estado)?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quitarDeArmado('${escH(r.id)}')" title="Quitar del recorrido">✕</button>`:""}
+    </div>`;
+  const hm=iso=>{ try{ return new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } };
+  const llegadas=(S.avanceArmado&&S.avanceArmado.id===a?.id)?S.avanceArmado.regs.filter(x=>x.evento==="LLEGADA"):[];
+  const llegada=s=>llegadas.find(x=>normNotif(x.sucursal)===normNotif(s));
+  // Lo que sale de Fábrica también se ve en la parada donde se deja
+  const usados=new Set(enFab.map(r=>r.id)), ubicadosDestino=new Set();
+  const paradasHtml=par.map((s,i)=>{
+    const deja=mias.filter(r=>!ubicadosDestino.has(r.id)&&normNotif(r.destino)===normNotif(s));
+    const retira=mias.filter(r=>!usados.has(r.id)&&normNotif(origenLabel(r))===normNotif(s));
+    deja.forEach(r=>{ubicadosDestino.add(r.id);usados.add(r.id);}); retira.forEach(r=>usados.add(r.id));
+    const ll=llegada(s);
+    return `<div class="ar-parada ${ll?"ok":""}"><div class="ar-par-tit"><span class="ar-num">${i+1}</span> ${escH(s)}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:""}</div>
+      ${deja.length?`<div class="ar-mini">📤 Deja</div>${deja.map(filaMia).join("")}`:""}
+      ${retira.length?`<div class="ar-mini">📥 Retira</div>${retira.map(filaMia).join("")}`:""}
+      ${!deja.length&&!retira.length?`<div class="ar-vacia">Sin transferencias (igual registra la llegada)</div>`:""}</div>`;
+  }).join("");
+  const fuera=mias.filter(r=>!usados.has(r.id));
+  const est={PREPARADO:["Preparado","var(--teal)"],EN_CURSO:["En curso","var(--amber)"],CERRADO:["Cerrado","var(--muted)"],CERRADO_AUTO:["Cerrado solo (5 h)","var(--muted)"],CANCELADO:["Dado de baja","var(--red)"]};
+  return `
+  <div class="ar-wrap">
+    <div class="card ar-col">
+      <div class="ar-col-tit"><h3>📋 Transferencias sin recorrido <span class="tab-n">${libres.length}</span></h3>
+        <input class="inp" style="max-width:260px" placeholder="🔎 Buscar N°, sucursal, destino…" value="${escH(S.armadoBusq||"")}" oninput="S.armadoBusq=this.value;render()"/></div>
+      ${a?`<p class="ar-ayuda">Arriba van las que coinciden con <strong>${escH(a.recorrido)}</strong>. Tocá ➕ para sumarlas.</p>`:`<p class="ar-ayuda">Elegí o creá un recorrido a la derecha para sumarle transferencias.</p>`}
+      <div class="ar-lista">${libres.length?paginar("armLibres",libres,q+"|"+(a?.id||"")).map(filaLibre).join("")+botonVerMas("armLibres",libres.length):`<div class="pk-vacio">No hay transferencias pendientes sin recorrido. ✅</div>`}</div>
+    </div>
+    <div class="card ar-col">
+      <div class="ar-chips">
+        ${abiertos.map(x=>`<button class="ar-chip ${x.id===S.armadoSel?"on":""}" onclick="S.armadoSel='${escH(x.id)}';cargarAvanceArmado('${escH(x.id)}');render()">${escH(x.recorrido)} <small>${est[x.estado][0]}${x.nombreRep?` · ${escH(x.nombreRep)}`:""}</small></button>`).join("")}
+        <span class="ar-nuevo"><select class="inp" onchange="S.nuevoArmadoRec=this.value"><option value="">+ Nuevo recorrido…</option>${[...new Set([...(S.recorridos||[]),...(_recorridosQR||[])])].map(r=>`<option ${S.nuevoArmadoRec===r?"selected":""}>${escH(r)}</option>`).join("")}</select>
+          <button class="btn btn-success btn-sm" onclick="crearArmado()">Crear</button></span>
+      </div>
+      ${!a?`<div class="pk-vacio" style="margin-top:14px">No hay recorridos armados abiertos. Creá uno para empezar.</div>`:`
+      <div class="ar-head">
+        <div><div class="ar-rec">${escH(a.recorrido)} <span class="badge" style="color:${est[a.estado][1]};border-color:${est[a.estado][1]}55">${est[a.estado][0]}</span></div>
+          <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong> desde las ${hm(a.tomadoAt)}`:""}</div></div>
+        ${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}
+      </div>
+      ${a.estado==="PREPARADO"?`<p class="ar-ayuda">✅ Ya está preparado: el repartidor lo ve al escanear el QR de Fábrica.</p>`:""}
+      ${a.estado==="EN_CURSO"?`<p class="ar-ayuda">🚛 Salió. Si le sumás algo, lo ve en su próxima parada. Se cierra al volver a Fábrica o solo a las ${HORAS_CIERRE_AUTO} horas.</p>`:""}
+      ${enFab.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">🏭</span> Sale de Fábrica</div>${enFab.map(filaMia).join("")}</div>`:""}
+      ${paradasHtml || `<div class="ar-vacia">Este recorrido no tiene orden de paradas cargado (pestaña "Paradas y tiempos").</div>`}
+      ${fuera.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">⚠️</span> Fuera de las paradas del recorrido</div>${fuera.map(filaMia).join("")}</div>`:""}`}
+    </div>
+  </div>`;
+}
+// ── QR: tomar un recorrido armado en Fábrica ──
+async function qrTomarArmado(id){
+  const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||e.loading||!yo) return;
+  const a=armadoDe(id); if(!a) return;
+  e.loading=true; e.err=""; renderNow();
+  const ahora=new Date().toISOString();
+  // 1) reservarlo (si dos lo tocan a la vez, solo uno se lo queda)
+  const { data:res, error:e1 } = await sb.from("recorridos_armados").update({estado:"EN_CURSO", dni_rep:_dniLimpio(yo.dni), nombre_rep:yo.nombre, tomado_at:ahora}).eq("id",id).eq("estado","PREPARADO").select();
+  if(e1 || !res || !res.length){ e.loading=false; e.err=e1?"No se pudo tomar — probá de nuevo.":"Ese recorrido ya lo tomó otra persona."; await cargarArmados(); render(); return; }
+  // 2) el viaje de Flota (salida registrada)
+  e.recSel=a.recorrido; e.loading=false;
+  await qrIniciarViaje();
+  if(!e.viaje){ await sb.from("recorridos_armados").update({estado:"PREPARADO",dni_rep:null,nombre_rep:null,tomado_at:null}).eq("id",id); await cargarArmados(); render(); return; }
+  await sb.from("recorridos_armados").update({id_viaje:e.viaje.id}).eq("id",id);
+  await cargarArmados(); e.armado=armadoDe(id); render();
+}
+// ── QR: retirar en una sucursal, con el DNI de quien lo entrega ──
+function abrirRetiroFirma(ids){
+  S.retiroFirma={ids, dni:"", err:"", loading:false};
+  S.modal="retiroFirma"; render(); setTimeout(()=>$("rf-dni")?.focus(),120);
+}
+function renderRetiroFirmaModal(){
+  const d=S.retiroFirma, e=S.estoyEn, lugar=e?(e.oficial||e.sucursal):"";
+  const rs=d.ids.map(id=>S.requests.find(x=>x.id===id)).filter(Boolean);
+  return `
+  <div class="ef-res">${rs.map(r=>`<div><span class="mono" style="color:var(--blue)">${escH(r.id)}</span> · ${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></div>`).join("")}</div>
+  <div class="field"><label>DNI de quien te lo entrega en ${escH(lugar)} <span class="req">*</span></label>
+    <input id="rf-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba la persona que entrega" value="${escH(d.dni)}"
+      oninput="S.retiroFirma.dni=this.value;S.retiroFirma.err=''" onkeydown="if(event.key==='Enter')confirmarRetiroFirma()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
+  <p class="tes-firma">🚚 Lo retirás vos: <strong>${escH(S.miIdentidadRep?.nombre||"")}</strong></p>
+  <div class="cc-acciones">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-warn btn-md" onclick="confirmarRetiroFirma()" ${d.loading?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:`🤲 Retirar ${rs.length>1?`las ${rs.length}`:""}`}</button>
+  </div>`;
+}
+async function confirmarRetiroFirma(){
+  const d=S.retiroFirma, e=S.estoyEn, yo=S.miIdentidadRep; if(!d||d.loading||!e||!yo) return;
+  const lugar=e.oficial||e.sucursal, dni=_dniLimpio(d.dni);
+  if(!dni){ d.err="Que la persona que entrega escriba su DNI."; render(); return; }
+  if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
+  const chk=validarDNI(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
+  const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(lugar)));
+  if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}, no de ${lugar}.`; render(); return; }
+  d.loading=true; renderNow();
+  S.modal=null; const ids=d.ids; S.retiroFirma=null;
+  await qrTomar(ids, {nombre:chk.nombre, dni});
+}
 function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
 // Lo que este repartidor puede ver y hacer (sin los filtros de pantalla)
@@ -9208,12 +9464,16 @@ function estoyEnLista(){
   const devTomar=S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===n);
   const devFabrica=e.fabrica ? S.devoluciones.filter(d=>d.estado==="En camino" && portadorDevolucion(d) && devolucionVisibleParaRepartidor(d)) : [];
   // En fábrica: solo lo del recorrido elegido (por su recorrido, o si no tiene, por las paradas del recorrido)
-  let retirarFinal=retirar, otrosRec=0;
+  let retirarFinal=retirar.filter(r=>!(enArmadoAbierto(r) && r.armadoId!==e.armado?.id)), otrosRec=0;   // lo de otros recorridos armados no
   const rec = e.fabrica ? (e.viaje ? e.viaje.recorrido : e.recSel) : "";
-  if(rec){
+  if(e.fabrica && e.armado){
+    const mios=retirarFinal.filter(r=>r.armadoId===e.armado.id);
+    otrosRec=retirarFinal.length-mios.length;
+    if(!e.verOtros) retirarFinal=mios;
+  } else if(rec){
     const par=new Set(paradasDe(rec).map(p=>normNotif(p.sucursal)));
-    const mios=retirar.filter(r=> r.recorrido ? normNotif(r.recorrido)===normNotif(rec) : par.has(normNotif(r.destino)));
-    otrosRec=retirar.length-mios.length;
+    const mios=retirarFinal.filter(r=> r.recorrido ? normNotif(r.recorrido)===normNotif(rec) : par.has(normNotif(r.destino)));
+    otrosRec=retirarFinal.length-mios.length;
     if(!e.verOtros) retirarFinal=mios;
   }
   return {retirar:retirarFinal,dejar,devTomar,devFabrica,otrosRec,rec};
@@ -9265,25 +9525,23 @@ function renderEstoyEn(){
     </div>` : "";
   const tomarTodo=items=> items.length>1 ? `<button class="btn btn-warn btn-sm" onclick='qrTomar(${JSON.stringify(items.map(r=>r.id)).replace(/'/g,"&#39;")})' ${S.qrOcupado?"disabled":""}>🤲 Tomar todo</button>` : "";
 
-  // ── Fábrica sin recorrido: elegirlo y salir ──
+  // ── Fábrica sin recorrido: elegir uno de los PREPARADOS por Logística ──
   if(e.fabrica && e.estado==="iniciar"){
-    const recs=_recorridosQR||[], par=e.recSel?paradasDe(e.recSel):[];
+    const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO");
     return pagina(`
     <div class="card qr-iniciar">
       <div class="qr-iniciar-tit">🚛 Elegí tu recorrido</div>
-      ${!recs.length?`<p style="color:#fbbf24;font-size:14px">Todavía no hay recorridos armados con su orden de paradas. Pedile a Logística que los arme en Flota → "Armar recorrido".</p>`:`
-      <select class="inp qr-sel" onchange="S.estoyEn.recSel=this.value;S.estoyEn.verOtros=false;render()">
-        ${recs.map(r=>`<option ${normNotif(r)===normNotif(e.recSel)?"selected":""}>${escH(r)}</option>`).join("")}
-      </select>
-      ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p.sucursal)}</span>`).join("")}</div>`:""}
-      <div class="qr-llevar">${L.retirar.length
-        ? `<strong>📦 Sale de acá para ${escH(e.recSel)}: ${L.retirar.length}</strong><ul>${L.retirar.slice(0,8).map(r=>`<li>${escH(r.destino)} · ${escH(r.descripcion||"")}</li>`).join("")}${L.retirar.length>8?`<li>…y ${L.retirar.length-8} más</li>`:""}</ul>`
-        : `No hay nada esperando en Fábrica para ${escH(e.recSel)}.`}</div>
+      ${!prep.length?`<p style="color:#fbbf24;font-size:15px;line-height:1.5">No hay recorridos preparados todavía. Pedile a Logística que arme el tuyo y volvé a escanear.</p>
+        <button class="btn btn-ghost btn-md btn-full" onclick="iniciarEstoyEn()">🔄 Volver a buscar</button>`:
+      prep.map(x=>{ const its=S.requests.filter(r=>r.armadoId===x.id); const par=paradasDe(x.recorrido);
+        return `<div class="qr-armado">
+          <div class="qr-armado-tit">${escH(x.recorrido)} <span>${its.length} transferencia${its.length!==1?"s":""}</span></div>
+          ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p.sucursal)}</span>`).join("")}</div>`:""}
+          <button class="btn btn-success btn-md btn-full qr-salir" onclick="qrTomarArmado('${escH(x.id)}')" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`✅ Salir con ${escH(x.recorrido)}`}</button>
+        </div>`; }).join("")}
       <details class="qr-acomp"><summary>¿Vas con acompañante?</summary>
         <input id="qr-acomp" class="inp" type="number" inputmode="numeric" placeholder="DNI del acompañante" value="${escH(e.dni2||"")}" oninput="S.estoyEn.dni2=this.value"/></details>
       ${e.err?`<div class="err-msg" style="display:block;margin:10px 0">${escH(e.err)}</div>`:""}
-      <button class="btn btn-success btn-md btn-full qr-salir" onclick="qrIniciarViaje()" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:"✅ Salir con este recorrido"}</button>
-      <p class="qr-nota">Después de salir vas a poder tomar todo lo de ${escH(e.recSel||"tu recorrido")} desde esta misma pantalla.</p>`}
     </div>`);
   }
 
@@ -9291,7 +9549,7 @@ function renderEstoyEn(){
   if(e.fabrica){
     const v=e.viaje, verd=_esVerduleria(v.recorrido);
     return pagina(`
-    <div class="qr-banner ok">🏁 <strong>${escH(v.recorrido)}</strong> · ${escH(v.id)} · saliste a las ${hm(v.hora_salida)}</div>
+    <div class="qr-banner ok">🏁 <strong>${escH(v.recorrido)}</strong> · ${escH(v.id)} · saliste a las ${hm(v.hora_salida)}${e.armado?" · recorrido armado":""}</div>
     ${seccion(`📦 Para llevar en ${escH(v.recorrido)}`,L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
     ${!L.retirar.length?`<div class="pk-vacio">No queda nada en Fábrica para ${escH(v.recorrido)}. ✅</div>`:""}
     ${L.otrosRec?`<button class="qr-otros" onclick="S.estoyEn.verOtros=!S.estoyEn.verOtros;render()">${e.verOtros?"Ver solo lo de mi recorrido":`Hay ${L.otrosRec} para otros recorridos · ver`}</button>`:""}
@@ -9310,7 +9568,7 @@ function renderEstoyEn(){
     ${e.viaje
       ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
       : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
-    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
+    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"retirar")).join(""),L.retirar.length>1?`<button class="btn btn-warn btn-sm" onclick='abrirRetiroFirma(${JSON.stringify(L.retirar.map(r=>r.id)).replace(/'/g,"&#39;")})'>🤲 Retirar todo</button>`:"")}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""))}
     ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
     ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
@@ -9725,6 +9983,7 @@ function renderModals(){
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
   if(S.modal==="rpEdit")        return wrapModal("m","✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="retiroFirma")   return wrapModal("m","🤲 Retirar",renderRetiroFirmaModal(),480);
   if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
   if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
@@ -9953,7 +10212,7 @@ function renderDetalle(){
     const metaLev  = verHoraTomaEntrega
       ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"}`
       : quien ? `Por ${quien}` : "En camino";
-    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev});
+    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev+(r.nombreEntregoOrigen?` · se la entregó ${r.nombreEntregoOrigen}`:"")+(r.armadoId?` · recorrido armado ${r.recorrido||""}`:"")});
   }
 
   // ── PASO 4b: Llegó a fábrica ────────────────────────────
@@ -14024,7 +14283,7 @@ function cambiarIdentidadSesion(){
   S.modal="identidadRep"; render();
 }
 // Los campos "Tu DNI" de cualquier ventana se completan solos con la persona identificada y se ocultan
-const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni"]);
+const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni","rf-dni"]);
 function rellenarDniIdentificado(){
   const id=identidadSesion(); if(!id || !id.dni) return;
   document.querySelectorAll('#app-modal input[id$="-dni"], #app-modal input#dni-inp, #app input[id$="-dni"]').forEach(inp=>{
