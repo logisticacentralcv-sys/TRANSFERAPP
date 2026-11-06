@@ -120,7 +120,9 @@ module.exports = async (req, res) => {
     const updatePayload = { auth_user_id: authUserId };
     if (passwordAGuardar !== null) updatePayload.password = passwordAGuardar;
 
-    const { error: errUpdate } = await supabase.from("usuarios").update(updatePayload).eq("dni", dni);
+    // Solo la fila de ESTA cuenta: la misma persona puede estar en otras cuentas
+    // (ej: firma en RECEPCION y tiene su propia cuenta) y esas no se tocan.
+    const { error: errUpdate } = await supabase.from("usuarios").update(updatePayload).eq("dni", dni).eq("usuario", usuario);
     if (errUpdate) {
       res.status(500).json({ error: "La cuenta se creó pero no se pudo enlazar en la tabla: " + errUpdate.message });
       return;

@@ -959,7 +959,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261106-0722";
+const APP_VERSION = "20261106-0732";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -4995,10 +4995,9 @@ function validarDNI(dni){
 
   // Buscar en la lista completa de usuarios (incluye sucursales, logística, etc.)
   const lista = S.usuarios;
-  const found = lista.find(u => {
-    const dniUsuario = String(u.dni||"").replace(/\D/g,"");
-    return dniUsuario === dniLimpio;
-  });
+  // Si la persona está en varias cuentas, vale cualquiera que esté activa
+  const coinciden = lista.filter(u => String(u.dni||"").replace(/\D/g,"") === dniLimpio);
+  const found = coinciden.find(u => u.activo !== "no") || coinciden[0];
 
   if(!found){
     return {ok:false, msg:"DNI no encontrado. Pedile a logística que te registre en el sistema."};
@@ -6844,8 +6843,8 @@ function renderAdminUsuarios(){
               <td class="muted-cell">${escH(us.dni||"—")}</td>
               <td>${badge(us.activo==="no"?"Inactivo":"Activo", us.activo==="no"?"var(--red)":"#1fa86a")}</td>
               <td style="white-space:nowrap">
-                <button class="btn btn-primary btn-sm" onclick='abrirEditarUsuario(${JSON.stringify(us.dni).replace(/'/g,"&#39;")})'>Editar</button>
-                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick='confirmarBorrarUsuario(${JSON.stringify(String(us.dni||"")).replace(/'/g,"&#39;")})' title="Borrar a esta persona (las demás que comparten el usuario no se tocan)">🗑️</button>
+                <button class="btn btn-primary btn-sm" onclick='abrirEditarUsuario(${JSON.stringify(us.dni).replace(/'/g,"&#39;")},${JSON.stringify(String(us.usuario||"")).replace(/'/g,"&#39;")})'>Editar</button>
+                <button class="btn btn-danger btn-sm" style="margin-left:4px" onclick='confirmarBorrarUsuario(${JSON.stringify(String(us.dni||"")).replace(/'/g,"&#39;")},${JSON.stringify(String(us.usuario||"")).replace(/'/g,"&#39;")})' title="Sacar a esta persona de esta cuenta (sus otras cuentas no se tocan)">🗑️</button>
               </td>
             </tr>`).join("")}
           </tbody>
@@ -6859,8 +6858,20 @@ function abrirNuevoUsuario(){
   S.modal = "usuarioForm";
   render();
 }
-function abrirEditarUsuario(dniId){
-  const us = S.usuarios.find(x=>x.dni===dniId);
+// Cada fila de usuarios es "esta persona (DNI) en esta cuenta (usuario)": una persona puede firmar
+// en una cuenta compartida (ej: RECEPCION) y tener además su propia cuenta (ej: Encargada de Fresco).
+const _mismaCuenta=(a,b)=>normNotif(String(a||"").trim())===normNotif(String(b||"").trim());
+const _esFila=(u,dni,usuario)=>String(u.dni)===String(dni) && _mismaCuenta(u.usuario,usuario);
+function avisoOtrasCuentasHtml(){
+  const f=S.usuarioForm; if(!f) return "";
+  const dni=String(f.dni||"").trim(); if(dni.length<7) return "";
+  const otras=S.usuarios.filter(u=>String(u.dni)===dni && !(f.dniOriginal && _esFila(u,f.dniOriginal,f.usuarioOriginal)));
+  if(!otras.length) return "";
+  return `<div class="alert-info" style="margin-bottom:12px">👤 <strong>${escH(otras[0].nombre||"Esta persona")}</strong> ya está en: ${otras.map(u=>`<strong>${escH(u.usuario)}</strong> (${escH(u.tipo||"")})`).join(", ")}.
+    Si la guardás con otro usuario, queda en las dos cuentas: firma en la compartida y además tiene la suya.</div>`;
+}
+function abrirEditarUsuario(dniId, usuarioId){
+  const us = S.usuarios.find(x=>usuarioId!==undefined ? _esFila(x,dniId,usuarioId) : String(x.dni)===String(dniId));
   if(!us) return;
   S.usuarioForm = {
     usuarioOriginal: us.usuario, dniOriginal: us.dni, usuario: us.usuario, password: us.password||"",
@@ -6877,6 +6888,7 @@ function renderUsuarioFormModal(){
   const f = S.usuarioForm;
   const esEdicion = !!f.dniOriginal;
   return `
+  ${avisoOtrasCuentasHtml()}
   <div class="field">
     <label>Usuario (login) <span class="req">*</span></label>
     <input id="uf-usuario" class="inp ${f.err&&f.err.usuario?"err":""}" value="${escH(f.usuario)}"
@@ -6914,7 +6926,7 @@ function renderUsuarioFormModal(){
     </div>
     <div class="field">
       <label>DNI</label>
-      <input id="uf-dni" class="inp" value="${escH(f.dni)}" oninput="S.usuarioForm.dni=this.value"/>
+      <input id="uf-dni" class="inp" value="${escH(f.dni)}" oninput="S.usuarioForm.dni=this.value" onchange="render()"/>
     </div>
   </div>
   <div class="g3" style="margin-top:10px">
@@ -6966,10 +6978,10 @@ async function guardarUsuario(){
   if(!usuario){ S.usuarioForm.err="El usuario (login) es obligatorio."; render(); return; }
   if(!tipo){ S.usuarioForm.err="Elegí un tipo."; render(); return; }
   if(!dni){ S.usuarioForm.err="El DNI es obligatorio — es lo que identifica a cada persona (varias pueden compartir el mismo login)."; render(); return; }
-  // El DNI es la clave real — si es alta nueva, que no choque con otra persona
-  if(!f.dniOriginal && S.usuarios.some(u=>u.dni===dni)){
-    S.usuarioForm.err="Ya existe una persona cargada con ese DNI."; render(); return;
-  }
+  // Una persona puede estar en varias cuentas, pero no dos veces en la misma
+  const repetida = S.usuarios.find(u=>_esFila(u,dni,usuario) && !(f.dniOriginal && _esFila(u,f.dniOriginal,f.usuarioOriginal)));
+  if(repetida){ S.usuarioForm.err=`${repetida.nombre||"Esa persona"} ya está en la cuenta ${repetida.usuario}.`; render(); return; }
+  const otrasCuentas = S.usuarios.filter(u=>String(u.dni)===String(dni) && !_mismaCuenta(u.usuario,usuario) && !(f.dniOriginal && _esFila(u,f.dniOriginal,f.usuarioOriginal)));
 
   const datos = {
     usuario,
@@ -6986,9 +6998,10 @@ async function guardarUsuario(){
   S.usuarioForm.loading = true; renderNow();
   try{
     if(f.dniOriginal){
-      const { error } = await sb.from("usuarios").update(datos).eq("dni", f.dniOriginal);
+      // solo ESTA fila (esta persona en esta cuenta), no sus otras cuentas
+      const { error } = await sb.from("usuarios").update(datos).eq("dni", f.dniOriginal).eq("usuario", f.usuarioOriginal);
       if(error) throw error;
-      S.usuarios = S.usuarios.map(u=>u.dni===f.dniOriginal?datos:u);
+      S.usuarios = S.usuarios.map(u=>_esFila(u,f.dniOriginal,f.usuarioOriginal)?{...u,...datos}:u);
       toast(`✅ Usuario ${usuario} actualizado`);
       // Si se escribió una contraseña nueva, sincronizarla también en
       // Auth — si no, la tabla queda con la nueva pero Auth sigue
@@ -7000,9 +7013,17 @@ async function guardarUsuario(){
       }
     } else {
       const { error } = await sb.from("usuarios").insert(datos);
-      if(error) throw error;
+      if(error){
+        // la base todavía tiene el DNI como clave única (falta correr el SQL)
+        if(/duplicate|usuarios_pkey|23505/i.test(String(error.message||error.code||"")) && otrasCuentas.length){
+          S.usuarioForm.loading=false;
+          S.usuarioForm.err=`${otrasCuentas[0].nombre||"Esta persona"} ya firma en ${otrasCuentas.map(u=>u.usuario).join(", ")}. Para que pueda tener también esta cuenta, falta correr una vez usuarios_02_una_persona_varias_cuentas.sql en Supabase.`;
+          render(); return;
+        }
+        throw error;
+      }
       S.usuarios = [datos, ...S.usuarios];
-      toast(`✅ Usuario ${usuario} creado — activando su acceso...`);
+      toast(otrasCuentas.length ? `✅ ${datos.nombre||usuario} agregada a ${usuario} (también sigue en ${otrasCuentas.map(u=>u.usuario).join(", ")}) — activando su acceso...` : `✅ Usuario ${usuario} creado — activando su acceso...`);
       // Crear la cuenta de Auth automáticamente, sin que Admin tenga
       // que correr ningún script a mano.
       const r = await llamarCrearUsuarioAuth({usuario, tipo, dni: datos.dni, password: datos.password});
@@ -7021,25 +7042,28 @@ async function guardarUsuario(){
 // mismo login (ej: RECEPCION), se llevaba puestas a todas — incluida la fila que tiene la cuenta de
 // acceso, y el login quedaba sin poder entrar. Ahora, si la persona borrada era la que tenía el acceso,
 // el acceso pasa a otra persona del mismo login antes de borrar.
-async function confirmarBorrarUsuario(dni){
-  const fila = S.usuarios.find(u=>String(u.dni||"")===String(dni||""));
+async function confirmarBorrarUsuario(dni, usuario){
+  // Saca a ESTA persona de ESTA cuenta. Sus otras cuentas (si firma en otra) no se tocan.
+  const fila = S.usuarios.find(u=>usuario!==undefined ? _esFila(u,dni,usuario) : String(u.dni||"")===String(dni||""));
   if(!fila || !String(dni||"").trim()){ toast("⚠️ Esta fila no tiene DNI: no se puede borrar desde acá (pedile ayuda al administrador técnico)","warn"); return; }
-  const mismas = S.usuarios.filter(u=>u!==fila && normNotif(u.usuario)===normNotif(fila.usuario));
-  if(!confirm(`¿Seguro que querés borrar a ${fila.nombre||fila.usuario} (DNI ${dni})?`+
+  const mismas = S.usuarios.filter(u=>u!==fila && _mismaCuenta(u.usuario,fila.usuario));
+  const otrasCuentas = S.usuarios.filter(u=>u!==fila && String(u.dni)===String(dni));
+  if(!confirm(`¿Sacar a ${fila.nombre||fila.usuario} (DNI ${dni}) de la cuenta "${fila.usuario}"?`+
+    (otrasCuentas.length?`\n\nSigue estando en: ${otrasCuentas.map(u=>u.usuario).join(", ")}.`:"")+
     (mismas.length?`\n\nLas otras ${mismas.length} persona${mismas.length!==1?"s":""} que entran como "${fila.usuario}" no se tocan.`:`\n\nEs la única persona con el usuario "${fila.usuario}": ese usuario va a dejar de poder entrar.`))) return;
   try{
     if(fila.authUserId && mismas.length && !mismas.some(u=>u.authUserId)){
       const otra = mismas[0];
       const pasa = {auth_user_id: fila.authUserId};
       if(["SUCURSAL","REPARTIDOR"].includes(fila.tipo) && fila.password) pasa.password = fila.password;   // su clave invisible
-      const { error:e1 } = await sb.from("usuarios").update(pasa).eq("dni", otra.dni);
+      const { error:e1 } = await sb.from("usuarios").update(pasa).eq("dni", otra.dni).eq("usuario", otra.usuario);
       if(e1) throw e1;
       otra.authUserId = fila.authUserId; if(pasa.password) otra.password = pasa.password;
     }
-    const { error } = await sb.from("usuarios").delete().eq("dni", dni);
+    const { error } = await sb.from("usuarios").delete().eq("dni", dni).eq("usuario", fila.usuario);
     if(error) throw error;
     S.usuarios = S.usuarios.filter(u=>u!==fila);
-    toast(`🗑️ ${fila.nombre||fila.usuario} borrado`);
+    toast(`🗑️ ${fila.nombre||fila.usuario} salió de la cuenta ${fila.usuario}`);
   }catch(e){ console.warn("Borrar usuario:",e); toast("⚠️ No se pudo borrar","warn"); }
   render();
 }
@@ -9134,7 +9158,7 @@ async function confirmarEntregaFirma(){
   if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
   const chk=validarDNI(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
   const fila=chk.usuario||{};
-  const esDeAhi=[fila.usuario,fila.area].some(v=>v && normNotif(v)===normNotif(r.destino));
+  const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(r.destino)));
   if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}${fila.usuario||fila.area?` (${fila.usuario||fila.area})`:""}, no de ${r.destino}.`; render(); return; }
   d.loading=true; renderNow();
   const ts=now(), seg=_pasaPorFab(r) && !!r.fabricaAt;
