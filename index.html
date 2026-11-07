@@ -1040,7 +1040,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261107-1115";
+const APP_VERSION = "20261107-1342";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10509,6 +10509,9 @@ function renderFormNueva(){
 }
 
 // ── Detalle / Trazabilidad ────────────────────────────────
+// Las sucursales no ven el recorrido de una transferencia hasta que la ponen "Lista para retirar"
+const ESTADOS_ANTES_DE_LISTA=["Pendiente","Pendiente Tesorería","En revisión","Aprobada","Programada","Reprogramada","Rechazada","Cancelada"];
+const recorridoVisible = r => S.user?.rol!=="sucursal" || !ESTADOS_ANTES_DE_LISTA.includes(r?.estado);
 function renderDetalle(){
   const r=S.requests.find(x=>x.id===S.selId);
   if(!r) return "<p>No encontrado</p>";
@@ -10558,13 +10561,13 @@ function renderDetalle(){
 
   // ── PASO 3: Recorridos (ingreso / egreso separados) ─────
   const esFabFlow = r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
-  if(r.recorrido && r.estado!=="Rechazada" && r.estado!=="Cancelada"){
+  if(r.recorrido && recorridoVisible(r) && r.estado!=="Rechazada" && r.estado!=="Cancelada"){
     const titleRec = esFabFlow ? `Recorrido de ingreso: ${r.recorrido}` : `Asignada a recorrido ${r.recorrido}`;
     steps.push({dot:S_COLOR["Programada"], title:titleRec,
       meta:[r.scheduledAt?`Programado para ${fd(r.scheduledAt)}`:"", verHoraTomaEntrega?viajeResponsablesTxt(r):""].filter(Boolean).join(" · ")});
   }
   // Recorrido de EGRESO — se guarda cuando logística asigna el recorrido de salida desde fábrica
-  if(esFabFlow && r.recorridoEgreso && r.estado!=="Rechazada" && r.estado!=="Cancelada"){
+  if(esFabFlow && r.recorridoEgreso && recorridoVisible(r) && r.estado!=="Rechazada" && r.estado!=="Cancelada"){
     steps.push({dot:S_COLOR["Programada"], title:`Recorrido de egreso: ${r.recorridoEgreso}`,
       meta:"Recorrido asignado para llevar al destino final"});
   }
@@ -10599,7 +10602,7 @@ function renderDetalle(){
     const metaLev  = verHoraTomaEntrega
       ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"}`
       : quien ? `Por ${quien}` : "En camino";
-    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev+(r.nombreEntregoOrigen?` · se la entregó ${r.nombreEntregoOrigen}`:"")+(r.armadoId?` · recorrido armado ${r.recorrido||""}`:"")});
+    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev+(r.nombreEntregoOrigen?` · se la entregó ${r.nombreEntregoOrigen}`:"")+(r.armadoId&&recorridoVisible(r)?` · recorrido armado ${r.recorrido||""}`:"")});
   }
 
   // ── PASO 4b: Llegó a fábrica ────────────────────────────
@@ -10716,7 +10719,7 @@ function renderDetalle(){
   return `
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">
     ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
-    ${r.recorrido?badge(r.recorrido,"var(--teal)"):""}
+    ${r.recorrido&&recorridoVisible(r)?badge(r.recorrido,"var(--teal)"):""}
   </div>
   ${esLogistica && !["Entregada","Rechazada","Cancelada"].includes(r.estado)?`
   <button class="btn btn-primary btn-md btn-full" style="margin-bottom:16px" onclick="openGestionar('${escH(r.id)}')">
