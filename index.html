@@ -996,6 +996,26 @@ tr[onclick]:active td{background:var(--s3)}
 .inc-it{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13.5px;padding:5px 0;border-top:1px solid var(--border)}
 .inc-it:first-of-type{border-top:0}
 
+
+.ar-toggle{cursor:pointer;user-select:none}
+.ar-toggle:hover{color:var(--blue)}
+.ar-flecha{margin-left:auto;font-size:11px;color:var(--muted)}
+.ar-cnt{font-size:12px;font-weight:700;border-radius:999px;padding:1px 8px;border:1px solid var(--border2)}
+.ar-cnt.dj{color:#4ade80;border-color:#2ecc7a55}
+.ar-cnt.rt{color:#fbbf24;border-color:#f5a62355}
+.ar-eta{font-size:12.5px;font-weight:700;color:var(--blue);font-family:var(--mono)}
+.ar-parada{padding:4px 0 6px 12px;margin:6px 0}
+.ar-t-fila{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.ar-t-fila input[type=time]{background:var(--s3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono);padding:3px 6px}
+.ar-t-sub{font-size:12.5px;color:var(--muted);margin-top:4px}
+.ar-t-sub input{width:52px;padding:1px 5px;background:var(--s3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono)}
+
+
+.entrega-rep{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 18px;margin-bottom:16px;border-left:4px solid #2ecc7a}
+.er-lista{display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto}
+.er-it{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--s2);cursor:pointer;font-size:14px}
+.rep-entrega-suc{flex:1;font-size:13px;color:#fbbf24;background:#f5a62314;border:1px solid #f5a62344;border-radius:10px;padding:9px 12px;text-align:center}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1020,7 +1040,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261107-0654";
+const APP_VERSION = "20261107-1025";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7482,6 +7502,79 @@ function solicitudesLista(items, clave, cardFn, vacioTxt){
   </div>`;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  ENTREGA EN ORIGEN — la SUCURSAL entrega al repartidor con el DNI del repartidor
+//  Lo que sale de una sucursal no lo "toma" el repartidor solo: la sucursal le
+//  pide su DNI (una sola vez, para todo lo que le da) y recién ahí queda a su
+//  nombre ("En tránsito"). Así queda asentado quién lo tomó. Lo que sale de
+//  Fábrica, Tesorería o Depósito sigue igual (lo toma el repartidor).
+// ═══════════════════════════════════════════════════════════════════
+const _NO_SON_SUCURSAL=["fabrica","tesoreria","deposito"];
+function esSucursalReal(nombre){
+  const n=normNotif(nombre||""); if(!n || _NO_SON_SUCURSAL.includes(n)) return false;
+  return (S.sucursales||[]).some(s=>normNotif(s)===n);
+}
+const loEntregaLaSucursal = r => !!r && !["En fábrica","No entregada"].includes(r.estado) && esSucursalReal(origenLabel(r));
+const paraEntregarEnSucursal = suc => S.requests.filter(r=>r.estado==="Lista para retirar" && normNotif(origenLabel(r))===normNotif(suc));
+const avisoEntregaSuc = r => `<div class="rep-entrega-suc">🏪 Te lo entrega ${escH(origenLabel(r))}: te va a pedir tu DNI</div>`;
+function renderEntregarAlRepartidorBanner(){
+  if(S.user?.rol!=="sucursal" || !esSucursalReal(S.user.area)) return "";
+  const lista=paraEntregarEnSucursal(S.user.area); if(!lista.length) return "";
+  return `<div class="card entrega-rep">
+    <div><strong>🤝 ${lista.length} ${lista.length!==1?"listas":"lista"} para entregar al repartidor</strong>
+      <div class="ar-sub">Cuando venga, tocá "Entregar" y que escriba su DNI. Sin su DNI no se lo entregues.</div></div>
+    <button class="btn btn-success btn-md" onclick="abrirEntregarAlRepartidor()">🤝 Entregar al repartidor</button>
+  </div>`;
+}
+function abrirEntregarAlRepartidor(){
+  const lista=paraEntregarEnSucursal(S.user.area);
+  S.entregaRep={sel:new Set(lista.map(r=>r.id)), dni:"", err:"", loading:false};
+  S.modal="entregaRep"; render(); setTimeout(()=>$("er-dni")?.focus(),120);
+}
+function renderEntregaRepModal(){
+  const d=S.entregaRep, lista=paraEntregarEnSucursal(S.user.area);
+  return `
+  <p style="font-size:13.5px;color:var(--muted);margin:0 0 10px">Marcá lo que le entregás. El repartidor escribe su DNI <strong>una sola vez</strong> para todo, y queda a su nombre.</p>
+  <div class="er-lista">${lista.map(r=>`<label class="er-it">
+      <input type="checkbox" class="chk-round" ${d.sel.has(r.id)?"checked":""} onchange="S.entregaRep.sel[this.checked?'add':'delete']('${escH(r.id)}');render()"/>
+      <span class="mono" style="color:var(--blue)">${escH(r.id)}</span>
+      <span style="flex:1;min-width:0">${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></span>
+      ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}</label>`).join("")}</div>
+  <div class="field" style="margin-top:12px"><label>DNI del repartidor <span class="req">*</span></label>
+    <input id="er-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba el repartidor" value="${escH(d.dni)}"
+      oninput="S.entregaRep.dni=this.value;S.entregaRep.err=''" onkeydown="if(event.key==='Enter')confirmarEntregaRep()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
+  <div class="cc-acciones">
+    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="confirmarEntregaRep()" ${d.loading||!d.sel.size?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:`🤝 Entregar ${d.sel.size>1?`las ${d.sel.size}`:""}`}</button>
+  </div>`;
+}
+async function confirmarEntregaRep(){
+  const d=S.entregaRep; if(!d||d.loading) return;
+  const ids=[...d.sel].filter(id=>S.requests.some(r=>r.id===id && r.estado==="Lista para retirar"));
+  if(!ids.length){ d.err="Marcá lo que le entregás."; render(); return; }
+  const dni=_dniLimpio(d.dni); if(!dni){ d.err="Que el repartidor escriba su DNI."; render(); return; }
+  const chk=await validarDNIConRespaldo(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
+  const rep=S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
+  if(!rep){ d.err=`Ese DNI es de ${chk.nombre}, que no es repartidor.`; render(); return; }
+  d.loading=true; renderNow();
+  let arm=null;
+  try{ const { data } = await sb.from("recorridos_armados").select("id,recorrido").eq("estado","EN_CURSO").eq("dni_rep",dni).limit(1); arm=data&&data[0]||null; }catch(e){}
+  const ts=now(), ok=[];
+  for(const id of ids){
+    const r=S.requests.find(x=>x.id===id);
+    const ch={estado:"En tránsito", nombreQuienLevanto:rep.nombre, dniRepartidor:dni, levantadoAt:ts, nombreEntregoOrigen:S.user.area, updatedAt:ts};
+    if(arm && r && !r.armadoId){ ch.armadoId=arm.id; ch.recorrido=arm.recorrido; }
+    // solo si sigue lista (si justo cambió, no se pisa)
+    const { data, error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",id).eq("estado","Lista para retirar").select();
+    if(!error && data && data.length){ ok.push(id); S.requests=S.requests.map(x=>x.id===id?{...x,...ch}:x); }
+  }
+  if(ok.length) crearNotificacion(`REP:${dni}`, `📦 ${S.user.area} te entregó ${ok.length===1?`la ${ok[0]}`:`${ok.length} transferencias`}`, ok[0]);
+  S.modal=null; S.entregaRep=null;
+  toast(ok.length===ids.length?`✅ Entregado a ${rep.nombre}`:`⚠️ Se entregaron ${ok.length} de ${ids.length} (las demás ya no estaban listas)`, ok.length===ids.length?undefined:"warn");
+  render();
+}
+
 function renderSucursalArea(opts){
   opts=opts||{};
   const u=S.user;
@@ -7540,6 +7633,7 @@ function renderSucursalArea(opts){
   <div style="animation:fadeUp .3s ease">
     <div id="flota-slot">${renderWidgetFlotaHoy()}</div>
     ${opts.embedded ? "" : pageHead("Mis solicitudes","",acciones)}
+    ${renderEntregarAlRepartidorBanner()}
     <div class="toolbar">
       <div class="tabs">
         <button class="tab ${S.tabSuc==="abiertas"?"active":""}" onclick="S.tabSuc='abiertas';render()">Abiertas<span class="tab-n">${open.length}</span></button>
@@ -9225,6 +9319,8 @@ async function qrFinalizarViaje(){
 // ── Tomar (uno o todos) con el DNI del repartidor ──
 async function qrTomar(ids, firmaOrigen){
   const yo=S.miIdentidadRep; if(!yo||!ids.length) return;
+  ids=ids.filter(id=>!loEntregaLaSucursal(S.requests.find(r=>r.id===id)));   // lo de sucursales lo entrega la sucursal
+  if(!ids.length){ toast("🏪 Esto te lo entrega la sucursal con tu DNI","warn"); return; }
   const ts=now(), arm=S.estoyEn?.armado;
   const cambios=ids.map(id=>{ const x=S.requests.find(r=>r.id===id); const seg=x&&x.estado==="En fábrica";
     const ch = seg ? {estado:"En tránsito", nombreQuienEntrego:yo.nombre, dniEntrega:yo.dni, salidaFabricaAt:ts, pasaPorFabrica:true, updatedAt:ts}
@@ -9284,7 +9380,9 @@ async function confirmarEntregaFirma(){
 }
 // Tarjeta simple para la pantalla del QR
 function cardQR(r, accion){
-  const btn = accion==="tomar"
+  const btn = accion==="tomar" && loEntregaLaSucursal(r)
+    ? avisoEntregaSuc(r)
+    : accion==="tomar"
     ? `<button class="btn btn-warn btn-md" onclick="qrTomar(['${escH(r.id)}'])" ${S.qrOcupado?"disabled":""}>🤲 Tomar</button>`
 
     : `<button class="btn btn-success btn-md" onclick="abrirEntregaFirma('${escH(r.id)}')">✅ Entregar</button>`;
@@ -9359,7 +9457,7 @@ async function cargarArmados(){
 }
 async function abrirArmarDelDia(){
   S.subTabRec="armar";
-  await Promise.all([cargarArmados(), cargarDatosQR().catch(()=>{})]);
+  await Promise.all([cargarArmados(), cargarDatosQR().catch(()=>{}), (S.flotaTiemposEstimados&&S.flotaMatrizTiempos)?null:cargarEstadoFlotaHoy().catch(()=>{})]);
   if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
   if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
   render();
@@ -9382,9 +9480,11 @@ async function crearArmado(){
   toast(`✅ Recorrido ${rec} armado — sumale las transferencias`); render();
 }
 // ¿Esta transferencia sale de Fábrica en este recorrido? (origen Fábrica, espera su 2º tramo, o se reasignó desde Fábrica)
-const saleDeFabrica = r => esOrigenFabrica(r) || r.estado==="En fábrica" || r.estado==="No entregada";
-// ¿En este viaje termina en Fábrica? (va a Fábrica, o pasa por Fábrica y todavía no llegó)
-const terminaEnFabrica = r => normNotif(r.destino)==="fabrica" || (_pasaPorFab(r) && !r.fabricaAt && r.estado!=="En fábrica");
+// (Tesorería está físicamente en Fábrica: para el recorrido es el mismo lugar)
+const _esLugarFabrica = n => ["fabrica","tesoreria"].includes(normNotif(n||""));
+const saleDeFabrica = r => esOrigenFabrica(r) || _esLugarFabrica(origenLabel(r)) || r.estado==="En fábrica" || r.estado==="No entregada";
+// ¿En este viaje termina en Fábrica? (va a Fábrica o a Tesorería, o pasa por Fábrica y todavía no llegó)
+const terminaEnFabrica = r => _esLugarFabrica(r.destino) || (_pasaPorFab(r) && !r.fabricaAt && r.estado!=="En fábrica");
 const esAdminRec = () => S.user?.rol==="admin";
 
 async function asignarAArmado(reqId){
@@ -9489,17 +9589,33 @@ async function guardarDescargaDefecto(v){
   S.config={...S.config, minDescargaDefault:val}; render();
   try{ await sb.from("config").upsert({clave:"minDescargaDefault", valor:val}); }catch(e){}
 }
-// Tiempo estimado: viaje entre paradas + descarga en cada parada donde hay algo + vuelta a Fábrica
-function estimarArmado(a, paradas, conAccion){
-  let viaje=0, descarga=0, ant="FABRICA", falta=null;
-  paradas.forEach(p=>{
-    const t=minutosEntre(ant,p.nombre); if(t===null){ if(!falta) falta=[ant,p.nombre]; } else viaje+=t;
-    if(conAccion(p.nombre)) descarga+=Math.round(tiempoDescarga(a.recorrido,p.nombre)||minDescargaPorDefecto());
-    ant=p.nombre;
-  });
-  if(paradas.length){ const t=minutosEntre(ant,"FABRICA"); if(t===null){ if(!falta) falta=[ant,"FABRICA"]; } else viaje+=t; }
-  return {viaje, descarga, total:viaje+descarga, falta};
+// Tiempo estimado: viaje entre paradas + descarga en CADA parada + vuelta a Fábrica.
+// La descarga sale de Flota (flota_tiempos_estimados: tiempo por parada de ese recorrido,
+// ajustado por los bultos del día). Si esa parada no tiene un tiempo cargado, se usa el promedio.
+function descargaParada(rec, suc){
+  const est=(S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(rec) && normNotif(t.sucursal)===normNotif(suc));
+  return {min:Math.round(tiempoDescarga(rec,suc)), fuente: est?"cargado en Flota":"promedio"};
 }
+function horaSalidaArmado(){
+  if(S.armadoHoraSalida) return S.armadoHoraSalida;
+  const d=new Date(); d.setMinutes(Math.ceil(d.getMinutes()/15)*15,0,0);
+  return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+}
+function estimarArmado(a, paradas){
+  const [h,m]=horaSalidaArmado().split(":").map(Number);
+  const base=new Date(); base.setHours(h||0,m||0,0,0);
+  const hora=min=>{ const d=new Date(base.getTime()+min*60000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+  let viaje=0, descarga=0, t=0, ant="FABRICA", falta=null, conFlota=0; const etas=[];
+  paradas.forEach(p=>{
+    const tr=minutosEntre(ant,p.nombre); if(tr===null){ if(!falta) falta=[ant,p.nombre]; } else { viaje+=tr; t+=tr; }
+    const dsc=descargaParada(a.recorrido,p.nombre); if(dsc.fuente!=="promedio") conFlota++;
+    etas.push({nombre:p.nombre, hora:hora(t), descarga:dsc.min, fuente:dsc.fuente});
+    descarga+=dsc.min; t+=dsc.min; ant=p.nombre;
+  });
+  if(paradas.length){ const tr=minutosEntre(ant,"FABRICA"); if(tr===null){ if(!falta) falta=[ant,"FABRICA"]; } else { viaje+=tr; t+=tr; } }
+  return {viaje, descarga, total:viaje+descarga, falta, etas, vuelta:hora(t), conFlota};
+}
+function toggleParada(k){ const a=S.armadoSel; S.paradasAbiertas=S.paradasAbiertas||new Set(); const key=a+"|"+k; S.paradasAbiertas.has(key)?S.paradasAbiertas.delete(key):S.paradasAbiertas.add(key); render(); }
 const _fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${String(Math.round(m%60)).padStart(2,"0")} min`:`${Math.round(m)} min`;
 
 // ── Incidencias (llamados de atención) ──
@@ -9579,13 +9695,19 @@ function renderArmarDelDia(){
   const deja=s=>mias.filter(r=>!terminaEnFabrica(r) && normNotif(r.destino)===normNotif(s));
   const retira=s=>mias.filter(r=>!saleDeFabrica(r) && normNotif(origenLabel(r))===normNotif(s));
   const est={PREPARADO:["Preparado","var(--teal)"],EN_CURSO:["En curso","var(--amber)"],CERRADO:["Cerrado","var(--muted)"],CERRADO_AUTO:["Cerrado solo (5 h)","var(--muted)"],CANCELADO:["Dado de baja","var(--red)"]};
-  const tiempo=a&&paradas.length?estimarArmado(a,paradas,s=>deja(s).length||retira(s).length):null;
+  const tiempo=a&&paradas.length?estimarArmado(a,paradas):null;
+  const etaDe=n=>tiempo?tiempo.etas.find(x=>normNotif(x.nombre)===normNotif(n)):null;
+  const abierta=k=>(S.paradasAbiertas||new Set()).has(a?.id+"|"+k);
+  const chips=(dj,rt)=>`${dj.length?`<span class="ar-cnt dj">📤 ${dj.length}</span>`:""}${rt.length?`<span class="ar-cnt rt">📥 ${rt.length}</span>`:""}`;
+  const bloque=(k,titulo,num,items,extraTit,clase)=>`<div class="ar-parada ${clase||""}">
+      <div class="ar-par-tit ar-toggle" onclick="toggleParada('${escH(k)}')"><span class="ar-num">${num}</span> ${titulo}${extraTit||""}<span class="ar-flecha">${items.length?(abierta(k)?"▲":"▼"):""}</span></div>
+      ${abierta(k)?items:""}</div>`;
   const paradasHtml=paradas.map((p,i)=>{
-    const dj=deja(p.nombre), rt=retira(p.nombre), ll=llegada(p.nombre);
-    return `<div class="ar-parada ${ll?"ok":""} ${p.extra?"extra":""}"><div class="ar-par-tit"><span class="ar-num">${i+1}</span> ${escH(p.nombre)}${p.extra?`<span class="ar-tag">➕ parada agregada</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:""}</div>
-      ${dj.length?`<div class="ar-mini">📤 Deja</div>${dj.map(filaMia).join("")}`:""}
-      ${rt.length?`<div class="ar-mini">📥 Retira</div>${rt.map(filaMia).join("")}`:""}
-      ${!dj.length&&!rt.length?`<div class="ar-vacia">Sin transferencias (igual registra la llegada)</div>`:""}</div>`;
+    const dj=deja(p.nombre), rt=retira(p.nombre), ll=llegada(p.nombre), et=etaDe(p.nombre);
+    const det=(dj.length?`<div class="ar-mini">📤 Deja</div>${dj.map(filaMia).join("")}`:"")+(rt.length?`<div class="ar-mini">📥 Retira</div>${rt.map(filaMia).join("")}`:"");
+    return bloque(p.nombre, escH(p.nombre), i+1, det,
+      `${p.extra?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
+      `${ll?"ok":""} ${p.extra?"extra":""}`);
   }).join("");
   return `
   <div class="ar-wrap">
@@ -9608,14 +9730,17 @@ function renderArmarDelDia(){
           <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong>${a.tomadoAt?` desde las ${hm(a.tomadoAt)}`:""}`:""}</div></div>
         <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}</div>
       </div>
-      ${tiempo?`<div class="ar-tiempo">⏱️ Tiempo estimado: <strong>${_fmtMin(tiempo.total)}</strong> <span>(viaje ${_fmtMin(tiempo.viaje)} + descargas ${_fmtMin(tiempo.descarga)})</span>
+      ${tiempo?`<div class="ar-tiempo">
+        <div class="ar-t-fila"><label>🕐 Sale a las <input type="time" value="${escH(horaSalidaArmado())}" onchange="S.armadoHoraSalida=this.value;render()"/></label>
+          <span>⏱️ Tiempo estimado: <strong>${_fmtMin(tiempo.total)}</strong> · vuelve ≈ <strong>${tiempo.vuelta}</strong></span></div>
+        <div class="ar-t-sub">viaje ${_fmtMin(tiempo.viaje)} + descargas ${_fmtMin(tiempo.descarga)} (${tiempo.conFlota} de ${paradas.length} paradas con el tiempo de descarga cargado en Flota; el resto, ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>)</div>
         ${tiempo.falta?`<div class="ar-falta">Falta el tiempo entre ${escH(tiempo.falta[0]==="FABRICA"?"Fábrica":tiempo.falta[0])} y ${escH(tiempo.falta[1]==="FABRICA"?"Fábrica":tiempo.falta[1])}: el total puede ser mayor.</div>`:""}
-        <div class="ar-desc-def">Descarga por parada cuando no hay un tiempo cargado: <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/> min</div></div>`:""}
+        <div class="ar-t-sub">Es solo una estimación para probar: la hora de salida no se guarda.</div></div>`:""}
       ${a.estado==="PREPARADO"?`<p class="ar-ayuda">✅ Ya está preparado: el repartidor lo ve al escanear el QR de Fábrica.</p>`:""}
       ${enCurso?`<p class="ar-ayuda">🚛 Salió de Fábrica: lo que sale de Fábrica ya no se puede tocar (🔒). Podés sumarle retiros en sucursales; se le avisa al repartidor. Se cierra al volver o solo a las ${HORAS_CIERRE_AUTO} horas.</p>`:""}
-      ${enFab.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">🏭</span> Sale de Fábrica</div>${enFab.map(filaMia).join("")}</div>`:""}
+      ${enFab.length?bloque("__fab","Sale de Fábrica","🏭",enFab.map(filaMia).join(""),`<span class="ar-cnt rt">📥 ${enFab.length}</span>`):""}
       ${paradasHtml || `<div class="ar-vacia">Todavía no tiene paradas: sumale transferencias.</div>`}
-      ${vuelve.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">🏭</span> Vuelve a Fábrica (y sale después)</div>${vuelve.map(filaMia).join("")}</div>`:""}
+      ${vuelve.length?bloque("__vuelve","Vuelve a Fábrica (y sale después)","🏭",vuelve.map(filaMia).join(""),`<span class="ar-cnt dj">📤 ${vuelve.length}</span>`):""}
       <div class="ar-soltar">Soltá acá una transferencia para sumarla</div>`}
     </div>
   </div>`;
@@ -9720,7 +9845,7 @@ function renderEstoyEn(){
       <div class="estoy-tit"><span>${titulo}</span><span style="display:flex;gap:8px;align-items:center">${extra||""}<span class="tab-n" style="margin:0">${items.length}</span></span></div>
       <div class="qr-grid">${html}</div>
     </div>` : "";
-  const tomarTodo=items=> items.length>1 ? `<button class="btn btn-warn btn-sm" onclick='qrTomar(${JSON.stringify(items.map(r=>r.id)).replace(/'/g,"&#39;")})' ${S.qrOcupado?"disabled":""}>🤲 Tomar todo</button>` : "";
+  const tomarTodo=itemsAll=>{ const items=itemsAll.filter(r=>!loEntregaLaSucursal(r)); return items.length>1 ? `<button class="btn btn-warn btn-sm" onclick='qrTomar(${JSON.stringify(items.map(r=>r.id)).replace(/'/g,"&#39;")})' ${S.qrOcupado?"disabled":""}>🤲 Tomar todo</button>` : ""; };
 
   // ── Fábrica sin recorrido: elegir uno de los PREPARADOS por Logística ──
   if(e.fabrica && e.estado==="iniciar"){
@@ -9935,22 +10060,22 @@ function cardRepartidorHtml(r){
             <!-- Acciones -->
             <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;align-items:stretch" onclick="event.stopPropagation()">
               ${puedeTomar && r.estado==="Lista para retirar"?`
-              <button class="btn btn-warn btn-md" style="flex:3" onclick="openTomarTransferencia('${escH(r.id)}')">
+              ${loEntregaLaSucursal(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-warn btn-md" style="flex:3" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
-              </button>
+              </button>`}
               <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoLevanta('${escH(r.id)}')">
                 ✕ No levanté
               </button>`:""}
               ${puedeTomar && r.estado==="En fábrica"?`
-              <button class="btn btn-success btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
+              ${loEntregaLaSucursal(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-success btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Llevar a destino
-              </button>`:""}
+              </button>`}`:""}
               ${(()=>{
                 const origenSinApp = esOtraDireccion(r.sucursal||r.area);
                 if(["Aprobada","Programada"].includes(r.estado) && origenSinApp) return `
-              <button class="btn btn-warn btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
+              ${loEntregaLaSucursal(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-warn btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
-              </button>`;
+              </button>`}`;
                 return "";
               })()}
               ${puedDejarFab?`
@@ -10060,7 +10185,7 @@ function renderRepartidor(){
       <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
       ${(()=>{
         const sel=[...S.repSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
-        const nTomar = sel.filter(r=>puedeTomarAhora(r)).length;
+        const nTomar = sel.filter(r=>puedeTomarAhora(r) && !loEntregaLaSucursal(r)).length;   // lo de sucursales lo entrega la sucursal
         const nBolsin = sel.filter(r=>r.tipoPedido==="bolsin" && r.estado==="En tránsito").length;
         const entregables = sel.filter(r=>r.tipoPedido!=="bolsin" && r.estado==="En tránsito" && (!(r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si") || r.fabricaAt));
         return `
@@ -10181,6 +10306,7 @@ function renderModals(){
   if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
   if(S.modal==="armadoEdit")    return wrapModal("m","✏️ Corregir recorrido",renderArmadoEditModal(),460);
   if(S.modal==="portadorEdit")  return wrapModal("m","🔁 Corregir quién la lleva",renderPortadorEditModal(),460);
+  if(S.modal==="entregaRep")    return wrapModal("m","🤝 Entregar al repartidor",renderEntregaRepModal(),540);
   if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
   if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
@@ -11538,9 +11664,9 @@ function openTomarVarias(){
   const ids = [...S.repSeleccion].filter(id=>{
     const r = S.requests.find(x=>x.id===id);
     if(!r) return false;
-    return puedeTomarAhora(r);
+    return puedeTomarAhora(r) && !loEntregaLaSucursal(r);   // lo de sucursales lo entrega la sucursal
   });
-  if(!ids.length) return;
+  if(!ids.length){ toast("🏪 Lo de sucursales te lo entrega la sucursal con tu DNI","warn"); return; }
   S.tomarVariasModal = {ids, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "tomarVarias";
   render();
@@ -13340,6 +13466,8 @@ async function submitLoteRecorrido(){
 }
 
 function openTomarTransferencia(id){
+  const rr=S.requests.find(x=>x.id===id);
+  if(S.user?.rol==="repartidor" && loEntregaLaSucursal(rr)){ toast(`🏪 Esta te la entrega ${origenLabel(rr)}: pedile que la cargue con tu DNI`,"warn"); return; }
   if(S.miIdentidadRep){
     ejecutarTomarTransferencia(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
     return;
@@ -14480,7 +14608,7 @@ function cambiarIdentidadSesion(){
   S.modal="identidadRep"; render();
 }
 // Los campos "Tu DNI" de cualquier ventana se completan solos con la persona identificada y se ocultan
-const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni"]);
+const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni","er-dni"]);
 function rellenarDniIdentificado(){
   const id=identidadSesion(); if(!id || !id.dni) return;
   document.querySelectorAll('#app-modal input[id$="-dni"], #app-modal input#dni-inp, #app input[id$="-dni"]').forEach(inp=>{
