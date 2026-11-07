@@ -969,6 +969,33 @@ tr[onclick]:active td{background:var(--s3)}
 .qr-armado-tit{font-size:18px;font-weight:800;display:flex;justify-content:space-between;align-items:baseline}
 .qr-armado-tit span{font-size:13px;font-weight:600;color:var(--muted)}
 
+
+.flota-desp summary{display:flex;justify-content:space-between;align-items:center;cursor:pointer;list-style:none}
+.flota-desp summary::-webkit-details-marker{display:none}
+.flota-desp-f{font-size:12.5px;font-weight:700;color:var(--blue)}
+
+
+.ar-it[draggable="true"]{cursor:grab}
+.ar-it.arrastrando{opacity:.45}
+.ar-it:not(.mia):hover{border-color:var(--blue)}
+.ar-drop.sobre{outline:2px dashed var(--blue);outline-offset:-6px}
+.ar-soltar{display:none;text-align:center;padding:14px;margin-top:10px;border:2px dashed var(--border2);border-radius:10px;color:var(--muted);font-size:13px}
+.ar-drop.sobre .ar-soltar{display:block;border-color:var(--blue);color:var(--blue)}
+.ar-lock{font-size:15px;opacity:.7;padding:0 6px}
+.ar-parada.extra{border-left-color:var(--amber)}
+.ar-tag{font-size:11px;font-weight:700;color:var(--amber);border:1px solid #f5a62355;border-radius:999px;padding:1px 8px}
+.ar-tiempo{background:var(--s2);border-radius:10px;padding:10px 12px;margin:8px 0;font-size:14.5px}
+.ar-tiempo>span{color:var(--muted);font-size:13px}
+.ar-falta{color:#fbbf24;font-size:12.5px;margin-top:4px}
+.ar-desc-def{font-size:12.5px;color:var(--muted);margin-top:6px}
+.ar-desc-def input{width:56px;padding:2px 6px;background:var(--s3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono)}
+.ar-cerr{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:5px}
+
+
+.inc-lista{background:#f052520d;border:1px solid #f0525233;border-radius:10px;padding:10px 12px;margin:0 0 14px}
+.inc-it{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13.5px;padding:5px 0;border-top:1px solid var(--border)}
+.inc-it:first-of-type{border-top:0}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -993,7 +1020,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261106-0802";
+const APP_VERSION = "20261107-0654";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1104,6 +1131,7 @@ function notifEsMia(n){
   if(dest==="logistica") return u.rol==="logistica";
   if(dest==="admin") return u.rol==="admin";
   if(dest==="recepcion fresco" || dest==="recepcionfresco") return u.rol==="recepcionista" && normNotif(u.area).includes("fresco");
+  if(dest.startsWith("rep:")) return u.rol==="repartidor" && !!S.miIdentidadRep && dest.slice(4)===String(S.miIdentidadRep.dni||"").replace(/\D/g,"");
   return dest === normNotif(u.area);
 }
 async function crearNotificacion(destinatario, mensaje, solicitudId){
@@ -1701,14 +1729,15 @@ function toCamelRows(rows){ return (rows||[]).map(toCamelRow); }
 async function sheetsLoadUsuarios(){
   if(!USE_SHEETS) return;
   try{
-    const [us,sucs,cfg]=await Promise.all([
-      sb.from("usuarios").select("*"),
+    // Antes era una sola consulta: Supabase devuelve como máximo 1.000 filas, así que con más
+    // personas cargadas algunas quedaban afuera y su DNI "no existía" (fallaba a veces sí y a veces no).
+    const [usTodas,sucs,cfg]=await Promise.all([
+      fetchTodasLasFilas("usuarios", q=>q.order("dni").order("usuario")),
       sb.from("sucursales").select("*"),
       sb.from("config").select("*"),
     ]);
-    if(us.error) throw us.error;
     if(sucs.error) throw sucs.error;
-    S.usuarios = toCamelRows(us.data).filter(u=>u.activo!=="no");
+    S.usuarios = toCamelRows(usTodas||[]).filter(u=>u.activo!=="no");
     if(!cfg.error && cfg.data){
       const c = {};
       cfg.data.forEach(row=>{ c[row.clave] = row.valor; });
@@ -1897,7 +1926,7 @@ function bultosRealesHoy(recorrido, sucursal){
 
 function tiempoDescarga(recorrido, sucursal){
   const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(recorrido) && normNotif(t.sucursal)===normNotif(sucursal));
-  if(!est) return 0;
+  if(!est) return minDescargaPorDefecto();   // antes devolvía 0 y el recorrido parecía más corto de lo que es
   const bultosRef = Number(est.bultos_ref)||0;
   const tiempoRefSeg = Number(est.tiempo_est_seg)||0;
   if(bultosRef<=0) return tiempoRefSeg/60; // sin referencia de cuántos bultos representa ese tiempo — usar el fijo tal cual
@@ -2079,14 +2108,14 @@ function renderWidgetFlotaHoy(){
   if(!listaRecorridos) return "";
 
   return `
-  <div id="flota-widget" class="card" style="margin-bottom:16px;padding:14px 18px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <span style="font-size:13px;font-weight:700;color:var(--muted)">🚚 RECORRIDOS DE HOY</span>
-    </div>
-    ${listaRecorridos || `<p style="font-size:13px;color:var(--muted);margin-bottom:12px">Todavía no salió ningún recorrido hoy.</p>`}
-  </div>`;
+  <details id="flota-widget" class="card flota-desp" style="margin-bottom:16px;padding:12px 18px" ${widgetFlotaAbierto()?"open":""} ontoggle="guardarWidgetFlota(this.open)">
+    <summary><span style="font-size:13px;font-weight:700;color:var(--muted)">🚚 RECORRIDOS DE HOY</span><span class="flota-desp-f">${widgetFlotaAbierto()?"▲ Ocultar":"▼ Ver"}</span></summary>
+    <div style="margin-top:10px">${listaRecorridos || `<p style="font-size:13px;color:var(--muted);margin-bottom:12px">Todavía no salió ningún recorrido hoy.</p>`}</div>
+  </details>`;
 }
 
+function widgetFlotaAbierto(){ try{ return localStorage.getItem("tl_flota_widget")==="1"; }catch(e){ return false; } }   // cerrado por defecto
+function guardarWidgetFlota(abierto){ try{ localStorage.setItem("tl_flota_widget",abierto?"1":"0"); }catch(e){} render(); }
 function buscarYMostrarEtaSucursal(nombre){
   S.flotaEtaResultado = {sucursal:nombre, resultado: buscarEstadoSucursal(nombre)};
   render();
@@ -2951,7 +2980,7 @@ function trazaDevolucion(d){
   const corrP=prods.filter(x=>x.correccionProduccion);
   if(corrP.length){
     const cp=corrP[0].correccionProduccion;
-    pasos.push({dot:col.warn, t:"✏️ Corregida por Producción", m:unir(hora(cp.at), cp.por?`por ${cp.por}`:"", corrP.map(x=>`${x.correccionProduccion.antes?.descripcion||"?"} ${fmtNum(x.correccionProduccion.antes?.cantidad??"")} ${x.correccionProduccion.antes?.unidad||""} → ${x.descripcion} ${fmtNum(_llegoCant(x))} ${x.unidad||""}`).join("; "))});
+    pasos.push({dot:col.warn, t:"✏️ Corregida por Producción", m:unir(hora(cp.at), cp.por?`por ${cp.por}`:"", corrP.map(x=>x.correccionProduccion.agregado?`agregó ${x.descripcion} ${fmtNum(_llegoCant(x))} ${x.unidad||""}`:`${x.correccionProduccion.antes?.descripcion||"?"} ${fmtNum(x.correccionProduccion.antes?.cantidad??"")} ${x.correccionProduccion.antes?.unidad||""} → ${x.descripcion} ${fmtNum(_llegoCant(x))} ${x.unidad||""}`).join("; "))});
   }
   // Fresco: revisión de Producción de lo reutilizable
   const reut=lineasReutilizables(d);
@@ -3666,7 +3695,7 @@ async function pickeoConfirmarConDni(){
   const d=S.pickeoDni; if(!d||d.loading) return;
   const dni=String($("pk-dni")?.value||d.dni||"").replace(/\D/g,"");
   if(!dni){ d.err="Ingresá tu DNI."; render(); return; }
-  const chk=validarDNI(dni);
+  const chk=await validarDNIConRespaldo(dni);
   if(!chk.ok){ d.err=chk.msg; render(); return; }
   d.loading=true; renderNow();
   const firma={ok:true,nombre:chk.nombre,dni};
@@ -4384,11 +4413,15 @@ function rpResumen(){
   const f=(kg,u)=>[kg?`${fmtNum(Math.round(kg*10)/10)} kg`:"",u?`${fmtNum(Math.round(u*10)/10)} un.`:""].filter(Boolean).join(" · ")||"0";
   return {re:f(t.reKg,t.reU), de:f(t.deKg,t.deU)};
 }
-const _chipCorr=x=>x&&x._corr?`<span class="sk-chip amber" title="Corregido por Producción">✏️ era ${escH(x._corr.descripcion)}${x._corr.cantidad!==undefined?` · ${fmtNum(x._corr.cantidad)} ${escH(x._corr.unidad||"")}`:""}</span>`:"";
+const _chipCorr=x=>x&&x._corr&&x._corr.agregado?`<span class="sk-chip amber">➕ agregado por Producción</span>`:x&&x._corr?`<span class="sk-chip amber" title="Corregido por Producción">✏️ era ${escH(x._corr.descripcion)}${x._corr.cantidad!==undefined?` · ${fmtNum(x._corr.cantidad)} ${escH(x._corr.unidad||"")}`:""}</span>`:"";
 
 // ── Corregir una línea (producto y/o cantidad) ──
 let _timerRpBusq=null;
 function rpAbrirEdicion(i){
+  if(i===-1){   // agregar un producto que llegó y la sucursal no cargó
+    S.rpEdit={i:-1, nuevo:true, q:"", res:[], buscando:false, prod:{id:null,descripcion:"",codigoInterno:"",codigoBarras:""}, cant:"", unidad:"Kg", err:""};
+    S.modal="rpEdit"; render(); setTimeout(()=>$("rp-busq")?.focus(),120); return;
+  }
   const x=S.revProd.prods[i]; if(!x) return;
   S.rpEdit={i, q:"", res:[], buscando:false, prod:{id:x.productoId||null, descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", codigoBarras:x.codigoBarras||""},
     cant:String(_llegoCant(x)), unidad:x.unidad||"Kg", err:""};
@@ -4411,13 +4444,14 @@ function rpBuscar(q){
 }
 function rpElegir(k){ const e=S.rpEdit, p=e.res[k]; if(!p) return; e.prod={id:p.id, descripcion:p.descripcion, codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||""}; e.q=""; e.res=[]; render(); }
 function renderRpEditModal(){
-  const e=S.rpEdit, c=S.revProd, x=c&&c.prods[e.i]; if(!x) return "";
-  const original=x._corr||{descripcion:x.descripcion, codigoInterno:x.codigoInterno, cantidad:_llegoCant(x), unidad:x.unidad};
-  const reut=esReutilizable(e.prod);
+  const e=S.rpEdit, c=S.revProd, x=c&&!e.nuevo?c.prods[e.i]:null; if(!e.nuevo && !x) return "";
+  const original=x?(x._corr&&!x._corr.agregado?x._corr:{descripcion:x.descripcion, codigoInterno:x.codigoInterno, cantidad:_llegoCant(x), unidad:x.unidad}):null;
+  const reut=!!e.prod.descripcion && esReutilizable(e.prod);
   return `
-  <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Cargado por la sucursal: <strong style="color:var(--text)">${escH(original.descripcion)}</strong>${original.codigoInterno?` (Int. ${escH(original.codigoInterno)})`:""} · ${fmtNum(original.cantidad)} ${escH(original.unidad||"")}</p>
+  ${e.nuevo?`<p style="font-size:13px;color:var(--muted);margin:0 0 12px">Un producto que llegó y la sucursal no cargó. Queda marcado como <strong>agregado por Producción</strong>.</p>`
+    :`<p style="font-size:13px;color:var(--muted);margin:0 0 12px">Cargado por la sucursal: <strong style="color:var(--text)">${escH(original.descripcion)}</strong>${original.codigoInterno?` (Int. ${escH(original.codigoInterno)})`:""} · ${fmtNum(original.cantidad)} ${escH(original.unidad||"")}</p>`}
   <div class="field"><label>Producto</label>
-    <div class="rp-prod ${reut?"ok":""}"><strong>${escH(e.prod.descripcion)}</strong><span class="mono">${e.prod.codigoInterno?`Int. ${escH(e.prod.codigoInterno)}`:""}${e.prod.codigoBarras?` · ${escH(e.prod.codigoBarras)}`:""}</span>
+    <div class="rp-prod ${reut?"ok":""}"><strong>${escH(e.prod.descripcion||"Elegí el producto con el buscador")}</strong><span class="mono">${e.prod.codigoInterno?`Int. ${escH(e.prod.codigoInterno)}`:""}${e.prod.codigoBarras?` · ${escH(e.prod.codigoBarras)}`:""}</span>
       <span class="rp-prod-tag">${reut?"🏭 reutilizable":"no se reutiliza (se descarta)"}</span></div>
     <input id="rp-busq" class="inp" style="margin-top:8px" type="text" placeholder="🔎 Cambiar: buscá por nombre, código interno o de barras…" value="${escH(e.q)}" oninput="rpBuscar(this.value)" autocomplete="off"/>
     ${e.buscando?`<div style="font-size:13px;color:var(--muted);margin-top:6px"><span class="spinner"></span> Buscando…</div>`:""}
@@ -4436,13 +4470,23 @@ function renderRpEditModal(){
   </div>`;
 }
 function rpGuardarEdicion(){
-  const e=S.rpEdit, c=S.revProd, x=c&&c.prods[e.i]; if(!x) return;
+  const e=S.rpEdit, c=S.revProd;
   const cant=+String(e.cant).replace(",",".");
+  if(e.nuevo){
+    if(!e.prod.descripcion){ e.err="Elegí el producto con el buscador."; render(); return; }
+    if(!(cant>0)){ e.err="Poné la cantidad que llegó."; render(); return; }
+    c.prods.push({productoId:e.prod.id, descripcion:e.prod.descripcion, codigoInterno:e.prod.codigoInterno, codigoBarras:e.prod.codigoBarras,
+      cantidad:cant, cantidadRecibida:cant, unidad:e.unidad, motivo:"Agregado por Producción", _corr:{agregado:true}});
+    S.modal=null; S.rpEdit=null;
+    toast(esReutilizable(e.prod)?"➕ Agregado — decidí si reingresa":"➕ Agregado — ese producto no se reutiliza: se descarta");
+    render(); return;
+  }
+  const x=c&&c.prods[e.i]; if(!x) return;
   if(!(cant>=0) || String(e.cant).trim()===""){ e.err="Poné la cantidad que llegó."; render(); return; }
   const cambiaProd = String(e.prod.codigoInterno||"")!==String(x.codigoInterno||"") || e.prod.descripcion!==x.descripcion;
   const antes=_llegoCant(x);
   if(!cambiaProd && cant===antes && normNotif(e.unidad)===normNotif(x.unidad)){ S.modal=null; S.rpEdit=null; render(); return; }
-  const corr = x._corr || {descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", productoId:x.productoId||null, cantidad:antes, unidad:x.unidad||""};
+  const corr = x._corr || {descripcion:x.descripcion, codigoInterno:x.codigoInterno||"", productoId:x.productoId||null, cantidad:antes, unidad:x.unidad||""};   // si era agregado, sigue siendo agregado
   const nuevo={...x, _corr:corr, unidad:e.unidad};
   if(cambiaProd){ nuevo.productoId=e.prod.id; nuevo.descripcion=e.prod.descripcion; nuevo.codigoInterno=e.prod.codigoInterno; nuevo.codigoBarras=e.prod.codigoBarras; }
   if(x.cantidadRecibida!==undefined && x.cantidadRecibida!==null) nuevo.cantidadRecibida=cant; else nuevo.cantidad=cant;
@@ -4493,6 +4537,7 @@ function renderRevisionProduccion(){
           ${!ok && l.decision==="parcial"?`<div class="cl-falta" style="margin-top:8px;font-size:13px">Poné cuánto reingresa (más de 0 y menos de ${fmtNum(l.llego)})</div>`:""}
         </div>`; }).join("")}
     </div>
+    <button class="btn btn-ghost btn-md" style="margin-top:12px" onclick="rpAbrirEdicion(-1)">➕ Agregar un producto que no cargaron</button>
     ${otras.length?`<div class="rp-otras">
       <div style="margin-bottom:6px"><strong>Se descartan sin revisión</strong> (no son reutilizables). Si alguno está mal cargado, corregilo:</div>
       ${otras.map(({x,i})=>`<div class="rp-otra"><span>${escH(x.descripcion)} · ${fmtNum(_llegoCant(x))} ${escH(x.unidad||"")} ${_chipCorr(x)}</span><button class="rp-corr" onclick="rpAbrirEdicion(${i})">✏️ Corregir</button></div>`).join("")}
@@ -4523,7 +4568,8 @@ async function rpGuardar(firmaParam){
   const res=rpResumen();
   const prods=c.prods.map((x,i)=>{
     const {_corr, ...y}=x;
-    if(_corr && !y.correccionProduccion) y.correccionProduccion={antes:_corr, por:firma.nombre, at:ahora};
+    if(_corr && _corr.agregado) y.correccionProduccion={agregado:true, por:firma.nombre, at:ahora};
+    else if(_corr && !y.correccionProduccion) y.correccionProduccion={antes:_corr, por:firma.nombre, at:ahora};
     else if(_corr && y.correccionProduccion) y.correccionProduccion={...y.correccionProduccion, por:firma.nombre, at:ahora};
     const l=lineas.find(z=>z.i===i);
     if(l){ const r=rpReingresa(l); y.produccion={reingresa:r, descarte:Math.round((l.llego-r)*1000)/1000, por:firma.nombre, at:ahora}; }
@@ -4864,7 +4910,7 @@ function renderDevoluciones(){
           ${d.tipoDevolucion==="Secos" ? renderSecosBloque(d) : ""}
           ${(()=>{ const prods = productosDeDevolucion(d); return (prods.length && d.tipoDevolucion!=="Secos")?`
           <div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">
-            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}${esFresco(d)?` ${chipProduccion(p)}`:""}${p.correccionProduccion?` <span class="sk-chip amber" title="Corregido por ${escH(p.correccionProduccion.por||"Producción")}">✏️ era ${escH(p.correccionProduccion.antes?.descripcion||"")}${p.correccionProduccion.antes?.cantidad!==undefined?` · ${fmtNum(p.correccionProduccion.antes.cantidad)} ${escH(p.correccionProduccion.antes.unidad||"")}`:""}</span>`:""}</div>`).join("")}
+            ${prods.map(p=>`<div style="font-size:13px"><strong>${escH(p.descripcion)}</strong>${p.cantidad?` <span style="color:var(--teal);font-weight:600">${escH(String(p.cantidad))} ${escH(p.unidad||"")}</span>`:""}${(p.cantidadOriginal!==undefined&&+p.cantidadOriginal!==+p.cantidad)?` <span class="sk-chip amber" title="Corregida por ${escH(p.editadoPor||"Admin")}">✏️ era ${fmtNum(+p.cantidadOriginal)}</span>`:""}${p.cantidadRecibida!==undefined && +p.cantidadRecibida!==+p.cantidad?` <span style="color:var(--red);font-weight:600">→ recibido ${escH(String(p.cantidadRecibida))} ${escH(p.unidad||"")}</span>`:""}${p.codigoInterno?` <span style="color:var(--faint)">(${escH(p.codigoInterno)})</span>`:""}${p.motivo?` <span style="color:var(--muted)">— ${escH(p.motivo)}</span>`:""}${esFresco(d)?` ${chipProduccion(p)}`:""}${p.correccionProduccion?.agregado?` <span class="sk-chip amber">➕ agregado por Producción</span>`:p.correccionProduccion?` <span class="sk-chip amber" title="Corregido por ${escH(p.correccionProduccion.por||"Producción")}">✏️ era ${escH(p.correccionProduccion.antes?.descripcion||"")}${p.correccionProduccion.antes?.cantidad!==undefined?` · ${fmtNum(p.correccionProduccion.antes.cantidad)} ${escH(p.correccionProduccion.antes.unidad||"")}`:""}</span>`:""}</div>`).join("")}
           </div>`:""; })()}
           ${miniaturasFotos(fotosDe(d),5)}
           ${d.nombreQuienLevanto?`<p style="margin-top:8px;font-size:12px;color:var(--muted)">🤲 Tomada por ${escH(d.nombreQuienLevanto)}</p>`:""}
@@ -5014,6 +5060,19 @@ async function sheetsUpdate(id,data){
 //  Devuelve el nombre para mostrarlo en pantalla.
 //  En modo demo (sin Sheets) acepta cualquier DNI de 7-8 dígitos.
 // ──────────────────────────────────────────────────────────
+// Si un DNI no está en la lista que tiene la app (lista vieja, se cortó la carga…), se busca
+// directamente en la base antes de decir que no existe.
+async function validarDNIConRespaldo(dni){
+  let r=validarDNI(dni);
+  if(r.ok || !/no encontrado/i.test(r.msg||"")) return r;
+  try{
+    const limpio=String(dni).replace(/\D/g,"");
+    const { data } = await sb.from("usuarios").select("*").eq("dni",limpio);
+    const nuevas=toCamelRows(data||[]).filter(u=>u.activo!=="no" && !S.usuarios.some(x=>String(x.dni)===String(u.dni) && _mismaCuenta(x.usuario,u.usuario)));
+    if(nuevas.length) S.usuarios=[...S.usuarios,...nuevas];
+  }catch(e){}
+  return validarDNI(dni);
+}
 function validarDNI(dni){
   // Normalizar: solo dígitos, sin puntos ni espacios
   const dniLimpio = String(dni).replace(/\D/g,"");
@@ -6343,10 +6402,11 @@ function renderAdmin(){
         <button class="tab ${S.adminTab==="usuarios"?"active":""}" onclick="S.adminTab='usuarios';render()">👤 Usuarios</button>
         <button class="tab ${S.adminTab==="devmet"?"active":""}" onclick="S.adminTab='devmet';render()">📉 Métricas de devoluciones</button>
         <button class="tab ${S.adminTab==="catalogo"?"active":""}" onclick="S.adminTab='catalogo';render()">📚 Catálogo</button>
+        <button class="tab ${S.adminTab==="recorridos"?"active":""}" onclick="S.adminTab='recorridos';S.subTabRec='armar';S.armadosCargados=false;render()">🚛 Recorridos</button>
         <button class="tab ${S.adminTab==="config"?"active":""}" onclick="S.adminTab='config';render()">⚙️ Configuración</button>
       </div>
     </div>
-    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():S.adminTab==="devmet"?renderMetricasDevoluciones():S.adminTab==="catalogo"?renderAdminCatalogo():renderAdminConfig()}</div>
+    <div class="vt-content">${S.adminTab==="solicitudes"?renderAdminSolicitudes():S.adminTab==="usuarios"?renderAdminUsuarios():S.adminTab==="devmet"?renderMetricasDevoluciones():S.adminTab==="catalogo"?renderAdminCatalogo():S.adminTab==="recorridos"?renderRecorridosTab():renderAdminConfig()}</div>
   </div>`;
 }
 
@@ -8751,6 +8811,9 @@ function renderMetricas(){
   const repsTodos = metricasPorRepartidor(reqs);
   if(S.metRepartidor) reqs = reqs.filter(r=>tramosDeSolicitud(r).some(t=>claveRepartidor(t)===S.metRepartidor));
   const repSel = S.metRepartidor ? repsTodos.find(o=>o.clave===S.metRepartidor) : null;
+  if(S.incidencias===undefined){ S.incidencias=null; setTimeout(cargarIncidencias,0); }
+  const incEnRango=(S.incidencias||[]).filter(x=>{ const d=String(x.createdAt||"").slice(0,10); return (!S.metDesde||d>=S.metDesde)&&(!S.metHasta||d<=S.metHasta); });
+  const incDe=clave=>incEnRango.filter(x=>("d:"+_dniLimpio(x.dni))===clave);
 
   const total=reqs.length||1;
   const byS={},byE={};
@@ -8908,7 +8971,10 @@ function renderMetricas(){
           <div class="kpi-mini"><div class="kpi-mini-val" style="color:#4f9eff">${repSel.lleva}</div><div class="kpi-mini-lbl">La lleva ahora</div></div>
           <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f05252">${repSel.no_entrego}</div><div class="kpi-mini-lbl">Tomó y no dejó</div></div>
           <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f5a623">${repSel.manual}</div><div class="kpi-mini-lbl">Cerradas a mano</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f05252">${incDe(repSel.clave).length}</div><div class="kpi-mini-lbl">⚠️ Llamados de atención</div></div>
         </div>
+        ${incDe(repSel.clave).length?`<div class="inc-lista"><div class="ar-mini" style="margin-bottom:6px">⚠️ Llamados de atención (no entregó al cerrar su recorrido)</div>
+          ${incDe(repSel.clave).map(x=>`<div class="inc-it"><span>${fdt(x.createdAt)}</span><span class="mono" style="cursor:pointer;color:var(--blue)" onclick="openDetalle('${escH(x.solicitudId||"")}')">${escH(x.solicitudId||"")}</span><span>${escH(x.recorrido||"")}</span><span style="color:var(--muted)">${x.cierreAutomatico?"cerrado solo a las 5 h":"cerró al volver"}</span>${esAdminRec()?`<button class="btn btn-ghost btn-sm" onclick="anularIncidencia('${escH(String(x.id))}')">Anular</button>`:""}</div>`).join("")}</div>`:""}
         <div class="table-wrap"><table style="font-size:14px">
           <thead><tr><th>N°</th><th>Origen → Destino</th><th>Tramo</th><th>La tomó</th><th>Cómo terminó</th><th>Estado actual</th></tr></thead>
           <tbody>${paginar("metRepDet",ts,[S.metDesde,S.metHasta,S.metSucursal,S.metRecorrido,S.metRepartidor].join("|")).map(t=>`<tr onclick="openDetalle('${escH(t.r.id)}')" style="cursor:pointer">
@@ -8922,7 +8988,7 @@ function renderMetricas(){
         ${botonVerMas("metRepDet",ts.length,"padding:12px 0 0")}`;
       })():`
       <div class="table-wrap"><table style="font-size:14px">
-        <thead><tr><th>Repartidor</th><th>Tomó</th><th>Entregó</th><th>La lleva ahora</th><th>Tomó y no dejó</th><th>Cerradas a mano</th><th>% entregó</th></tr></thead>
+        <thead><tr><th>Repartidor</th><th>Tomó</th><th>Entregó</th><th>La lleva ahora</th><th>Tomó y no dejó</th><th>Cerradas a mano</th><th>⚠️ Llamados de atención</th><th>% entregó</th></tr></thead>
         <tbody>${repsTodos.map(o=>{
           const cerr=o.entrego+o.no_entrego+o.manual, pct=cerr?Math.round(o.entrego/cerr*100):null;
           return `<tr onclick="S.metRepartidor='${escH(o.clave)}';render()" style="cursor:pointer" title="Ver lo que tomó ${escH(o.nombre)}">
@@ -8931,6 +8997,7 @@ function renderMetricas(){
           <td class="mono" style="color:#4f9eff">${o.lleva||"—"}</td>
           <td class="mono" style="color:${o.no_entrego?"#f05252":"inherit"};font-weight:${o.no_entrego?700:400}">${o.no_entrego||"—"}</td>
           <td class="mono" style="color:${o.manual?"#f5a623":"inherit"}">${o.manual||"—"}</td>
+          <td class="mono" style="color:${incDe(o.clave).length?"#f05252":"inherit"};font-weight:${incDe(o.clave).length?800:400}">${incDe(o.clave).length||"—"}</td>
           <td class="mono">${pct===null?"—":pct+"%"}</td></tr>`; }).join("")}</tbody>
       </table></div>
       <p style="font-size:12.5px;color:#a9b8d0;margin-top:10px">"Tomó y no dejó": la levantó pero terminó como no entregada, volvió atrás o se canceló. "Cerradas a mano": la tomó, pero la pasó a Entregada otra persona. El % es sobre las que ya terminaron (sin contar las que lleva ahora).</p>`}
@@ -9137,7 +9204,9 @@ async function qrIniciarViaje(){
 async function qrFinalizarViaje(){
   const e=S.estoyEn, v=e&&e.viaje; if(!v || e.loading) return;
   const L=estoyEnLista();
-  if(L.dejar.length && !confirm(`Todavía tenés ${L.dejar.length} para dejar acá. ¿Terminar el recorrido igual?`)) return;
+  const enMano=S.requests.filter(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===_dniLimpio(S.miIdentidadRep?.dni)).length;
+  if(enMano && !confirm(`Todavía tenés ${enMano} sin entregar. Si terminás, quedan como NO ENTREGADAS a tu nombre y se le avisa a Logística. ¿Terminar igual?`)) return;
+  if(L.dejar.length && !enMano && !confirm(`Todavía tenés ${L.dejar.length} para dejar acá. ¿Terminar el recorrido igual?`)) return;
   if(!L.dejar.length && !confirm(`¿Terminar el recorrido ${v.recorrido} (${v.id})?`)) return;
   e.loading=true; renderNow();
   try{
@@ -9146,6 +9215,8 @@ async function qrFinalizarViaje(){
     if(error) throw error;
     await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:"FABRICA", evento:"REGRESO FABRICA", gps_obs:pres.obs, recorrido:v.recorrido});
     if(e.armado) await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id",e.armado.id);
+    const sinEntregar = await registrarNoEntregadas({dni:S.miIdentidadRep?.dni, nombre:S.miIdentidadRep?.nombre, recorrido:v.recorrido, armadoId:e.armado?.id, idViaje:v.id}, false);
+    if(sinEntregar) toast(`⚠️ Quedaron ${sinEntregar} sin entregar: se avisó a Logística`,"warn");
     toast(`🏁 Recorrido ${v.recorrido} terminado`);
     S.estoyEn=null;
   }catch(err){ console.warn("Finalizar viaje:",err); e.loading=false; toast("⚠️ No se pudo terminar el recorrido — probá de nuevo","warn"); }
@@ -9196,7 +9267,7 @@ async function confirmarEntregaFirma(){
   const dni=_dniLimpio(d.dni);
   if(!dni){ d.err="Que la persona que recibe escriba su DNI."; render(); return; }
   if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
-  const chk=validarDNI(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
+  const chk=await validarDNIConRespaldo(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
   const fila=chk.usuario||{};
   const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(r.destino)));
   if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}${fila.usuario||fila.area?` (${fila.usuario||fila.area})`:""}, no de ${r.destino}.`; render(); return; }
@@ -9215,8 +9286,7 @@ async function confirmarEntregaFirma(){
 function cardQR(r, accion){
   const btn = accion==="tomar"
     ? `<button class="btn btn-warn btn-md" onclick="qrTomar(['${escH(r.id)}'])" ${S.qrOcupado?"disabled":""}>🤲 Tomar</button>`
-    : accion==="retirar"
-    ? `<button class="btn btn-warn btn-md" onclick="abrirRetiroFirma(['${escH(r.id)}'])">🤲 Retirar</button>`
+
     : `<button class="btn btn-success btn-md" onclick="abrirEntregaFirma('${escH(r.id)}')">✅ Entregar</button>`;
   return `<div class="qr-card">
     <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>
@@ -9235,24 +9305,46 @@ function cardQR(r, accion){
 //  volver (CERRADO) o se cierra solo a las 5 horas (CERRADO_AUTO).
 // ═══════════════════════════════════════════════════════════════════
 const HORAS_CIERRE_AUTO = 5;
-const ESTADOS_ARMABLES = ["Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En fábrica"];
+const ESTADOS_ARMABLES = ["Pendiente","En revisión","Aprobada","Programada","Lista para retirar","En fábrica","No entregada"];
 const _armadoAbierto = a => a && (a.estado==="PREPARADO" || a.estado==="EN_CURSO");
 const armadoDe = id => (S.armados||[]).find(a=>a.id===id);
 // ¿esta transferencia ya está en un recorrido que sigue abierto?
 const enArmadoAbierto = r => !!r.armadoId && _armadoAbierto(armadoDe(r.armadoId));
 
+// Lo que el repartidor todavía tenía encima al cerrarse su recorrido: pasa a "No entregada"
+// (Logística decide quién la lleva) y queda una incidencia (llamado de atención) a su nombre.
+async function registrarNoEntregadas(info, auto){
+  const dni=_dniLimpio(info.dni); if(!dni) return 0;
+  try{
+    const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").or(`dni_repartidor.eq.${dni},dni_entrega.eq.${dni}`);
+    const suyas=toCamelRows(data||[]).filter(r=>{ const p=portadorSolicitud(r); return p && p.dni===dni; });
+    if(!suyas.length) return 0;
+    const ts=now(), motivo=`No la entregó ${info.nombre||"el repartidor"} en su recorrido ${info.recorrido||""} (${auto?"cerrado automáticamente":"cerrado al volver a fábrica"})`;
+    for(const r of suyas){
+      const ch={estado:"No entregada", motivoNoRecibido:motivo, armadoId:null, updatedAt:ts};
+      await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+      S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+    }
+    await sb.from("incidencias_repartidores").insert(suyas.map(r=>({dni, nombre:info.nombre||"", tipo:"NO_ENTREGO", solicitud_id:r.id, armado_id:info.armadoId||null, id_viaje:info.idViaje||null, recorrido:info.recorrido||"", cierre_automatico:!!auto, detalle:motivo})));
+    crearNotificacion("LOGISTICA", `⚠️ ${info.nombre||"Un repartidor"} cerró ${info.recorrido||"su recorrido"}${auto?" (automáticamente)":""} sin entregar ${suyas.length}: ${suyas.map(r=>r.id).join(", ")}`, suyas[0].id);
+    return suyas.length;
+  }catch(e){ console.warn("No entregadas:",e); return 0; }
+}
 async function cerrarRecorridosVencidos(){
   try{ const r=await sb.rpc("cerrar_recorridos_vencidos"); if(!r.error) return; }catch(e){}
   // Si la función de la base no está, lo hace la app
   const lim=new Date(Date.now()-HORAS_CIERRE_AUTO*3600e3).toISOString();
   try{
-    const { data:venc } = await sb.from("recorridos_armados").select("id,id_viaje,recorrido").eq("estado","EN_CURSO").lt("tomado_at",lim);
-    for(const a of (venc||[])){
-      await sb.from("recorridos_armados").update({estado:"CERRADO_AUTO",cerrado_at:new Date().toISOString(),cierre_automatico:true}).eq("id",a.id).eq("estado","EN_CURSO");
-      if(a.id_viaje){
-        await sb.from("flota_viajes").update({estado:"FINALIZADO",cierre_automatico:true}).eq("id",a.id_viaje).eq("estado","ACTIVO");
-        await sb.from("flota_registros_qr").insert({ts:new Date().toISOString(),id_viaje:a.id_viaje,sucursal:"FABRICA",evento:"CIERRE AUTOMATICO",gps_obs:`Cerrado solo a las ${HORAS_CIERRE_AUTO} horas`,recorrido:a.recorrido});
-      }
+    const { data:viajes } = await sb.from("flota_viajes").select("id,recorrido,dni_rep1,nombre_rep1").eq("estado","ACTIVO").lt("hora_salida",lim);
+    for(const v of (viajes||[])){
+      const { data:ar } = await sb.from("recorridos_armados").select("id").eq("id_viaje",v.id).eq("estado","EN_CURSO").limit(1);
+      const armadoId=ar&&ar[0]?ar[0].id:null;
+      // primero se cierra (así otro celular no lo procesa dos veces)
+      const { data:cerr } = await sb.from("flota_viajes").update({estado:"FINALIZADO",cierre_automatico:true}).eq("id",v.id).eq("estado","ACTIVO").select();
+      if(!cerr || !cerr.length) continue;
+      await sb.from("flota_registros_qr").insert({ts:new Date().toISOString(),id_viaje:v.id,sucursal:"FABRICA",evento:"CIERRE AUTOMATICO",gps_obs:`Cerrado solo a las ${HORAS_CIERRE_AUTO} horas`,recorrido:v.recorrido});
+      if(armadoId) await sb.from("recorridos_armados").update({estado:"CERRADO_AUTO",cerrado_at:new Date().toISOString(),cierre_automatico:true}).eq("id",armadoId);
+      await registrarNoEntregadas({dni:v.dni_rep1, nombre:v.nombre_rep1, recorrido:v.recorrido, armadoId, idViaje:v.id}, true);
     }
   }catch(e){ console.warn("Cierre automático:",e); }
 }
@@ -9289,19 +9381,142 @@ async function crearArmado(){
   S.armados=[toCamelRow(fila),...(S.armados||[])]; S.armadoSel=id; S.nuevoArmadoRec="";
   toast(`✅ Recorrido ${rec} armado — sumale las transferencias`); render();
 }
+// ¿Esta transferencia sale de Fábrica en este recorrido? (origen Fábrica, espera su 2º tramo, o se reasignó desde Fábrica)
+const saleDeFabrica = r => esOrigenFabrica(r) || r.estado==="En fábrica" || r.estado==="No entregada";
+// ¿En este viaje termina en Fábrica? (va a Fábrica, o pasa por Fábrica y todavía no llegó)
+const terminaEnFabrica = r => normNotif(r.destino)==="fabrica" || (_pasaPorFab(r) && !r.fabricaAt && r.estado!=="En fábrica");
+const esAdminRec = () => S.user?.rol==="admin";
+
 async function asignarAArmado(reqId){
-  const a=armadoDe(S.armadoSel); if(!_armadoAbierto(a)) return;
-  if(a.estado==="EN_CURSO" && !confirm(`El recorrido ${a.recorrido} ya salió con ${a.nombreRep||"el repartidor"}. ¿Sumarle esta transferencia? La va a ver en su próxima parada.`)) return;
+  const a=armadoDe(S.armadoSel), r=S.requests.find(x=>x.id===reqId); if(!a||!r) return;
+  if(!_armadoAbierto(a) && !esAdminRec()) return;
+  if(a.estado==="EN_CURSO" && !esAdminRec()){
+    if(saleDeFabrica(r)){ toast(`🔒 ${a.recorrido} ya salió de Fábrica: no se le puede sumar algo que sale de Fábrica`,"warn"); return; }
+    if(!confirm(`El recorrido ${a.recorrido} ya salió con ${a.nombreRep||"el repartidor"}. ¿Sumarle esta transferencia? La va a ver en su próxima parada.`)) return;
+  }
   const ch={armadoId:a.id, recorrido:a.recorrido, updatedAt:now()};
   const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",reqId);
   if(error){ toast(/armado_id/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo asignar","warn"); return; }
-  S.requests=S.requests.map(r=>r.id===reqId?{...r,...ch}:r); render();
+  S.requests=S.requests.map(x=>x.id===reqId?{...x,...ch}:x);
+  if(a.estado==="EN_CURSO" && a.dniRep){
+    crearNotificacion(`REP:${a.dniRep}`, `🚛 Te sumaron la ${reqId} a tu recorrido ${a.recorrido}: ${origenLabel(r)} → ${r.destino||""}`, reqId);
+    toast(`📲 Le avisamos a ${a.nombreRep||"el repartidor"}`);
+  }
+  render();
 }
 async function quitarDeArmado(reqId){
+  const r=S.requests.find(x=>x.id===reqId), a=r&&armadoDe(r.armadoId);
+  if(a && a.estado==="EN_CURSO" && saleDeFabrica(r) && !esAdminRec()){ toast("🔒 Ya salió de Fábrica: esto no se puede sacar del recorrido","warn"); return; }
   const ch={armadoId:null, updatedAt:now()};
   const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",reqId);
   if(error){ toast("⚠️ No se pudo quitar","warn"); return; }
-  S.requests=S.requests.map(r=>r.id===reqId?{...r,...ch}:r); render();
+  S.requests=S.requests.map(x=>x.id===reqId?{...x,...ch}:x); render();
+}
+// ── Admin: corregir un recorrido (estado / repartidor) y quién lleva una transferencia ──
+function abrirEditarArmado(id){
+  const a=armadoDe(id); if(!a||!esAdminRec()) return;
+  S.armadoEdit={id, estado:a.estado, dniRep:a.dniRep||"", err:""}; S.modal="armadoEdit"; render();
+}
+function renderArmadoEditModal(){
+  const d=S.armadoEdit, reps=S.usuarios.filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no");
+  return `
+  <div class="field"><label>Estado</label>
+    <select class="inp" onchange="S.armadoEdit.estado=this.value">${[["PREPARADO","Preparado (todavía no salió)"],["EN_CURSO","En curso"],["CERRADO","Cerrado"],["CERRADO_AUTO","Cerrado automáticamente"],["CANCELADO","Dado de baja"]].map(([k,t])=>`<option value="${k}" ${d.estado===k?"selected":""}>${t}</option>`).join("")}</select></div>
+  <div class="field"><label>Repartidor que lo lleva</label>
+    <select class="inp" onchange="S.armadoEdit.dniRep=this.value"><option value="">— Nadie —</option>${reps.map(u=>`<option value="${escH(String(u.dni))}" ${String(d.dniRep)===String(u.dni)?"selected":""}>${escH(u.nombre)} (${escH(String(u.dni))})</option>`).join("")}</select></div>
+  ${d.err?`<div class="err-msg" style="display:block;margin-bottom:10px">${escH(d.err)}</div>`:""}
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button><button class="btn btn-success btn-md" onclick="guardarArmadoEdit()">✅ Guardar</button></div>`;
+}
+async function guardarArmadoEdit(){
+  const d=S.armadoEdit; if(!d) return;
+  const rep=S.usuarios.find(u=>String(u.dni)===String(d.dniRep));
+  const ch={estado:d.estado, dni_rep:d.dniRep||null, nombre_rep:rep?rep.nombre:null};
+  if(["CERRADO","CERRADO_AUTO","CANCELADO"].includes(d.estado)) ch.cerrado_at=new Date().toISOString();
+  const { error } = await sb.from("recorridos_armados").update(ch).eq("id",d.id);
+  if(error){ d.err="No se pudo guardar"; render(); return; }
+  S.armados=S.armados.map(a=>a.id===d.id?{...a,...toCamelRow(ch)}:a);
+  S.modal=null; S.armadoEdit=null; toast("✅ Recorrido corregido"); render();
+}
+function abrirCambiarPortador(reqId){
+  if(!esAdminRec()) return;
+  S.portadorEdit={id:reqId, dni:""}; S.modal="portadorEdit"; render();
+}
+function renderPortadorEditModal(){
+  const d=S.portadorEdit, r=S.requests.find(x=>x.id===d.id)||{}, p=portadorSolicitud(r);
+  const reps=S.usuarios.filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no");
+  return `<p style="font-size:14px;margin:0 0 12px"><span class="mono">${escH(r.id||"")}</span> · ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong><br><span style="color:var(--muted)">Hoy figura que la lleva: <strong>${escH(p?.nombre||"nadie")}</strong></span></p>
+  <div class="field"><label>Quién la lleva en realidad</label>
+    <select class="inp" onchange="S.portadorEdit.dni=this.value"><option value="">Elegí…</option>${reps.map(u=>`<option value="${escH(String(u.dni))}">${escH(u.nombre)} (${escH(String(u.dni))})</option>`).join("")}</select></div>
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button><button class="btn btn-success btn-md" onclick="guardarPortador()">✅ Corregir</button></div>`;
+}
+async function guardarPortador(){
+  const d=S.portadorEdit, r=S.requests.find(x=>x.id===d?.id); if(!r) return;
+  const u=S.usuarios.find(x=>String(x.dni)===String(d.dni)); if(!u){ toast("Elegí el repartidor","warn"); return; }
+  const seg=_pasaPorFab(r) && !!r.fabricaAt;
+  const ch = seg ? {nombreQuienEntrego:u.nombre, dniEntrega:String(u.dni), updatedAt:now()} : {nombreQuienLevanto:u.nombre, dniRepartidor:String(u.dni), updatedAt:now()};
+  const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+  if(error){ toast("⚠️ No se pudo corregir","warn"); return; }
+  S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+  S.modal=null; S.portadorEdit=null; toast(`✅ Ahora figura que la lleva ${u.nombre}`); render();
+}
+// ── Paradas del recorrido armado: las de la hoja de ruta + las que hagan falta ──
+// Si sumás una transferencia a una sucursal que no está en el recorrido, se agrega como parada
+// (en el lugar donde menos tiempo suma). Las que van a Fábrica no agregan parada: vuelven a Fábrica.
+function paradasArmado(a, mias){
+  const base=paradasDe(a.recorrido).map(p=>({nombre:p.sucursal, extra:false}));
+  const tiene=n=>base.some(p=>normNotif(p.nombre)===normNotif(n));
+  const faltan=[];
+  mias.forEach(r=>{
+    if(!terminaEnFabrica(r) && r.destino && !tiene(r.destino) && !faltan.some(x=>normNotif(x)===normNotif(r.destino))) faltan.push(r.destino);
+    const o=origenLabel(r);
+    if(!saleDeFabrica(r) && o && !tiene(o) && !faltan.some(x=>normNotif(x)===normNotif(o))) faltan.push(o);
+  });
+  faltan.forEach(n=>{
+    let mejor=base.length, costo=Infinity;
+    for(let i=0;i<=base.length;i++){
+      const ant=i===0?"FABRICA":base[i-1].nombre, sig=i===base.length?"FABRICA":base[i].nombre;
+      const a1=minutosEntre(ant,n), a2=minutosEntre(n,sig), a0=minutosEntre(ant,sig);
+      if(a1===null||a2===null) continue;
+      const extra=a1+a2-(a0||0); if(extra<costo){ costo=extra; mejor=i; }
+    }
+    base.splice(mejor,0,{nombre:n, extra:true});
+  });
+  return base;
+}
+function minDescargaPorDefecto(){ const v=+S.config?.minDescargaDefault; return v>0?v:10; }
+async function guardarDescargaDefecto(v){
+  const n=Math.max(0,Math.round(+v||0)); const val=String(n||10);
+  S.config={...S.config, minDescargaDefault:val}; render();
+  try{ await sb.from("config").upsert({clave:"minDescargaDefault", valor:val}); }catch(e){}
+}
+// Tiempo estimado: viaje entre paradas + descarga en cada parada donde hay algo + vuelta a Fábrica
+function estimarArmado(a, paradas, conAccion){
+  let viaje=0, descarga=0, ant="FABRICA", falta=null;
+  paradas.forEach(p=>{
+    const t=minutosEntre(ant,p.nombre); if(t===null){ if(!falta) falta=[ant,p.nombre]; } else viaje+=t;
+    if(conAccion(p.nombre)) descarga+=Math.round(tiempoDescarga(a.recorrido,p.nombre)||minDescargaPorDefecto());
+    ant=p.nombre;
+  });
+  if(paradas.length){ const t=minutosEntre(ant,"FABRICA"); if(t===null){ if(!falta) falta=[ant,"FABRICA"]; } else viaje+=t; }
+  return {viaje, descarga, total:viaje+descarga, falta};
+}
+const _fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${String(Math.round(m%60)).padStart(2,"0")} min`:`${Math.round(m)} min`;
+
+// ── Incidencias (llamados de atención) ──
+async function cargarIncidencias(){
+  try{
+    const desde=new Date(Date.now()-366*864e5).toISOString();
+    const { data, error } = await sb.from("incidencias_repartidores").select("*").gte("created_at",desde).order("created_at",{ascending:false}).limit(2000);
+    if(error) throw error;
+    S.incidencias=toCamelRows(data||[]);
+  }catch(e){ S.incidencias=[]; }
+  render();
+}
+async function anularIncidencia(id){
+  if(!esAdminRec() || !confirm("¿Anular esta incidencia? (si fue un error)")) return;
+  const { error } = await sb.from("incidencias_repartidores").delete().eq("id",id);
+  if(error){ toast("⚠️ No se pudo anular","warn"); return; }
+  S.incidencias=(S.incidencias||[]).filter(x=>String(x.id)!==String(id)); toast("Incidencia anulada"); render();
 }
 async function cancelarArmado(id){
   const a=armadoDe(id); if(!a||a.estado!=="PREPARADO") return;
@@ -9324,75 +9539,88 @@ function renderRecorridosTab(){
 }
 function renderArmarDelDia(){
   if(S.armadosFalta) return `<div class="card" style="padding:20px">⚠️ Para armar recorridos falta correr una vez <strong>recorridos_01_armados.sql</strong> en Supabase.</div>`;
-  const abiertos=(S.armados||[]).filter(_armadoAbierto);
+  const admin=esAdminRec();
+  const visibles=(S.armados||[]).filter(x=>_armadoAbierto(x) || (admin && S.verCerradosRec));
   const a=armadoDe(S.armadoSel);
   const q=normNotif(S.armadoBusq||"");
-  const par=a?paradasDe(a.recorrido).map(p=>p.sucursal):[];
-  const parN=new Set(par.map(normNotif));
-  // Izquierda: lo que todavía no está en un recorrido abierto
+  const enCurso=a&&a.estado==="EN_CURSO";
+  const editable=a && (_armadoAbierto(a) || admin);
+  const mias=a?S.requests.filter(r=>r.armadoId===a.id):[];
+  const paradas=a?paradasArmado(a,mias):[];
+  const parN=new Set(paradas.map(p=>normNotif(p.nombre)));
+  // ── Izquierda: lo que todavía no está en un recorrido abierto
   let libres=S.requests.filter(r=>ESTADOS_ARMABLES.includes(r.estado) && !enArmadoAbierto(r) && r.tipoPedido!=="devolucion");
   if(q) libres=libres.filter(r=>[r.id,r.sucursal,r.area,r.destino,r.descripcion,r.recorrido].some(v=>normNotif(v||"").includes(q)));
   const sugerida=r=> a && (normNotif(r.recorrido)===normNotif(a.recorrido) || parN.has(normNotif(r.destino)) || parN.has(normNotif(origenLabel(r))));
   libres.sort((x,y)=>(sugerida(y)?1:0)-(sugerida(x)?1:0));
-  const editable=_armadoAbierto(a);
-  const filaLibre=r=>`<div class="ar-it ${sugerida(r)?"sug":""}">
+  const bloqueada=r=> enCurso && !admin && saleDeFabrica(r);
+  const gest=r=>puede("solicitudes")?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openGestionar('${escH(r.id)}')" title="Gestionar">⚙️</button>`:"";
+  const filaLibre=r=>`<div class="ar-it ${sugerida(r)?"sug":""}" draggable="${editable&&!bloqueada(r)?"true":"false"}" ondragstart="event.dataTransfer.setData('text/plain','${escH(r.id)}');this.classList.add('arrastrando')" ondragend="this.classList.remove('arrastrando')" onclick="openDetalle('${escH(r.id)}')">
       <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> <strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino||"")}</div>
-        <div class="ar-sub">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.recorrido?` · ${escH(r.recorrido)}`:""} · ${escH(r.estado)}</div></div>
-      ${editable?`<button class="btn btn-success btn-sm" onclick="asignarAArmado('${escH(r.id)}')" title="Sumar a ${escH(a.recorrido)}">➕</button>`:""}
+        <div class="ar-sub">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.recorrido?` · ${escH(r.recorrido)}`:""} · ${r.estado==="No entregada"?`<span style="color:#fca5a5;font-weight:700">No entregada${r.nombreQuienLevanto?` por ${escH(r.nombreQuienLevanto)}`:""} · sale de Fábrica</span>`:escH(r.estado)}</div></div>
+      ${gest(r)}
+      ${editable?(bloqueada(r)?`<span class="ar-lock" title="El recorrido ya salió de Fábrica">🔒</span>`:`<button class="btn btn-success btn-sm" onclick="event.stopPropagation();asignarAArmado('${escH(r.id)}')" title="Sumar a ${escH(a.recorrido)}">➕</button>`):""}
     </div>`;
-  // Derecha: el recorrido con sus paradas
-  const mias=a?S.requests.filter(r=>r.armadoId===a.id):[];
-  const enFab=mias.filter(r=>esOrigenFabrica(r)||r.estado==="En fábrica");
-  const filaMia=r=>`<div class="ar-it mia" onclick="openDetalle('${escH(r.id)}')">
-      <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
-        <div class="ar-sub">${escH(r.descripcion||"")} · ${estadoBadges(r)}</div></div>
-      ${editable&&!["En tránsito","Entregada"].includes(r.estado)?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quitarDeArmado('${escH(r.id)}')" title="Quitar del recorrido">✕</button>`:""}
-    </div>`;
+  // ── Derecha
   const hm=iso=>{ try{ return new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }catch(e){ return ""; } };
   const llegadas=(S.avanceArmado&&S.avanceArmado.id===a?.id)?S.avanceArmado.regs.filter(x=>x.evento==="LLEGADA"):[];
   const llegada=s=>llegadas.find(x=>normNotif(x.sucursal)===normNotif(s));
-  // Lo que sale de Fábrica también se ve en la parada donde se deja
-  const usados=new Set(enFab.map(r=>r.id)), ubicadosDestino=new Set();
-  const paradasHtml=par.map((s,i)=>{
-    const deja=mias.filter(r=>!ubicadosDestino.has(r.id)&&normNotif(r.destino)===normNotif(s));
-    const retira=mias.filter(r=>!usados.has(r.id)&&normNotif(origenLabel(r))===normNotif(s));
-    deja.forEach(r=>{ubicadosDestino.add(r.id);usados.add(r.id);}); retira.forEach(r=>usados.add(r.id));
-    const ll=llegada(s);
-    return `<div class="ar-parada ${ll?"ok":""}"><div class="ar-par-tit"><span class="ar-num">${i+1}</span> ${escH(s)}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:""}</div>
-      ${deja.length?`<div class="ar-mini">📤 Deja</div>${deja.map(filaMia).join("")}`:""}
-      ${retira.length?`<div class="ar-mini">📥 Retira</div>${retira.map(filaMia).join("")}`:""}
-      ${!deja.length&&!retira.length?`<div class="ar-vacia">Sin transferencias (igual registra la llegada)</div>`:""}</div>`;
-  }).join("");
-  const fuera=mias.filter(r=>!usados.has(r.id));
+  const filaMia=r=>{
+    const quitable = editable && !["Entregada"].includes(r.estado) && (admin || !(enCurso && saleDeFabrica(r))) && (admin || r.estado!=="En tránsito");
+    return `<div class="ar-it mia" onclick="openDetalle('${escH(r.id)}')">
+      <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
+        <div class="ar-sub">${escH(r.descripcion||"")} · ${estadoBadges(r)}${portadorSolicitud(r)?` · lleva ${escH(portadorSolicitud(r).nombre)}`:""}</div></div>
+      ${gest(r)}
+      ${admin && r.estado==="En tránsito"?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirCambiarPortador('${escH(r.id)}')" title="Corregir quién la lleva">🔁</button>`:""}
+      ${quitable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quitarDeArmado('${escH(r.id)}')" title="Quitar del recorrido">✕</button>`:(enCurso&&saleDeFabrica(r)&&!admin?`<span class="ar-lock" title="Ya salió de Fábrica">🔒</span>`:"")}
+    </div>`; };
+  const enFab=mias.filter(saleDeFabrica);
+  const vuelve=mias.filter(terminaEnFabrica);
+  const deja=s=>mias.filter(r=>!terminaEnFabrica(r) && normNotif(r.destino)===normNotif(s));
+  const retira=s=>mias.filter(r=>!saleDeFabrica(r) && normNotif(origenLabel(r))===normNotif(s));
   const est={PREPARADO:["Preparado","var(--teal)"],EN_CURSO:["En curso","var(--amber)"],CERRADO:["Cerrado","var(--muted)"],CERRADO_AUTO:["Cerrado solo (5 h)","var(--muted)"],CANCELADO:["Dado de baja","var(--red)"]};
+  const tiempo=a&&paradas.length?estimarArmado(a,paradas,s=>deja(s).length||retira(s).length):null;
+  const paradasHtml=paradas.map((p,i)=>{
+    const dj=deja(p.nombre), rt=retira(p.nombre), ll=llegada(p.nombre);
+    return `<div class="ar-parada ${ll?"ok":""} ${p.extra?"extra":""}"><div class="ar-par-tit"><span class="ar-num">${i+1}</span> ${escH(p.nombre)}${p.extra?`<span class="ar-tag">➕ parada agregada</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:""}</div>
+      ${dj.length?`<div class="ar-mini">📤 Deja</div>${dj.map(filaMia).join("")}`:""}
+      ${rt.length?`<div class="ar-mini">📥 Retira</div>${rt.map(filaMia).join("")}`:""}
+      ${!dj.length&&!rt.length?`<div class="ar-vacia">Sin transferencias (igual registra la llegada)</div>`:""}</div>`;
+  }).join("");
   return `
   <div class="ar-wrap">
     <div class="card ar-col">
       <div class="ar-col-tit"><h3>📋 Transferencias sin recorrido <span class="tab-n">${libres.length}</span></h3>
         <input class="inp" style="max-width:260px" placeholder="🔎 Buscar N°, sucursal, destino…" value="${escH(S.armadoBusq||"")}" oninput="S.armadoBusq=this.value;render()"/></div>
-      ${a?`<p class="ar-ayuda">Arriba van las que coinciden con <strong>${escH(a.recorrido)}</strong>. Tocá ➕ para sumarlas.</p>`:`<p class="ar-ayuda">Elegí o creá un recorrido a la derecha para sumarle transferencias.</p>`}
+      ${a?`<p class="ar-ayuda">Arrastrá una transferencia al recorrido o tocá ➕. Arriba van las que coinciden con <strong>${escH(a.recorrido)}</strong>. Tocá una para ver el detalle, o ⚙️ para gestionarla.</p>`:`<p class="ar-ayuda">Elegí o creá un recorrido a la derecha para sumarle transferencias.</p>`}
       <div class="ar-lista">${libres.length?paginar("armLibres",libres,q+"|"+(a?.id||"")).map(filaLibre).join("")+botonVerMas("armLibres",libres.length):`<div class="pk-vacio">No hay transferencias pendientes sin recorrido. ✅</div>`}</div>
     </div>
-    <div class="card ar-col">
+    <div class="card ar-col ar-drop" ondragover="if(${editable?"true":"false"}){event.preventDefault();this.classList.add('sobre')}" ondragleave="this.classList.remove('sobre')" ondrop="event.preventDefault();this.classList.remove('sobre');asignarAArmado(event.dataTransfer.getData('text/plain'))">
       <div class="ar-chips">
-        ${abiertos.map(x=>`<button class="ar-chip ${x.id===S.armadoSel?"on":""}" onclick="S.armadoSel='${escH(x.id)}';cargarAvanceArmado('${escH(x.id)}');render()">${escH(x.recorrido)} <small>${est[x.estado][0]}${x.nombreRep?` · ${escH(x.nombreRep)}`:""}</small></button>`).join("")}
+        ${visibles.map(x=>`<button class="ar-chip ${x.id===S.armadoSel?"on":""}" onclick="S.armadoSel='${escH(x.id)}';cargarAvanceArmado('${escH(x.id)}');render()">${escH(x.recorrido)} <small>${est[x.estado][0]}${x.nombreRep?` · ${escH(x.nombreRep)}`:""}</small></button>`).join("")}
+        ${admin?`<label class="ar-cerr"><input type="checkbox" ${S.verCerradosRec?"checked":""} onchange="S.verCerradosRec=this.checked;render()"/> ver cerrados</label>`:""}
         <span class="ar-nuevo"><select class="inp" onchange="S.nuevoArmadoRec=this.value"><option value="">+ Nuevo recorrido…</option>${[...new Set([...(S.recorridos||[]),...(_recorridosQR||[])])].map(r=>`<option ${S.nuevoArmadoRec===r?"selected":""}>${escH(r)}</option>`).join("")}</select>
           <button class="btn btn-success btn-sm" onclick="crearArmado()">Crear</button></span>
       </div>
       ${!a?`<div class="pk-vacio" style="margin-top:14px">No hay recorridos armados abiertos. Creá uno para empezar.</div>`:`
       <div class="ar-head">
         <div><div class="ar-rec">${escH(a.recorrido)} <span class="badge" style="color:${est[a.estado][1]};border-color:${est[a.estado][1]}55">${est[a.estado][0]}</span></div>
-          <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong> desde las ${hm(a.tomadoAt)}`:""}</div></div>
-        ${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}
+          <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong>${a.tomadoAt?` desde las ${hm(a.tomadoAt)}`:""}`:""}</div></div>
+        <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}</div>
       </div>
+      ${tiempo?`<div class="ar-tiempo">⏱️ Tiempo estimado: <strong>${_fmtMin(tiempo.total)}</strong> <span>(viaje ${_fmtMin(tiempo.viaje)} + descargas ${_fmtMin(tiempo.descarga)})</span>
+        ${tiempo.falta?`<div class="ar-falta">Falta el tiempo entre ${escH(tiempo.falta[0]==="FABRICA"?"Fábrica":tiempo.falta[0])} y ${escH(tiempo.falta[1]==="FABRICA"?"Fábrica":tiempo.falta[1])}: el total puede ser mayor.</div>`:""}
+        <div class="ar-desc-def">Descarga por parada cuando no hay un tiempo cargado: <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/> min</div></div>`:""}
       ${a.estado==="PREPARADO"?`<p class="ar-ayuda">✅ Ya está preparado: el repartidor lo ve al escanear el QR de Fábrica.</p>`:""}
-      ${a.estado==="EN_CURSO"?`<p class="ar-ayuda">🚛 Salió. Si le sumás algo, lo ve en su próxima parada. Se cierra al volver a Fábrica o solo a las ${HORAS_CIERRE_AUTO} horas.</p>`:""}
+      ${enCurso?`<p class="ar-ayuda">🚛 Salió de Fábrica: lo que sale de Fábrica ya no se puede tocar (🔒). Podés sumarle retiros en sucursales; se le avisa al repartidor. Se cierra al volver o solo a las ${HORAS_CIERRE_AUTO} horas.</p>`:""}
       ${enFab.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">🏭</span> Sale de Fábrica</div>${enFab.map(filaMia).join("")}</div>`:""}
-      ${paradasHtml || `<div class="ar-vacia">Este recorrido no tiene orden de paradas cargado (pestaña "Paradas y tiempos").</div>`}
-      ${fuera.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">⚠️</span> Fuera de las paradas del recorrido</div>${fuera.map(filaMia).join("")}</div>`:""}`}
+      ${paradasHtml || `<div class="ar-vacia">Todavía no tiene paradas: sumale transferencias.</div>`}
+      ${vuelve.length?`<div class="ar-parada"><div class="ar-par-tit"><span class="ar-num">🏭</span> Vuelve a Fábrica (y sale después)</div>${vuelve.map(filaMia).join("")}</div>`:""}
+      <div class="ar-soltar">Soltá acá una transferencia para sumarla</div>`}
     </div>
   </div>`;
 }
+
 // ── QR: tomar un recorrido armado en Fábrica ──
 async function qrTomarArmado(id){
   const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||e.loading||!yo) return;
@@ -9408,38 +9636,6 @@ async function qrTomarArmado(id){
   if(!e.viaje){ await sb.from("recorridos_armados").update({estado:"PREPARADO",dni_rep:null,nombre_rep:null,tomado_at:null}).eq("id",id); await cargarArmados(); render(); return; }
   await sb.from("recorridos_armados").update({id_viaje:e.viaje.id}).eq("id",id);
   await cargarArmados(); e.armado=armadoDe(id); render();
-}
-// ── QR: retirar en una sucursal, con el DNI de quien lo entrega ──
-function abrirRetiroFirma(ids){
-  S.retiroFirma={ids, dni:"", err:"", loading:false};
-  S.modal="retiroFirma"; render(); setTimeout(()=>$("rf-dni")?.focus(),120);
-}
-function renderRetiroFirmaModal(){
-  const d=S.retiroFirma, e=S.estoyEn, lugar=e?(e.oficial||e.sucursal):"";
-  const rs=d.ids.map(id=>S.requests.find(x=>x.id===id)).filter(Boolean);
-  return `
-  <div class="ef-res">${rs.map(r=>`<div><span class="mono" style="color:var(--blue)">${escH(r.id)}</span> · ${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></div>`).join("")}</div>
-  <div class="field"><label>DNI de quien te lo entrega en ${escH(lugar)} <span class="req">*</span></label>
-    <input id="rf-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba la persona que entrega" value="${escH(d.dni)}"
-      oninput="S.retiroFirma.dni=this.value;S.retiroFirma.err=''" onkeydown="if(event.key==='Enter')confirmarRetiroFirma()"/>
-    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
-  <p class="tes-firma">🚚 Lo retirás vos: <strong>${escH(S.miIdentidadRep?.nombre||"")}</strong></p>
-  <div class="cc-acciones">
-    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
-    <button class="btn btn-warn btn-md" onclick="confirmarRetiroFirma()" ${d.loading?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:`🤲 Retirar ${rs.length>1?`las ${rs.length}`:""}`}</button>
-  </div>`;
-}
-async function confirmarRetiroFirma(){
-  const d=S.retiroFirma, e=S.estoyEn, yo=S.miIdentidadRep; if(!d||d.loading||!e||!yo) return;
-  const lugar=e.oficial||e.sucursal, dni=_dniLimpio(d.dni);
-  if(!dni){ d.err="Que la persona que entrega escriba su DNI."; render(); return; }
-  if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
-  const chk=validarDNI(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
-  const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(lugar)));
-  if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}, no de ${lugar}.`; render(); return; }
-  d.loading=true; renderNow();
-  S.modal=null; const ids=d.ids; S.retiroFirma=null;
-  await qrTomar(ids, {nombre:chk.nombre, dni});
 }
 function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
@@ -9467,9 +9663,10 @@ function estoyEnLista(){
   let retirarFinal=retirar.filter(r=>!(enArmadoAbierto(r) && r.armadoId!==e.armado?.id)), otrosRec=0;   // lo de otros recorridos armados no
   const rec = e.fabrica ? (e.viaje ? e.viaje.recorrido : e.recSel) : "";
   if(e.fabrica && e.armado){
-    const mios=retirarFinal.filter(r=>r.armadoId===e.armado.id);
-    otrosRec=retirarFinal.length-mios.length;
-    if(!e.verOtros) retirarFinal=mios;
+    // lo que otro no entregó y Logística le asignó a este recorrido: se retira en Fábrica
+    const reasig=S.requests.filter(r=>r.estado==="No entregada" && r.armadoId===e.armado.id && !retirarFinal.includes(r));
+    retirarFinal=[...retirarFinal, ...reasig];
+    retirarFinal=retirarFinal.filter(r=>r.armadoId===e.armado.id);   // en Fábrica: SOLO lo de su recorrido
   } else if(rec){
     const par=new Set(paradasDe(rec).map(p=>normNotif(p.sucursal)));
     const mios=retirarFinal.filter(r=> r.recorrido ? normNotif(r.recorrido)===normNotif(rec) : par.has(normNotif(r.destino)));
@@ -9503,7 +9700,7 @@ function renderEstoyEn(){
   const cab=`
     <div class="estoy-head">
       <div style="min-width:0"><div class="estoy-lbl">📍 ${e.estado==="cargando"?"Verificando…":"Estás en"}</div><div class="estoy-suc">${escH(lugar)}</div></div>
-      <button class="btn btn-ghost btn-md" onclick="salirEstoyEn()">Ver todo →</button>
+      ${e.fabrica?"":`<button class="btn btn-ghost btn-md" onclick="salirEstoyEn()">Ver todo →</button>`}
     </div>
     ${S.miIdentidadRep?`<div class="rep-toolbar"><button class="rep-yo" onclick="cambiarIdentidadRepartidor()" title="Tocá para cambiar de persona">👤 <strong>${escH(S.miIdentidadRep.nombre)}</strong><span class="rep-edit">✎</span></button></div>`:""}`;
   const pagina=html=>`<div style="animation:fadeUp .3s ease" class="estoy-page">${cab}${html}</div>`;
@@ -9552,7 +9749,6 @@ function renderEstoyEn(){
     <div class="qr-banner ok">🏁 <strong>${escH(v.recorrido)}</strong> · ${escH(v.id)} · saliste a las ${hm(v.hora_salida)}${e.armado?" · recorrido armado":""}</div>
     ${seccion(`📦 Para llevar en ${escH(v.recorrido)}`,L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
     ${!L.retirar.length?`<div class="pk-vacio">No queda nada en Fábrica para ${escH(v.recorrido)}. ✅</div>`:""}
-    ${L.otrosRec?`<button class="qr-otros" onclick="S.estoyEn.verOtros=!S.estoyEn.verOtros;render()">${e.verOtros?"Ver solo lo de mi recorrido":`Hay ${L.otrosRec} para otros recorridos · ver`}</button>`:""}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(cardRepartidorHtml).join(""))}
     ${seccion("🔁 Devoluciones para dejar",L.devFabrica,L.devFabrica.map(d=>cardDevolucionEstoy(d,"fabrica")).join(""))}
     <div class="qr-fin">${verd
@@ -9568,7 +9764,7 @@ function renderEstoyEn(){
     ${e.viaje
       ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
       : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
-    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"retirar")).join(""),L.retirar.length>1?`<button class="btn btn-warn btn-sm" onclick='abrirRetiroFirma(${JSON.stringify(L.retirar.map(r=>r.id)).replace(/'/g,"&#39;")})'>🤲 Retirar todo</button>`:"")}
+    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""))}
     ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
     ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
@@ -9982,8 +10178,9 @@ function renderModals(){
 
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
-  if(S.modal==="rpEdit")        return wrapModal("m","✏️ Corregir producto",renderRpEditModal(),560);
-  if(S.modal==="retiroFirma")   return wrapModal("m","🤲 Retirar",renderRetiroFirmaModal(),480);
+  if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="armadoEdit")    return wrapModal("m","✏️ Corregir recorrido",renderArmadoEditModal(),460);
+  if(S.modal==="portadorEdit")  return wrapModal("m","🔁 Corregir quién la lleva",renderPortadorEditModal(),460);
   if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
   if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
@@ -14283,7 +14480,7 @@ function cambiarIdentidadSesion(){
   S.modal="identidadRep"; render();
 }
 // Los campos "Tu DNI" de cualquier ventana se completan solos con la persona identificada y se ocultan
-const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni","rf-dni"]);
+const _DNI_NO_TOCAR=new Set(["uf-dni","idlog-dni","idrep-dni","ef-dni"]);
 function rellenarDniIdentificado(){
   const id=identidadSesion(); if(!id || !id.dni) return;
   document.querySelectorAll('#app-modal input[id$="-dni"], #app-modal input#dni-inp, #app input[id$="-dni"]').forEach(inp=>{
@@ -14354,11 +14551,11 @@ function renderIdentidadRepModal(){
     </button>
   </div>`;
 }
-function confirmarIdentidadRepartidor(){
+async function confirmarIdentidadRepartidor(){
   const d = S.identidadRepModal;
   const dni = String($("idrep-dni")?.value||d.dni||"").replace(/\D/g,"");
   if(!dni){ S.identidadRepModal.err="Ingresá tu DNI."; render(); return; }
-  const check = validarDNI(dni);
+  const check = await validarDNIConRespaldo(dni);
   if(!check.ok){ S.identidadRepModal.err=check.msg; render(); return; }
   if(d.para==="tesoreria"){
     S.miIdentidadTesoreria = {dni, nombre:check.nombre};
@@ -14707,7 +14904,7 @@ async function submitDni(){
   const val = String(d.val||"").replace(/\D/g,"");
   if(!val){ S.dniModal.err="Ingresá tu DNI."; render(); return; }
 
-  const check = validarDNI(val);
+  const check = await validarDNIConRespaldo(val);
   if(!check.ok){ S.dniModal.err=check.msg; render(); return; }
 
   // Guardar callback antes de que el render lo pueda pisar
