@@ -1040,7 +1040,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261107-1025";
+const APP_VERSION = "20261107-1115";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -9728,7 +9728,7 @@ function renderArmarDelDia(){
       <div class="ar-head">
         <div><div class="ar-rec">${escH(a.recorrido)} <span class="badge" style="color:${est[a.estado][1]};border-color:${est[a.estado][1]}55">${est[a.estado][0]}</span></div>
           <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong>${a.tomadoAt?` desde las ${hm(a.tomadoAt)}`:""}`:""}</div></div>
-        <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}</div>
+        <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button><button class="btn btn-danger btn-sm" onclick="abrirBorrarArmado('${escH(a.id)}')" title="Borrar un recorrido de prueba">🗑️</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}</div>
       </div>
       ${tiempo?`<div class="ar-tiempo">
         <div class="ar-t-fila"><label>🕐 Sale a las <input type="time" value="${escH(horaSalidaArmado())}" onchange="S.armadoHoraSalida=this.value;render()"/></label>
@@ -9744,6 +9744,69 @@ function renderArmarDelDia(){
       <div class="ar-soltar">Soltá acá una transferencia para sumarla</div>`}
     </div>
   </div>`;
+}
+
+// ── Admin: borrar un recorrido de prueba completo (recorrido, viaje de Flota, registros,
+//    incidencias y, si se elige, sus transferencias). No se puede deshacer.
+async function abrirBorrarArmado(id){
+  const a=armadoDe(id); if(!a||!esAdminRec()) return;
+  const ids=S.requests.filter(r=>r.armadoId===a.id).map(r=>r.id);
+  let nRegs=0, nInc=0;
+  try{ if(a.idViaje){ const { data } = await sb.from("flota_registros_qr").select("id").eq("id_viaje",a.idViaje); nRegs=(data||[]).length; } }catch(e){}
+  try{ const { data } = await sb.from("incidencias_repartidores").select("id").eq("armado_id",a.id); nInc=(data||[]).length; }catch(e){}
+  S.borrarArmado={id, ids, nRegs, nInc, conTransf:true, conf:"", loading:false, err:""};
+  S.modal="borrarArmado"; render();
+}
+function renderBorrarArmadoModal(){
+  const d=S.borrarArmado, a=armadoDe(d.id); if(!a) return "";
+  return `
+  <div class="alert-info" style="border-left-color:var(--red);margin-bottom:12px">⚠️ Esto <strong>borra para siempre</strong>. Usalo solo para recorridos de prueba.</div>
+  <div style="font-size:14px;line-height:1.7">
+    <div>🚛 Recorrido <strong>${escH(a.recorrido)}</strong> <span class="mono" style="color:var(--muted)">${escH(a.id)}</span></div>
+    ${a.idViaje?`<div>🗺️ Viaje de Flota <span class="mono">${escH(a.idViaje)}</span> y sus ${d.nRegs} registro${d.nRegs!==1?"s":""} (salida, llegadas…)</div>`:""}
+    ${d.nInc?`<div>⚠️ ${d.nInc} llamado${d.nInc!==1?"s":""} de atención de este recorrido</div>`:""}
+  </div>
+  ${d.ids.length?`<label class="er-it" style="margin-top:12px"><input type="checkbox" class="chk-round" ${d.conTransf?"checked":""} onchange="S.borrarArmado.conTransf=this.checked;render()"/>
+    <span>Borrar también sus <strong>${d.ids.length}</strong> transferencia${d.ids.length!==1?"s":""}: <span class="mono" style="color:var(--muted)">${d.ids.map(escH).join(", ")}</span>
+    <br><span style="font-size:12.5px;color:var(--muted)">${d.conTransf?"Se borran del todo.":"Si lo destildás, quedan sin recorrido para volver a asignarlas."}</span></span></label>`:`<p style="font-size:13px;color:var(--muted);margin-top:10px">No tiene transferencias asignadas.</p>`}
+  <div class="field" style="margin-top:14px"><label>Para confirmar, escribí <strong>BORRAR</strong></label>
+    <input class="inp" value="${escH(d.conf)}" oninput="S.borrarArmado.conf=this.value" placeholder="BORRAR"/></div>
+  ${d.err?`<div class="err-msg" style="display:block;margin-bottom:10px">${escH(d.err)}</div>`:""}
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-danger btn-md" onclick="confirmarBorrarArmado()" ${d.loading?"disabled":""}>${d.loading?`<span class="spinner"></span> Borrando…`:"🗑️ Borrar"}</button></div>`;
+}
+async function confirmarBorrarArmado(){
+  const d=S.borrarArmado, a=d&&armadoDe(d.id); if(!a||d.loading) return;
+  if(String(d.conf||"").trim().toUpperCase()!=="BORRAR"){ d.err="Escribí BORRAR para confirmar."; render(); return; }
+  d.loading=true; d.err=""; renderNow();
+  try{
+    if(d.ids.length){
+      if(d.conTransf){
+        const { error } = await sb.from("solicitudes").delete().in("id",d.ids);
+        if(error) throw error;
+        try{ await sb.from("notificaciones").delete().in("solicitud_id",d.ids); }catch(e){}
+        S.requests=S.requests.filter(r=>!d.ids.includes(r.id));
+      } else {
+        await sb.from("solicitudes").update({armado_id:null}).in("id",d.ids);
+        S.requests=S.requests.map(r=>d.ids.includes(r.id)?{...r,armadoId:null}:r);
+      }
+    }
+    await sb.from("incidencias_repartidores").delete().eq("armado_id",a.id);
+    if(a.idViaje){
+      await sb.from("flota_registros_qr").delete().eq("id_viaje",a.idViaje);
+      await sb.from("flota_viajes").delete().eq("id",a.idViaje);
+    }
+    const { error:e2 } = await sb.from("recorridos_armados").delete().eq("id",a.id);
+    if(e2) throw e2;
+    S.armados=S.armados.filter(x=>x.id!==a.id); S.incidencias=undefined;
+    S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
+    S.modal=null; S.borrarArmado=null;
+    toast(`🗑️ Recorrido de prueba borrado${d.ids.length&&d.conTransf?` con sus ${d.ids.length} transferencias`:""}`);
+  }catch(e){
+    console.warn("Borrar recorrido:",e);
+    d.loading=false; d.err=/permission|policy|row-level/i.test(String(e.message||""))?"No tenés permiso para borrar (entrá como Administrador).":"No se pudo borrar todo — revisá la conexión y probá de nuevo.";
+  }
+  render();
 }
 
 // ── QR: tomar un recorrido armado en Fábrica ──
@@ -10304,6 +10367,7 @@ function renderModals(){
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
   if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="borrarArmado")  return wrapModal("m","🗑️ Borrar recorrido de prueba",renderBorrarArmadoModal(),520);
   if(S.modal==="armadoEdit")    return wrapModal("m","✏️ Corregir recorrido",renderArmadoEditModal(),460);
   if(S.modal==="portadorEdit")  return wrapModal("m","🔁 Corregir quién la lleva",renderPortadorEditModal(),460);
   if(S.modal==="entregaRep")    return wrapModal("m","🤝 Entregar al repartidor",renderEntregaRepModal(),540);
