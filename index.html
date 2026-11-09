@@ -1021,6 +1021,15 @@ tr[onclick]:active td{background:var(--s3)}
 
 .qr-excepcion{display:block;margin:8px auto 0;background:none;border:0;color:var(--muted);font-family:var(--font);font-size:13px;text-decoration:underline;cursor:pointer;padding:6px}
 
+
+.etiq{background:var(--s2);border:1px dashed var(--border2);border-radius:12px;padding:12px 14px;font-size:14px;line-height:1.6}
+.etiq-tit{margin-bottom:4px}
+.etiq-cod{font-family:var(--mono);font-size:20px;font-weight:800;color:var(--teal);letter-spacing:.04em;background:var(--s3);padding:2px 10px;border-radius:8px}
+
+
+.rep-escanea{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:28px 20px}
+.rep-escanea span{font-size:14px;color:var(--muted);line-height:1.5;max-width:520px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1045,7 +1054,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261109-0857";
+const APP_VERSION = "20261109-1001";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -3090,6 +3099,7 @@ function renderDetalleDevolucion(){
 const colorEstadoDev = e => e==="Clasificada" ? "var(--green)" : e==="Confirmada" ? "#1fa86a" : (e==="No confirmada"||e==="Rechazada") ? "var(--red)" : e==="En evaluación" ? "var(--purple)" : "var(--amber)";
 
 function openTomarDevoluciones(idsExplicitos){
+  if(S.user?.rol==="repartidor"){ toast("🤝 Las devoluciones te las entrega la sucursal: te va a pedir tu DNI","warn"); return; }
   const base = idsExplicitos || [...S.devolSeleccionTomar];
   if(base.length===0) return;
   const ids = base.filter(id=>{
@@ -7209,6 +7219,7 @@ function renderRecepcionista(){
   return `
   <div style="animation:fadeUp .3s ease">
     ${pageHead("Recepción","Gestión de transferencias en fábrica",accesosRapidosHtml())}
+    ${renderEntregarAlRepartidorBanner()}
     <div class="toolbar">
       <div class="tabs">
         <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes<span class="tab-n">${entActivas.length}</span></button>
@@ -7521,7 +7532,6 @@ function esSucursalReal(nombre){
 }
 const loEntregaLaSucursal = r => !!r && !["En fábrica","No entregada"].includes(r.estado) && esSucursalReal(origenLabel(r));
 const paraEntregarEnSucursal = suc => S.requests.filter(r=>r.estado==="Lista para retirar" && normNotif(origenLabel(r))===normNotif(suc));
-const avisoEntregaSuc = r => `<div class="rep-entrega-suc">🏪 Te lo entrega ${escH(origenLabel(r))}: te va a pedir tu DNI</div>`;
 // Si la sucursal está cerrada (ej: bolsines que quedan de noche), el repartidor puede retirar igual:
 // queda registrado que fue sin la firma de la sucursal y a la sucursal le llega un aviso.
 const ORIGEN_CERRADA = "🔒 Sucursal cerrada (sin firma)";
@@ -7530,8 +7540,8 @@ const ORIGEN_CERRADA = "🔒 Sucursal cerrada (sin firma)";
 function abrirRetiroSinFirma(){
   const e=S.estoyEn; if(!e || e.fabrica || e.estado!=="ok"){ toast("Esto solo se puede desde el QR de la sucursal","warn"); return; }
   const L=estoyEnLista(); const rs=L.retirar.filter(r=>loEntregaLaSucursal(r) && puedeTomarAhora(r));
-  if(!rs.length) return;
-  S.sinFirma={sel:new Set(rs.map(r=>r.id)), motivo:"", nota:"", err:"", loading:false};
+  if(!rs.length && !devolucionesParaEntregar(e.oficial||e.sucursal).length) return;
+  S.sinFirma={sel:new Set(rs.map(r=>r.id)), devSel:new Set(devolucionesParaEntregar(e.oficial||e.sucursal).map(x=>String(x.id))), motivo:"", nota:"", err:"", loading:false};
   S.modal="sinFirma"; render();
 }
 function renderSinFirmaModal(){
@@ -7540,7 +7550,9 @@ function renderSinFirmaModal(){
   return `
   <div class="alert-info" style="border-left-color:var(--amber);margin-bottom:12px">⚠️ <strong>Solo es para una excepción.</strong> Lo normal es que ${escH(lugar)} te lo entregue pidiéndote tu DNI. Esto queda registrado a tu nombre y se le avisa a Logística y a la sucursal.</div>
   <div class="er-lista">${rs.map(r=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.sel.has(r.id)?"checked":""} onchange="S.sinFirma.sel[this.checked?'add':'delete']('${escH(r.id)}');render()"/>
-    <span class="mono" style="color:var(--blue)">${escH(r.id)}</span><span style="flex:1">${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></span></label>`).join("")}</div>
+    <span class="mono" style="color:var(--blue)">${escH(r.id)}</span><span style="flex:1">${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></span></label>`).join("")}
+    ${devolucionesParaEntregar(lugar).map(x=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.devSel.has(String(x.id))?"checked":""} onchange="S.sinFirma.devSel[this.checked?'add':'delete']('${escH(String(x.id))}');render()"/>
+    <span class="mono" style="color:var(--blue)">Dev. ${escH(String(x.id))}</span><span style="flex:1">${escH(x.tipoDevolucion||"Fresco")}</span><span class="sk-chip">🔁 devolución</span></label>`).join("")}</div>
   <div class="field" style="margin-top:12px"><label>¿Por qué lo retirás sin la firma? <span class="req">*</span></label>
     <select class="inp" onchange="S.sinFirma.motivo=this.value;S.sinFirma.err=''">
       <option value="">Elegí el motivo…</option>
@@ -7555,11 +7567,12 @@ function renderSinFirmaModal(){
 async function confirmarRetiroSinFirma(){
   const d=S.sinFirma, e=S.estoyEn, yo=S.miIdentidadRep; if(!d||d.loading||!e||!yo) return;
   if(!d.motivo){ d.err="Elegí el motivo."; render(); return; }
-  const ids=[...d.sel]; if(!ids.length) return;
+  const ids=[...d.sel], devIds=[...(d.devSel||[])]; if(!ids.length && !devIds.length) return;
   d.loading=true; renderNow();
   const lugar=e.oficial||e.sucursal, detalle=d.motivo+(d.nota.trim()?` — ${d.nota.trim()}`:"");
-  await qrTomar(ids, {nombre:ORIGEN_CERRADA, dni:""}, true);
-  const tomadas=ids.filter(id=>S.requests.find(r=>r.id===id)?.estado==="En tránsito");
+  if(ids.length) await qrTomar(ids, {nombre:ORIGEN_CERRADA, dni:""}, true);
+  const okDev = devIds.length ? (await entregarARepartidor([], devIds, {dni:yo.dni, nombre:yo.nombre}, e.armado, ORIGEN_CERRADA)).okDev : [];
+  const tomadas=[...ids.filter(id=>S.requests.find(r=>r.id===id)?.estado==="En tránsito"), ...okDev.map(x=>`DEV-${x}`)];
   if(tomadas.length){
     try{ await sb.from("incidencias_repartidores").insert(tomadas.map(id=>({dni:_dniLimpio(yo.dni), nombre:yo.nombre, tipo:"RETIRO_SIN_FIRMA", solicitud_id:id, armado_id:e.armado?.id||null, id_viaje:e.viaje?.id||null, recorrido:e.viaje?.recorrido||"", cierre_automatico:false, detalle:`${lugar}: ${detalle}`}))); }catch(err){}
     const txt=`${tomadas.length===1?`la ${tomadas[0]}`:`${tomadas.length} transferencias`} en ${lugar} sin firma (${detalle})`;
@@ -7569,62 +7582,298 @@ async function confirmarRetiroSinFirma(){
   S.modal=null; S.sinFirma=null; S.incidencias=undefined; render();
 }
 
+// ═══════════════════════════════════════════════════════════════════
+//  CIRCUITO DE ENTREGA (v2)
+//  · El repartidor NO toma solo: se lo entrega quien está en el origen, pidiéndole
+//    su DNI (una sola vez para todo): en Fábrica Recepción o la Encargada de Fresco;
+//    en una sucursal, la sucursal (transferencias, bolsines y devoluciones juntos).
+//  · Sale de Tesorería o Depósito: sigue como antes (lo toma el repartidor).
+// ═══════════════════════════════════════════════════════════════════
+const _esTesoreriaLugar = n => normNotif(n||"")==="tesoreria";
+const _esDeposito = n => normNotif(n||"").startsWith("deposito");
+// Las oficinas (Compras, Planificación, Producción, Logística…) están en Fábrica: lo que sale de ahí sale de Fábrica
+const esAreaDeFabrica = n => normNotif(n||"")==="logistica" || AREAS_OFICINA.some(a=>!_esDeposito(a) && normNotif(a)===normNotif(n||""));
+const esOrigenEnFabrica = r => { const o=origenLabel(r); return !_esDeposito(o) && !_esTesoreriaLugar(o) && (normNotif(o)==="fabrica" || normNotif(o)==="fabrica central" || esAreaDeFabrica(o)); };
+function requiereEntregaConDni(r){
+  if(!r) return false;
+  const o=origenLabel(r);
+  if(_esTesoreriaLugar(o) || _esDeposito(o)) return false;
+  return esSucursalReal(o) || esOrigenEnFabrica(r) || r.estado==="En fábrica" || r.estado==="No entregada";
+}
+const ESTADOS_ENTREGABLES_FAB = ["Lista para retirar","En fábrica","No entregada"];
+const paraEntregarEnFabrica = () => S.requests.filter(r=>ESTADOS_ENTREGABLES_FAB.includes(r.estado) && requiereEntregaConDni(r) && !esSucursalReal(origenLabel(r)) && r.tipoPedido!=="devolucion");
+const devolucionesParaEntregar = suc => S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===normNotif(suc));
+const puedeEntregarEnFabrica = () => (S.user?.rol==="recepcionista" && !normNotif(S.user.area||"").includes("fresco")) || S.user?.perfil==="encargadoFresco" || S.user?.rol==="admin";
+function avisoEntregaSuc(r){
+  const o=origenLabel(r);
+  return esSucursalReal(o) ? `<div class="rep-entrega-suc">🏪 Te lo entrega ${escH(o)}: te va a pedir tu DNI</div>`
+                           : `<div class="rep-entrega-suc">🏭 Te lo entrega Recepción: te va a pedir tu DNI</div>`;
+}
+// Aviso arriba de todo para quien entrega
 function renderEntregarAlRepartidorBanner(){
-  if(S.user?.rol!=="sucursal" || !esSucursalReal(S.user.area)) return "";
-  const lista=paraEntregarEnSucursal(S.user.area); if(!lista.length) return "";
+  let modo=null, n=0;
+  if(S.user?.rol==="sucursal" && esSucursalReal(S.user.area)){ modo="sucursal"; n=paraEntregarEnSucursal(S.user.area).length+devolucionesParaEntregar(S.user.area).length; }
+  else if(puedeEntregarEnFabrica()){ modo="fabrica"; n=paraEntregarEnFabrica().filter(r=>r.estado==="Lista para retirar"||r.armadoId).length; }
+  if(!modo || !n) return "";
   return `<div class="card entrega-rep">
-    <div><strong>🤝 ${lista.length} ${lista.length!==1?"listas":"lista"} para entregar al repartidor</strong>
-      <div class="ar-sub">Cuando venga, tocá "Entregar" y que escriba su DNI. Sin su DNI no se lo entregues.</div></div>
-    <button class="btn btn-success btn-md" onclick="abrirEntregarAlRepartidor()">🤝 Entregar al repartidor</button>
+    <div><strong>🤝 ${n} ${n!==1?"cosas listas":"cosa lista"} para entregar al repartidor</strong>
+      <div class="ar-sub">Cuando venga, tocá "Entregar" y que escriba su DNI (una sola vez para todo). Sin su DNI no se lo entregues.</div></div>
+    <button class="btn btn-success btn-md" onclick="abrirEntregarAlRepartidor('${modo}')">🤝 Entregar al repartidor</button>
   </div>`;
 }
-function abrirEntregarAlRepartidor(){
-  const lista=paraEntregarEnSucursal(S.user.area);
-  S.entregaRep={sel:new Set(lista.map(r=>r.id)), dni:"", err:"", loading:false};
+function abrirEntregarAlRepartidor(modo){
+  S.entregaRep={modo:modo||"sucursal", paso:1, dni:"", rep:null, arm:null, sel:new Set(), devSel:new Set(), err:"", loading:false};
   S.modal="entregaRep"; render(); setTimeout(()=>$("er-dni")?.focus(),120);
 }
-function renderEntregaRepModal(){
-  const d=S.entregaRep, lista=paraEntregarEnSucursal(S.user.area);
-  return `
-  <p style="font-size:13.5px;color:var(--muted);margin:0 0 10px">Marcá lo que le entregás. El repartidor escribe su DNI <strong>una sola vez</strong> para todo, y queda a su nombre.</p>
-  <div class="er-lista">${lista.map(r=>`<label class="er-it">
-      <input type="checkbox" class="chk-round" ${d.sel.has(r.id)?"checked":""} onchange="S.entregaRep.sel[this.checked?'add':'delete']('${escH(r.id)}');render()"/>
-      <span class="mono" style="color:var(--blue)">${escH(r.id)}</span>
-      <span style="flex:1;min-width:0">${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></span>
-      ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}</label>`).join("")}</div>
-  <div class="field" style="margin-top:12px"><label>DNI del repartidor <span class="req">*</span></label>
-    <input id="er-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba el repartidor" value="${escH(d.dni)}"
-      oninput="S.entregaRep.dni=this.value;S.entregaRep.err=''" onkeydown="if(event.key==='Enter')confirmarEntregaRep()"/>
-    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
-  <div class="cc-acciones">
-    <button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
-    <button class="btn btn-success btn-md" onclick="confirmarEntregaRep()" ${d.loading||!d.sel.size?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:`🤝 Entregar ${d.sel.size>1?`las ${d.sel.size}`:""}`}</button>
-  </div>`;
+function _candidatosEntrega(d){
+  return d.modo==="fabrica"
+    ? {trans:paraEntregarEnFabrica(), devs:[]}
+    : {trans:paraEntregarEnSucursal(S.user.area), devs:devolucionesParaEntregar(S.user.area)};
 }
-async function confirmarEntregaRep(){
+async function entregaRepSeguir(){
   const d=S.entregaRep; if(!d||d.loading) return;
-  const ids=[...d.sel].filter(id=>S.requests.some(r=>r.id===id && r.estado==="Lista para retirar"));
-  if(!ids.length){ d.err="Marcá lo que le entregás."; render(); return; }
   const dni=_dniLimpio(d.dni); if(!dni){ d.err="Que el repartidor escriba su DNI."; render(); return; }
-  const chk=await validarDNIConRespaldo(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
-  const rep=S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
-  if(!rep){ d.err=`Ese DNI es de ${chk.nombre}, que no es repartidor.`; render(); return; }
   d.loading=true; renderNow();
+  const chk=await validarDNIConRespaldo(dni);
+  const rep=chk.ok && S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
+  if(!chk.ok || !rep){ d.loading=false; d.err=!chk.ok?chk.msg:`Ese DNI es de ${chk.nombre}, que no es repartidor.`; render(); return; }
   let arm=null;
-  try{ const { data } = await sb.from("recorridos_armados").select("id,recorrido").eq("estado","EN_CURSO").eq("dni_rep",dni).limit(1); arm=data&&data[0]||null; }catch(e){}
-  const ts=now(), ok=[];
+  try{ const { data } = await sb.from("recorridos_armados").select("*").eq("estado","EN_CURSO").eq("dni_rep",dni).limit(1); arm=data&&data[0]?toCamelRow(data[0]):null; }catch(e){}
+  const c=_candidatosEntrega(d);
+  // En Fábrica se marcan las de SU recorrido; en la sucursal, todo lo que hay para retirar
+  d.sel=new Set(c.trans.filter(r=> d.modo==="sucursal" || (arm ? r.armadoId===arm.id : r.estado==="Lista para retirar" && !r.armadoId)).map(r=>r.id));
+  d.devSel=new Set(c.devs.map(x=>String(x.id)));
+  d.dni=dni; d.rep=rep; d.arm=arm; d.paso=2; d.loading=false; d.err="";
+  render();
+}
+function renderEntregaRepModal(){
+  const d=S.entregaRep;
+  if(d.paso===1) return `
+  <p style="font-size:14px;margin:0 0 12px">El repartidor escribe su DNI. ${d.modo==="fabrica"?"Te van a aparecer marcadas las de su recorrido.":"Te aparece todo lo que tiene para retirar acá."}</p>
+  <div class="field"><label>DNI del repartidor <span class="req">*</span></label>
+    <input id="er-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba el repartidor" value="${escH(d.dni)}"
+      oninput="S.entregaRep.dni=this.value;S.entregaRep.err=''" onkeydown="if(event.key==='Enter')entregaRepSeguir()"/>
+    ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-success btn-md" onclick="entregaRepSeguir()" ${d.loading?"disabled":""}>${d.loading?`<span class="spinner"></span> Verificando…`:"Seguir →"}</button></div>`;
+  const c=_candidatosEntrega(d), tot=d.sel.size+d.devSel.size;
+  const fila=(r)=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.sel.has(r.id)?"checked":""} onchange="S.entregaRep.sel[this.checked?'add':'delete']('${escH(r.id)}');render()"/>
+      <span class="mono" style="color:var(--blue)">${escH(r.id)}</span><span style="flex:1;min-width:0">${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></span>
+      ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}${d.arm&&r.armadoId===d.arm.id?`<span class="sk-chip green">${escH(d.arm.recorrido)}</span>`:""}</label>`;
+  const filaDev=(x)=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.devSel.has(String(x.id))?"checked":""} onchange="S.entregaRep.devSel[this.checked?'add':'delete']('${escH(String(x.id))}');render()"/>
+      <span class="mono" style="color:var(--blue)">Dev. ${escH(String(x.id))}</span><span style="flex:1">${escH(x.tipoDevolucion||"Fresco")} · ${productosDeDevolucion(x).length} producto${productosDeDevolucion(x).length!==1?"s":""}</span><span class="sk-chip">🔁 devolución</span></label>`;
+  const mias=d.arm?c.trans.filter(r=>r.armadoId===d.arm.id):[], otras=c.trans.filter(r=>!mias.includes(r));
+  return `
+  <p style="font-size:14px;margin:0 0 10px">🚚 <strong>${escH(d.rep.nombre)}</strong>${d.arm?` · recorrido <strong>${escH(d.arm.recorrido)}</strong>`:` · <span style="color:var(--amber)">no tiene un recorrido iniciado</span>`}</p>
+  <div class="er-lista">
+    ${mias.length?`<div class="ar-mini">De su recorrido</div>${mias.map(fila).join("")}`:""}
+    ${otras.length?`<div class="ar-mini">${d.modo==="fabrica"?"Otras listas en Fábrica":"Para retirar acá"}</div>${otras.map(fila).join("")}`:""}
+    ${c.devs.length?`<div class="ar-mini">Devoluciones</div>${c.devs.map(filaDev).join("")}`:""}
+    ${!c.trans.length&&!c.devs.length?`<div class="pk-vacio">No hay nada para entregar.</div>`:""}
+  </div>
+  ${d.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(d.err)}</div>`:""}
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="S.entregaRep.paso=1;render()">← Otro DNI</button>
+    <button class="btn btn-success btn-md" onclick="confirmarEntregaRep()" ${d.loading||!tot?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:`🤝 Entregar${tot>1?` (${tot})`:""}`}</button></div>`;
+}
+// Le da al repartidor lo marcado: queda en tránsito a su nombre (y en su recorrido)
+async function entregarARepartidor(ids, devIds, rep, arm, entrego){
+  const dni=_dniLimpio(rep.dni), ts=now(), ok=[], okDev=[];
   for(const id of ids){
-    const r=S.requests.find(x=>x.id===id);
-    const ch={estado:"En tránsito", nombreQuienLevanto:rep.nombre, dniRepartidor:dni, levantadoAt:ts, nombreEntregoOrigen:S.user.area, updatedAt:ts};
-    if(arm && r && !r.armadoId){ ch.armadoId=arm.id; ch.recorrido=arm.recorrido; }
-    // solo si sigue lista (si justo cambió, no se pisa)
-    const { data, error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",id).eq("estado","Lista para retirar").select();
+    const r=S.requests.find(x=>x.id===id); if(!r) continue;
+    const seg=r.estado==="En fábrica";
+    const ch = seg ? {estado:"En tránsito", nombreQuienEntrego:rep.nombre, dniEntrega:dni, salidaFabricaAt:ts, pasaPorFabrica:true, updatedAt:ts}
+                   : {estado:"En tránsito", nombreQuienLevanto:rep.nombre, dniRepartidor:dni, levantadoAt:ts, updatedAt:ts};
+    ch.nombreEntregoOrigen=entrego;
+    if(arm && r.armadoId!==arm.id){ ch.armadoId=arm.id; ch.recorrido=arm.recorrido; }   // queda en el recorrido de quien realmente la lleva
+    const { data, error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",id).eq("estado",r.estado).select();
     if(!error && data && data.length){ ok.push(id); S.requests=S.requests.map(x=>x.id===id?{...x,...ch}:x); }
   }
-  if(ok.length) crearNotificacion(`REP:${dni}`, `📦 ${S.user.area} te entregó ${ok.length===1?`la ${ok[0]}`:`${ok.length} transferencias`}`, ok[0]);
+  for(const id of devIds){
+    const ch={estado:"En camino", nombreQuienLevanto:rep.nombre, dniQuienLevanto:dni, levantadoAt:ts, updatedAt:ts};
+    const { data, error } = await sb.from("devoluciones").update(toSnakeRow(ch)).eq("id",id).eq("estado","Pendiente").select();
+    if(!error && data && data.length){ okDev.push(id); S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(id)?{...x,...ch}:x); }
+  }
+  return {ok, okDev};
+}
+async function confirmarEntregaRep(){
+  const d=S.entregaRep; if(!d||d.loading||!d.rep) return;
+  const ids=[...d.sel], devIds=[...d.devSel];
+  if(!ids.length && !devIds.length){ d.err="Marcá lo que le entregás."; render(); return; }
+  d.loading=true; renderNow();
+  const quien=identidadSesion()?.nombre||"";
+  const entrego = d.modo==="fabrica" ? `Recepción Fábrica${quien?` (${quien})`:""}` : S.user.area;
+  const {ok, okDev} = await entregarARepartidor(ids, devIds, d.rep, d.arm, entrego);
+  const n=ok.length+okDev.length;
+  if(n) crearNotificacion(`REP:${d.dni}`, `📦 ${d.modo==="fabrica"?"Recepción":S.user.area} te entregó ${n===1?"1 cosa":`${n} cosas`}: ya figuran a tu nombre`, ok[0]||null);
   S.modal=null; S.entregaRep=null;
-  toast(ok.length===ids.length?`✅ Entregado a ${rep.nombre}`:`⚠️ Se entregaron ${ok.length} de ${ids.length} (las demás ya no estaban listas)`, ok.length===ids.length?undefined:"warn");
+  toast(n===ids.length+devIds.length ? `✅ Entregado a ${d.rep.nombre}` : `⚠️ Se entregaron ${n} de ${ids.length+devIds.length} (las demás ya no estaban listas)`, n===ids.length+devIds.length?undefined:"warn");
   render();
+}
+
+// ── Asignación automática al recorrido ──
+// Sale de Fábrica → el primer recorrido PREPARADO (todavía no salió) que pasa por el destino.
+// Sale de una sucursal → un recorrido que pase por el origen ANTES que por el destino y que
+// todavía no haya pasado por el origen. Logística después la puede sacar o cambiar.
+async function asignarRecorridoAuto(r){
+  if(!r || r.armadoId || ["Entregada","Cancelada","Rechazada"].includes(r.estado) || r.tipoPedido==="bolsin") return null;
+  try{ await cargarDatosQR(); }catch(e){}
+  await cargarArmados();
+  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r);
+  const abiertos=(S.armados||[]).filter(_armadoAbierto).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
+  for(const a of abiertos){
+    const par=paradasDe(a.recorrido).map(p=>normNotif(p.sucursal)), iD=par.indexOf(normNotif(dst));
+    if(iD<0) continue;
+    if(desdeFab){ if(a.estado!=="PREPARADO") continue; }
+    else{
+      const iO=par.indexOf(normNotif(o)); if(iO<0 || iO>=iD) continue;
+      if(a.estado==="EN_CURSO"){
+        if(!a.idViaje) continue;
+        const { data } = await sb.from("flota_registros_qr").select("sucursal").eq("id_viaje",a.idViaje).eq("evento","LLEGADA");
+        if((data||[]).some(x=>normNotif(x.sucursal)===normNotif(o))) continue;     // ya pasó por el origen
+      }
+    }
+    const ch={armadoId:a.id, recorrido:a.recorrido, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+    if(error) return null;
+    S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+    if(a.estado==="EN_CURSO" && a.dniRep) crearNotificacion(`REP:${a.dniRep}`, `🚛 Se sumó la ${r.id} a tu recorrido ${a.recorrido}: ${o} → ${dst}`, r.id);
+    return a;
+  }
+  return null;
+}
+// Lo que hay que escribir en el paquete: RECORRIDO-1234, o si no hay recorrido, DESTINO-1234
+function etiquetaPreparacion(r){
+  const a=r&&r.armadoId?armadoDe(r.armadoId):null;
+  const base=(a?a.recorrido:(r.destino||"")).toUpperCase();
+  return `${base}-${String(r.id||"").replace(/\D/g,"").slice(-4)}`;
+}
+function etiquetaHtml(r){
+  const a=r&&r.armadoId?armadoDe(r.armadoId):null;
+  return `<div class="etiq"><div class="etiq-tit">${a?`🚛 La va a llevar el recorrido <strong>${escH(a.recorrido)}</strong>`:`📦 Todavía no hay un recorrido que la lleve`}</div>
+    <div>Escribile en el paquete: <span class="etiq-cod">${escH(etiquetaPreparacion(r))}</span></div></div>`;
+}
+async function despuesDeCrear(r){
+  if(!r || !r.id || String(r.id).startsWith("tmp-")) return;
+  await asignarRecorridoAuto(r);
+  const rr=S.requests.find(x=>x.id===r.id)||r;
+  S.etiquetaInfo={id:rr.id}; S.modal="etiquetaInfo"; render();
+}
+function renderEtiquetaInfoModal(){
+  const r=S.requests.find(x=>x.id===S.etiquetaInfo?.id); if(!r) return "";
+  return `<p style="font-size:15px;margin:0 0 12px">✅ Transferencia <strong class="mono">${escH(r.id)}</strong> creada: ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></p>
+    ${etiquetaHtml(r)}
+    <p style="font-size:13.5px;color:var(--muted);margin:12px 0 0">Cuando la tengas preparada, marcala <strong>"Lista para retirar"</strong>.${esOrigenEnFabrica(r)?" Después dejala en Recepción.":""}</p>
+    <div class="cc-acciones"><button class="btn btn-success btn-md" onclick="closeModal()">Entendido</button></div>`;
+}
+
+// ── Vuelta a Fábrica: se deja TODO lo que tiene encima (menos los bolsines, que van al buzón) ──
+//   · destino Fábrica → entregada · pasa por Fábrica → queda en Fábrica (normal)
+//   · iba a una sucursal y no la entregó → queda en Fábrica para reasignar + FALTA a su nombre
+//   · cierre automático (5 h): se hace lo mismo con todo (bolsines al buzón) y cada cosa es una falta
+async function dejarEnFabricaLoQueTengo(info, auto){
+  const dnis=[...new Set((info.dnis||[info.dni]).map(_dniLimpio).filter(Boolean))];
+  if(!dnis.length) return {total:0, faltas:0};
+  const ts=now(), faltas=[], nombre=info.nombre||"el repartidor";
+  const nombreDe=d=>(S.usuarios.find(u=>_dniLimpio(u.dni)===d)||{}).nombre||nombre;
+  let total=0;
+  try{
+    const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").or(dnis.map(d=>`dni_repartidor.eq.${d},dni_entrega.eq.${d}`).join(","));
+    const suyas=toCamelRows(data||[]).filter(r=>{ const p=portadorSolicitud(r); return p && dnis.includes(p.dni); });
+    for(const r of suyas){
+      const quien=(portadorSolicitud(r)||{}).dni||dnis[0];
+      let ch, falta=null;
+      if(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino)){
+        if(!auto) continue;
+        ch={estado:"En el buzón", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, updatedAt:ts}; falta="No dejó el bolsín en el buzón: se dio por dejado al cerrarse el recorrido";
+      } else if(_esLugarFabrica(r.destino)){
+        ch={estado:"Entregada", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, nombreQuienRecibio:"Fábrica", updatedAt:ts};
+        if(auto) falta="No la dejó en Fábrica por la app: se dio por entregada al cerrarse el recorrido";
+      } else if(_pasaPorFab(r) && !r.fabricaAt){
+        ch={estado:"En fábrica", fabricaAt:ts, updatedAt:ts};
+        if(auto) falta="No la dejó en Fábrica por la app: se dio por dejada al cerrarse el recorrido";
+      } else {
+        ch={estado:"En fábrica", pasaPorFabrica:true, fabricaAt:ts, armadoId:null, updatedAt:ts,
+            motivoNoRecibido:`No la entregó ${nombreDe(quien)} en ${r.destino}: ${auto?"quedó en Fábrica al cerrarse el recorrido":"la dejó en Fábrica"}`};
+        falta=`No la entregó en ${r.destino}: ${auto?"quedó en Fábrica al cerrarse el recorrido":"la volvió a dejar en Fábrica"}`;
+      }
+      const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id).eq("estado","En tránsito");
+      if(error) continue;
+      total++; S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+      if(falta) faltas.push({dni:quien, id:r.id, detalle:falta});
+    }
+    const { data:dv } = await sb.from("devoluciones").select("*").eq("estado","En camino").in("dni_quien_levanto",dnis);
+    for(const x of toCamelRows(dv||[])){
+      const ch={estado:"En fábrica", nombreRepartidor:x.nombreQuienLevanto||nombre, dejadoFabricaAt:ts, updatedAt:ts};
+      const { error } = await sb.from("devoluciones").update(toSnakeRow(ch)).eq("id",x.id).eq("estado","En camino");
+      if(error) continue;
+      total++; S.devoluciones=S.devoluciones.map(y=>String(y.id)===String(x.id)?{...y,...ch}:y);
+      if(auto) faltas.push({dni:_dniLimpio(x.dniQuienLevanto), id:`DEV-${x.id}`, detalle:"No dejó la devolución en Fábrica por la app: se dio por dejada al cerrarse el recorrido"});
+    }
+    if(faltas.length){
+      await sb.from("incidencias_repartidores").insert(faltas.map(f=>({dni:f.dni, nombre:nombreDe(f.dni), tipo:"NO_ENTREGO", solicitud_id:f.id, armado_id:info.armadoId||null, id_viaje:info.idViaje||null, recorrido:info.recorrido||"", cierre_automatico:!!auto, detalle:f.detalle})));
+      crearNotificacion("LOGISTICA", `⚠️ ${nombre} · ${info.recorrido||"recorrido"}${auto?" (cerrado automáticamente)":""}: ${faltas.length} falta${faltas.length!==1?"s":""} (${faltas.map(f=>f.id).join(", ")})`, null);
+    }
+  }catch(e){ console.warn("Dejar en Fábrica:",e); }
+  return {total, faltas:faltas.length};
+}
+const _volviendo = v => v && v.hora_salida && (Date.now()-new Date(v.hora_salida).getTime() > 30*60000);
+async function qrDejarTodoFabrica(){
+  const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||!e.viaje||!yo||e.loading) return;
+  const lista=misCosasEnMano();
+  const faltas=lista.trans.filter(r=>!_esLugarFabrica(r.destino) && !(_pasaPorFab(r)&&!r.fabricaAt)).length;
+  if(!confirm(`Dejás en Fábrica ${lista.trans.length+lista.devs.length} cosa${lista.trans.length+lista.devs.length!==1?"s":""}.${faltas?`\n\n⚠️ ${faltas} no las entregaste en su destino: quedan registradas como falta a tu nombre.`:""}`)) return;
+  e.loading=true; renderNow();
+  const r=await dejarEnFabricaLoQueTengo({dnis:[yo.dni], nombre:yo.nombre, recorrido:e.viaje.recorrido, armadoId:e.armado?.id, idViaje:e.viaje.id}, false);
+  e.loading=false;
+  toast(r.faltas?`⚠️ Dejaste ${r.total} en Fábrica · ${r.faltas} quedaron como falta`:`✅ Dejaste ${r.total} en Fábrica`, r.faltas?"warn":undefined);
+  render();
+}
+// Lo que tengo encima ahora (sin bolsines, que van al buzón)
+function misCosasEnMano(){
+  const yo=_dniLimpio(S.miIdentidadRep?.dni);
+  return {trans:S.requests.filter(r=>r.estado==="En tránsito" && r.tipoPedido!=="bolsin" && (portadorSolicitud(r)||{}).dni===yo),
+          devs:S.devoluciones.filter(d=>d.estado==="En camino" && _dniLimpio(d.dniQuienLevanto)===yo)};
+}
+
+// ── QR del buzón de Tesorería: cualquiera de los dos del recorrido deja los bolsines ──
+async function iniciarBuzon(e){
+  const pres=await verificarEstoyAca("FABRICA");          // el buzón está en Fábrica
+  if(!pres.ok){ e.estado="bloqueado"; e.motivo=pres.motivo; e.dist=pres.dist; return; }
+  const yo=_dniLimpio(S.miIdentidadRep?.dni); e.socios=[yo];
+  try{
+    const desde=new Date(Date.now()-16*3600e3).toISOString();
+    const { data } = await sb.from("flota_viajes").select("*").or(`dni_rep1.eq.${yo},dni_rep2.eq.${yo}`).gte("hora_salida",desde).order("hora_salida",{ascending:false}).limit(3);
+    (data||[]).forEach(v=>{ [v.dni_rep1,v.dni_rep2].forEach(d=>{ d=_dniLimpio(d); if(d && !e.socios.includes(d)) e.socios.push(d); }); });
+    const v=(data||[])[0];
+    if(v){
+      e.viaje=v;
+      const { data:ya } = await sb.from("flota_registros_qr").select("id,ts").eq("id_viaje",v.id).eq("evento","LLEGADA BUZON").limit(1);
+      if(ya&&ya.length) e.llegada={ts:ya[0].ts, yaEstaba:true};
+      else{ const ts=new Date().toISOString(); await sb.from("flota_registros_qr").insert({ts, id_viaje:v.id, sucursal:"TESORERIA", evento:"LLEGADA BUZON", gps_obs:pres.obs, recorrido:v.recorrido}); e.llegada={ts, yaEstaba:false}; }
+    }
+  }catch(err){ console.warn("Buzón:",err); }
+  e.estado="ok";
+}
+function bolsinesParaBuzon(e){
+  return S.requests.filter(r=>r.tipoPedido==="bolsin" && r.estado==="En tránsito" && esDestinoBuzon(r.destino) && (e.socios||[]).includes((portadorSolicitud(r)||{}).dni));
+}
+async function qrDejarBuzon(){
+  const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||!yo||e.loading) return;
+  const ids=bolsinesParaBuzon(e).map(r=>r.id); if(!ids.length) return;
+  e.loading=true; renderNow();
+  await ejecutarDejarBolsines(ids, _dniLimpio(yo.dni), yo.nombre);
+  e.loading=false; toast(`📫 Dejaste ${ids.length} bolsín${ids.length!==1?"es":""} en el buzón`); render();
+}
+function renderBuzon(e, pagina){
+  const lista=bolsinesParaBuzon(e), hm=iso=>{ try{ return new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }catch(x){ return ""; } };
+  return pagina(`
+    ${e.llegada?`<div class="qr-banner ok">✅ ${e.llegada.yaEstaba?"Ya habías llegado":"Llegada al buzón registrada"} a las <strong>${hm(e.llegada.ts)}</strong></div>`:""}
+    ${lista.length?`<div class="estoy-sec"><div class="estoy-tit"><span>📫 Bolsines para dejar</span><span class="tab-n" style="margin:0">${lista.length}</span></div>
+      <div class="qr-grid">${lista.map(r=>`<div class="qr-card"><div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span><span class="sk-chip amber">🎒 bolsín</span></div>
+        <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
+        <div class="qr-card-desc">${escH(r.descripcion||"")}${(portadorSolicitud(r)||{}).dni!==_dniLimpio(S.miIdentidadRep?.dni)?` · lo levantó ${escH((portadorSolicitud(r)||{}).nombre||"")}`:""}</div></div>`).join("")}</div>
+      <div class="qr-fin"><button class="btn btn-success btn-md btn-full" onclick="qrDejarBuzon()" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`📫 Dejar ${lista.length>1?`los ${lista.length}`:"el bolsín"} en el buzón`}</button></div></div>`
+    :`<div class="pk-vacio">No tenés bolsines para dejar en el buzón. ✅</div>`}`);
 }
 
 function renderSucursalArea(opts){
@@ -7710,6 +7959,7 @@ function renderLogistica(){
   return `
   <div style="animation:fadeUp .3s ease">
     ${puede("flota")?`<div id="flota-slot">${renderWidgetFlotaHoy()}</div>`:""}
+    ${S.user?.perfil==="encargadoFresco"?renderEntregarAlRepartidorBanner():""}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px">
       <div class="tabs" style="margin-bottom:0">
         ${tabs.map(([k,txt])=>`<button class="tab ${S.tabLog===k?"active":""}" onclick="S.tabLog='${k}';${k==="flotaDash"?"if(!S.flotaDash)cargarDashboardFlota();":""}render()">${txt}</button>`).join("")}
@@ -9228,6 +9478,10 @@ function aplicarQRPendiente(){
   try{ sessionStorage.removeItem("tl_qr"); }catch(e){}
   if(!q || !q.s || Date.now()-q.at>8*3600*1000) return;
   if(S.user?.rol!=="repartidor") return;
+  if(["tesoreria","buzon","buzon tesoreria"].includes(normNotif(q.s))){   // QR del buzón de Tesorería
+    S.estoyEn={sucursal:"Buzón de Tesorería", buzon:true, fabrica:false, viaje:"", at:Date.now(), estado:"verificando", motivo:""};
+    S.vista="main"; S.modoSeleccionRep=false; iniciarEstoyEn(); return;
+  }
   const esFab=/^f[aá]brica$/i.test(q.s);
   const oficial=esFab ? "Fábrica"
     : ([...getSucursales(),...getDestinos()].find(x=>normNotif(x)===normNotif(q.s)) || q.s);
@@ -9293,6 +9547,7 @@ function _idCelularQR(){ try{ let id=localStorage.getItem("tl_device_id"); if(!i
 async function iniciarEstoyEn(){
   const e=S.estoyEn; if(!e) return;
   e.estado="cargando"; e.motivo=""; render();
+  if(e.buzon){ try{ await cargarDatosQR(); await iniciarBuzon(e); }catch(err){ e.estado="bloqueado"; e.motivo="error"; } render(); return; }
   try{
     await cargarDatosQR();
     if(!e.fabrica){ const of=_lugarCoords(e.sucursal); if(of) e.oficial=of.nombre; }
@@ -9355,8 +9610,8 @@ async function qrIniciarViaje(){
 async function qrFinalizarViaje(){
   const e=S.estoyEn, v=e&&e.viaje; if(!v || e.loading) return;
   const L=estoyEnLista();
-  const enMano=S.requests.filter(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===_dniLimpio(S.miIdentidadRep?.dni)).length;
-  if(enMano && !confirm(`Todavía tenés ${enMano} sin entregar. Si terminás, quedan como NO ENTREGADAS a tu nombre y se le avisa a Logística. ¿Terminar igual?`)) return;
+  const enMano=misCosasEnMano().trans.length+misCosasEnMano().devs.length;
+  if(enMano && !confirm(`Todavía tenés ${enMano} encima. Si terminás, se dejan en Fábrica y lo que no entregaste en su destino queda como falta a tu nombre. ¿Terminar igual?`)) return;
   if(L.dejar.length && !enMano && !confirm(`Todavía tenés ${L.dejar.length} para dejar acá. ¿Terminar el recorrido igual?`)) return;
   if(!L.dejar.length && !confirm(`¿Terminar el recorrido ${v.recorrido} (${v.id})?`)) return;
   e.loading=true; renderNow();
@@ -9366,8 +9621,8 @@ async function qrFinalizarViaje(){
     if(error) throw error;
     await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:"FABRICA", evento:"REGRESO FABRICA", gps_obs:pres.obs, recorrido:v.recorrido});
     if(e.armado) await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id",e.armado.id);
-    const sinEntregar = await registrarNoEntregadas({dni:S.miIdentidadRep?.dni, nombre:S.miIdentidadRep?.nombre, recorrido:v.recorrido, armadoId:e.armado?.id, idViaje:v.id}, false);
-    if(sinEntregar) toast(`⚠️ Quedaron ${sinEntregar} sin entregar: se avisó a Logística`,"warn");
+    const dj = await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni], nombre:S.miIdentidadRep?.nombre, recorrido:v.recorrido, armadoId:e.armado?.id, idViaje:v.id}, false);
+    if(dj.faltas) toast(`⚠️ ${dj.faltas} quedaron como falta (no las entregaste en su destino): se avisó a Logística`,"warn");
     toast(`🏁 Recorrido ${v.recorrido} terminado`);
     S.estoyEn=null;
   }catch(err){ console.warn("Finalizar viaje:",err); e.loading=false; toast("⚠️ No se pudo terminar el recorrido — probá de nuevo","warn"); }
@@ -9376,7 +9631,7 @@ async function qrFinalizarViaje(){
 // ── Tomar (uno o todos) con el DNI del repartidor ──
 async function qrTomar(ids, firmaOrigen, sucursalCerrada){
   const yo=S.miIdentidadRep; if(!yo||!ids.length) return;
-  if(!sucursalCerrada) ids=ids.filter(id=>!loEntregaLaSucursal(S.requests.find(r=>r.id===id)));   // lo de sucursales lo entrega la sucursal (salvo si está cerrada)
+  if(!sucursalCerrada) ids=ids.filter(id=>!requiereEntregaConDni(S.requests.find(r=>r.id===id)));   // lo de sucursales lo entrega la sucursal (salvo si está cerrada)
   if(!ids.length){ toast("🏪 Esto te lo entrega la sucursal con tu DNI","warn"); return; }
   const ts=now(), arm=S.estoyEn?.armado;
   const cambios=ids.map(id=>{ const x=S.requests.find(r=>r.id===id); const seg=x&&x.estado==="En fábrica";
@@ -9395,14 +9650,15 @@ async function qrTomar(ids, firmaOrigen, sucursalCerrada){
 }
 // ── Entregar con el DNI de quien recibe ──
 function abrirEntregaFirma(id){
-  S.entregaFirma={id, dni:"", err:"", loading:false};
+  const ids=Array.isArray(id)?id:[id];
+  S.entregaFirma={id:ids[0], ids, dni:"", err:"", loading:false};
   S.modal="entregaFirma"; render(); setTimeout(()=>$("ef-dni")?.focus(),120);
 }
 function renderEntregaFirmaModal(){
-  const d=S.entregaFirma, r=S.requests.find(x=>x.id===d.id); if(!r) return "";
+  const d=S.entregaFirma, rs=(d.ids||[d.id]).map(i=>S.requests.find(x=>x.id===i)).filter(Boolean), r=rs[0]; if(!r) return "";
   return `
-  <div class="ef-res"><div><span class="mono" style="color:var(--blue)">${escH(r.id)}</span> · ${escH(origenLabel(r))} → <strong>${escH(r.destino)}</strong></div>
-    <div style="color:var(--muted);font-size:13px;margin-top:2px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}</div></div>
+  <div class="ef-res">${rs.map(x=>`<div><span class="mono" style="color:var(--blue)">${escH(x.id)}</span> · ${escH(x.descripcion||"")} · ${escH(String(x.cantidad||""))} ${escH(x.unidad||"")}</div>`).join("")}
+    <div style="color:var(--muted);font-size:13px;margin-top:4px">Para <strong>${escH(r.destino)}</strong>${rs.length>1?` · ${rs.length} transferencias, un solo DNI`:""}</div></div>
   <div class="field"><label>DNI de quien lo recibe en ${escH(r.destino)} <span class="req">*</span></label>
     <input id="ef-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba la persona que recibe" value="${escH(d.dni)}"
       oninput="S.entregaFirma.dni=this.value;S.entregaFirma.err=''" onkeydown="if(event.key==='Enter')confirmarEntregaFirma()"/>
@@ -9416,28 +9672,29 @@ function renderEntregaFirmaModal(){
 }
 async function confirmarEntregaFirma(){
   const d=S.entregaFirma; if(!d||d.loading) return;
-  const r=S.requests.find(x=>x.id===d.id), yo=S.miIdentidadRep; if(!r||!yo) return;
-  const dni=_dniLimpio(d.dni);
+  const yo=S.miIdentidadRep, rs=(d.ids||[d.id]).map(i=>S.requests.find(x=>x.id===i)).filter(Boolean); if(!rs.length||!yo) return;
+  const destino=rs[0].destino, dni=_dniLimpio(d.dni);
   if(!dni){ d.err="Que la persona que recibe escriba su DNI."; render(); return; }
   if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
   const chk=await validarDNIConRespaldo(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
-  const fila=chk.usuario||{};
-  const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(r.destino)));
-  if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}${fila.usuario||fila.area?` (${fila.usuario||fila.area})`:""}, no de ${r.destino}.`; render(); return; }
+  const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(destino)));
+  if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}, no de ${destino}.`; render(); return; }
   d.loading=true; renderNow();
-  const ts=now(), seg=_pasaPorFab(r) && !!r.fabricaAt;
-  const changes={estado:"Entregada", deliveredAt:ts, confirmadaSucursalAt:ts, nombreQuienRecibio:chk.nombre, dniQuienRecibio:dni, updatedAt:ts};
-  if(!seg){ changes.nombreQuienEntrego=yo.nombre; changes.dniEntrega=yo.dni; }
-  const { error } = await sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",r.id);
-  if(error){ console.warn("Entrega:",error); d.loading=false; d.err="No se pudo guardar — probá de nuevo."; render(); return; }
-  S.requests=S.requests.map(x=>x.id===r.id?{...x,...changes}:x);
+  const ts=now(); let ok=0;
+  for(const r of rs){
+    const seg=_pasaPorFab(r) && !!r.fabricaAt;
+    const changes={estado:"Entregada", deliveredAt:ts, confirmadaSucursalAt:ts, nombreQuienRecibio:chk.nombre, dniQuienRecibio:dni, updatedAt:ts};
+    if(!seg){ changes.nombreQuienEntrego=yo.nombre; changes.dniEntrega=yo.dni; }
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(changes)).eq("id",r.id);
+    if(!error){ ok++; S.requests=S.requests.map(x=>x.id===r.id?{...x,...changes}:x); }
+  }
   S.modal=null; S.entregaFirma=null;
-  toast(`✅ ${r.id} entregada · recibió ${chk.nombre}`);
+  toast(ok===rs.length?`✅ ${ok===1?rs[0].id+" entregada":ok+" entregadas"} · recibió ${chk.nombre}`:`⚠️ Se entregaron ${ok} de ${rs.length}`, ok===rs.length?undefined:"warn");
   render();
 }
 // Tarjeta simple para la pantalla del QR
 function cardQR(r, accion){
-  const btn = accion==="tomar" && loEntregaLaSucursal(r)
+  const btn = accion==="tomar" && requiereEntregaConDni(r)
     ? avisoEntregaSuc(r)
     : accion==="tomar"
     ? `<button class="btn btn-warn btn-md" onclick="qrTomar(['${escH(r.id)}'])" ${S.qrOcupado?"disabled":""}>🤲 Tomar</button>`
@@ -9466,31 +9723,12 @@ const armadoDe = id => (S.armados||[]).find(a=>a.id===id);
 // ¿esta transferencia ya está en un recorrido que sigue abierto?
 const enArmadoAbierto = r => !!r.armadoId && _armadoAbierto(armadoDe(r.armadoId));
 
-// Lo que el repartidor todavía tenía encima al cerrarse su recorrido: pasa a "No entregada"
-// (Logística decide quién la lleva) y queda una incidencia (llamado de atención) a su nombre.
-async function registrarNoEntregadas(info, auto){
-  const dni=_dniLimpio(info.dni); if(!dni) return 0;
-  try{
-    const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").or(`dni_repartidor.eq.${dni},dni_entrega.eq.${dni}`);
-    const suyas=toCamelRows(data||[]).filter(r=>{ const p=portadorSolicitud(r); return p && p.dni===dni; });
-    if(!suyas.length) return 0;
-    const ts=now(), motivo=`No la entregó ${info.nombre||"el repartidor"} en su recorrido ${info.recorrido||""} (${auto?"cerrado automáticamente":"cerrado al volver a fábrica"})`;
-    for(const r of suyas){
-      const ch={estado:"No entregada", motivoNoRecibido:motivo, armadoId:null, updatedAt:ts};
-      await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
-      S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
-    }
-    await sb.from("incidencias_repartidores").insert(suyas.map(r=>({dni, nombre:info.nombre||"", tipo:"NO_ENTREGO", solicitud_id:r.id, armado_id:info.armadoId||null, id_viaje:info.idViaje||null, recorrido:info.recorrido||"", cierre_automatico:!!auto, detalle:motivo})));
-    crearNotificacion("LOGISTICA", `⚠️ ${info.nombre||"Un repartidor"} cerró ${info.recorrido||"su recorrido"}${auto?" (automáticamente)":""} sin entregar ${suyas.length}: ${suyas.map(r=>r.id).join(", ")}`, suyas[0].id);
-    return suyas.length;
-  }catch(e){ console.warn("No entregadas:",e); return 0; }
-}
 async function cerrarRecorridosVencidos(){
   try{ const r=await sb.rpc("cerrar_recorridos_vencidos"); if(!r.error) return; }catch(e){}
   // Si la función de la base no está, lo hace la app
   const lim=new Date(Date.now()-HORAS_CIERRE_AUTO*3600e3).toISOString();
   try{
-    const { data:viajes } = await sb.from("flota_viajes").select("id,recorrido,dni_rep1,nombre_rep1").eq("estado","ACTIVO").lt("hora_salida",lim);
+    const { data:viajes } = await sb.from("flota_viajes").select("id,recorrido,dni_rep1,nombre_rep1,dni_rep2").eq("estado","ACTIVO").lt("hora_salida",lim);
     for(const v of (viajes||[])){
       const { data:ar } = await sb.from("recorridos_armados").select("id").eq("id_viaje",v.id).eq("estado","EN_CURSO").limit(1);
       const armadoId=ar&&ar[0]?ar[0].id:null;
@@ -9499,7 +9737,7 @@ async function cerrarRecorridosVencidos(){
       if(!cerr || !cerr.length) continue;
       await sb.from("flota_registros_qr").insert({ts:new Date().toISOString(),id_viaje:v.id,sucursal:"FABRICA",evento:"CIERRE AUTOMATICO",gps_obs:`Cerrado solo a las ${HORAS_CIERRE_AUTO} horas`,recorrido:v.recorrido});
       if(armadoId) await sb.from("recorridos_armados").update({estado:"CERRADO_AUTO",cerrado_at:new Date().toISOString(),cierre_automatico:true}).eq("id",armadoId);
-      await registrarNoEntregadas({dni:v.dni_rep1, nombre:v.nombre_rep1, recorrido:v.recorrido, armadoId, idViaje:v.id}, true);
+      await dejarEnFabricaLoQueTengo({dnis:[v.dni_rep1,v.dni_rep2], nombre:v.nombre_rep1, recorrido:v.recorrido, armadoId, idViaje:v.id}, true);
     }
   }catch(e){ console.warn("Cierre automático:",e); }
 }
@@ -9894,7 +10132,7 @@ function estoyEnLista(){
   const mi=S.miIdentidadRep?normNotif(S.miIdentidadRep.nombre):"";
   const retirar=vis.filter(r=>{
     if(r.estado==="En tránsito") return false;
-    if(e.fabrica && r.estado==="En fábrica") return true;           // lo que espera en fábrica para su 2º tramo
+    if(e.fabrica && (r.estado==="En fábrica" || esOrigenEnFabrica(r))) return true;           // lo que espera en fábrica para su 2º tramo
     return normNotif(origenLabel(r))===n;
   });
   const dejar=vis.filter(r=>{
@@ -9960,12 +10198,13 @@ function renderEstoyEn(){
       <p style="font-size:14px;color:var(--muted);line-height:1.5;margin-bottom:16px">${msg}</p>
       <button class="btn btn-primary btn-md" onclick="iniciarEstoyEn()">🔄 Reintentar</button></div>`);
   }
+  if(e.buzon) return renderBuzon(e, pagina);
   const seccion=(titulo,items,html,extra)=> items.length ? `
     <div class="estoy-sec">
       <div class="estoy-tit"><span>${titulo}</span><span style="display:flex;gap:8px;align-items:center">${extra||""}<span class="tab-n" style="margin:0">${items.length}</span></span></div>
       <div class="qr-grid">${html}</div>
     </div>` : "";
-  const tomarTodo=itemsAll=>{ const items=itemsAll.filter(r=>!loEntregaLaSucursal(r)); return items.length>1 ? `<button class="btn btn-warn btn-sm" onclick='qrTomar(${JSON.stringify(items.map(r=>r.id)).replace(/'/g,"&#39;")})' ${S.qrOcupado?"disabled":""}>🤲 Tomar todo</button>` : ""; };
+  const tomarTodo=itemsAll=>{ const items=itemsAll.filter(r=>!requiereEntregaConDni(r)); return items.length>1 ? `<button class="btn btn-warn btn-sm" onclick='qrTomar(${JSON.stringify(items.map(r=>r.id)).replace(/'/g,"&#39;")})' ${S.qrOcupado?"disabled":""}>🤲 Tomar todo</button>` : ""; };
 
   // ── Fábrica sin recorrido: elegir uno de los PREPARADOS por Logística ──
   if(e.fabrica && e.estado==="iniciar"){
@@ -9994,8 +10233,15 @@ function renderEstoyEn(){
     <div class="qr-banner ok">🏁 <strong>${escH(v.recorrido)}</strong> · ${escH(v.id)} · saliste a las ${hm(v.hora_salida)}${e.armado?" · recorrido armado":""}</div>
     ${seccion(`📦 Para llevar en ${escH(v.recorrido)}`,L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
     ${!L.retirar.length?`<div class="pk-vacio">No queda nada en Fábrica para ${escH(v.recorrido)}. ✅</div>`:""}
-    ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(cardRepartidorHtml).join(""))}
-    ${seccion("🔁 Devoluciones para dejar",L.devFabrica,L.devFabrica.map(d=>cardDevolucionEstoy(d,"fabrica")).join(""))}
+    ${_volviendo(v)?(()=>{ const m=misCosasEnMano(), tot=m.trans.length+m.devs.length; if(!tot) return "";
+      return `<div class="estoy-sec"><div class="estoy-tit"><span>📥 Dejá en Fábrica lo que traés</span><span class="tab-n" style="margin:0">${tot}</span></div>
+        <div class="qr-grid">${m.trans.map(r=>`<div class="qr-card"><div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span></div>
+          <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div><div class="qr-card-desc">${escH(r.descripcion||"")}</div>
+          ${!_esLugarFabrica(r.destino) && !(_pasaPorFab(r)&&!r.fabricaAt)?`<div class="rep-entrega-suc" style="margin-top:6px">⚠️ No la entregaste en ${escH(r.destino)}: queda como falta</div>`:""}</div>`).join("")}
+          ${m.devs.map(d=>`<div class="qr-card"><div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">Dev. ${escH(String(d.id))}</span><span class="sk-chip">🔁 devolución</span></div><div class="qr-card-ruta">${escH(d.sucursal||"")} → <strong>Fábrica</strong></div></div>`).join("")}</div>
+        <div class="qr-fin" style="margin-top:12px"><button class="btn btn-success btn-md btn-full" onclick="qrDejarTodoFabrica()" ${e.loading?"disabled":""}>📥 Dejar todo en Fábrica</button></div></div>`; })()
+      :`${seccion("📤 Para dejar acá",L.dejar.filter(r=>r.tipoPedido!=="bolsin"),L.dejar.filter(r=>r.tipoPedido!=="bolsin").map(cardRepartidorHtml).join(""))}
+    ${seccion("🔁 Devoluciones para dejar",L.devFabrica,L.devFabrica.map(d=>cardDevolucionEstoy(d,"fabrica")).join(""))}`}
     <div class="qr-fin">${verd
       ? `<a class="btn btn-ghost btn-md btn-full" href="https://dashboard-wheat-pi-94.vercel.app/qr.html?s=Fabrica&directo=1">🥦 Registrar avance de Verdulería →</a>`
       : (Date.now()-new Date(v.hora_salida).getTime() < 30*60000)
@@ -10010,9 +10256,9 @@ function renderEstoyEn(){
       ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
       : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
     ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
-    ${L.retirar.some(loEntregaLaSucursal)?`<button class="qr-excepcion" onclick="abrirRetiroSinFirma()">¿La sucursal está cerrada o no hay nadie para firmar?</button>`:""}
-    ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""))}
-    ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
+    ${(L.retirar.some(loEntregaLaSucursal)||devolucionesParaEntregar(lugar).length)?`<button class="qr-excepcion" onclick="abrirRetiroSinFirma()">¿La sucursal está cerrada o no hay nadie para firmar?</button>`:""}
+    ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""),L.dejar.length>1?`<button class="btn btn-success btn-sm" onclick='abrirEntregaFirma(${JSON.stringify(L.dejar.map(r=>r.id)).replace(/'/g,"&#39;")})'>✅ Entregar todo</button>`:"")}
+    ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>`<div class="qr-card"><div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">Dev. ${escH(String(d.id))}</span><span class="sk-chip">🔁 ${escH(d.tipoDevolucion||"Fresco")}</span></div><div class="qr-card-desc">${productosDeDevolucion(d).length} producto${productosDeDevolucion(d).length!==1?"s":""}</div><div class="qr-card-acc"><div class="rep-entrega-suc">🏪 Te la entrega ${escH(lugar)}: te va a pedir tu DNI</div></div></div>`).join(""))}
     ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
 }
 
@@ -10181,20 +10427,20 @@ function cardRepartidorHtml(r){
             <!-- Acciones -->
             <div style="display:flex;gap:8px;margin-top:4px;flex-wrap:wrap;align-items:stretch" onclick="event.stopPropagation()">
               ${puedeTomar && r.estado==="Lista para retirar"?`
-              ${loEntregaLaSucursal(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-warn btn-md" style="flex:3" onclick="openTomarTransferencia('${escH(r.id)}')">
+              ${requiereEntregaConDni(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-warn btn-md" style="flex:3" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
               </button>`}
               <button class="btn btn-danger btn-sm" style="flex:1" onclick="openNoLevanta('${escH(r.id)}')">
                 ✕ No levanté
               </button>`:""}
               ${puedeTomar && r.estado==="En fábrica"?`
-              ${loEntregaLaSucursal(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-success btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
+              ${requiereEntregaConDni(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-success btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Llevar a destino
               </button>`}`:""}
               ${(()=>{
                 const origenSinApp = esOtraDireccion(r.sucursal||r.area);
                 if(["Aprobada","Programada"].includes(r.estado) && origenSinApp) return `
-              ${loEntregaLaSucursal(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-warn btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
+              ${requiereEntregaConDni(r)&&S.user?.rol==="repartidor"?avisoEntregaSuc(r):`<button class="btn btn-warn btn-md" style="flex:1;width:100%" onclick="openTomarTransferencia('${escH(r.id)}')">
                 🤲 Tomar
               </button>`}`;
                 return "";
@@ -10253,21 +10499,22 @@ function renderRepartidor(){
   const nombresRepOpts=[...new Set(S.requests.map(r=>r.nombreQuienLevanto).filter(Boolean))].sort();
 
   // Devoluciones — ahora es una pestaña propia, no algo mezclado siempre.
-  let devolucionesRep = S.devoluciones.filter(d=>["Pendiente","En camino"].includes(d.estado));
+  let devolucionesRep = S.devoluciones.filter(d=>d.estado==="En camino");   // las pendientes se las entrega la sucursal
   if(S.fRepSucursal) devolucionesRep = devolucionesRep.filter(d=>d.sucursal===S.fRepSucursal);
   devolucionesRep = devolucionesRep.filter(devolucionVisibleParaRepartidor);
 
   // Qué lista de solicitudes corresponde a la pestaña activa
-  const list = S.tabRep==="tomadas" ? tomadasGeneral
-             : S.tabRep==="bolsines" ? bolsinesActivos
+  // Lo que hay para retirar aparece solo cuando escanea el QR del lugar: en el panel queda lo que lleva encima
+const list = S.tabRep==="tomadas" ? tomadasGeneral
+             : S.tabRep==="bolsines" ? bolsinesActivos.filter(r=>r.estado==="En tránsito")
              : S.tabRep==="entregadas" ? entregadas
-             : paraTomarGeneral; // "activas" (default)
+             : []; // "activas": se ve al escanear
 
   return `
   <div style="animation:fadeUp .3s ease">
     ${u.recorrido?`<div class="page-sub" style="margin:0 0 10px">Recorrido: ${badge(u.recorrido,"var(--teal)")}</div>`:""}
     <div class="tabs tabs-scroll" style="margin-bottom:10px">
-      <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">Activas<span class="tab-n">${paraTomarGeneral.length}</span></button>
+      <button class="tab ${S.tabRep==="activas"?"active":""}" onclick="S.tabRep='activas';render()">📍 Escaneá el QR</button>
       <button class="tab ${S.tabRep==="tomadas"?"active":""}" onclick="S.tabRep='tomadas';render()">Tomadas<span class="tab-n">${tomadasGeneral.length}</span></button>
       <button class="tab ${S.tabRep==="bolsines"?"active":""}" onclick="S.tabRep='bolsines';render()">Bolsines<span class="tab-n">${bolsinesActivos.length}</span></button>
       <button class="tab ${S.tabRep==="devoluciones"?"active":""}" onclick="S.tabRep='devoluciones';render();refrescarDevolucionesSilencioso()">Devoluciones<span class="tab-n">${devolucionesRep.length}</span></button>
@@ -10306,7 +10553,7 @@ function renderRepartidor(){
       <strong>${S.repSeleccion.size} seleccionada${S.repSeleccion.size!==1?"s":""}</strong>
       ${(()=>{
         const sel=[...S.repSeleccion].map(id=>S.requests.find(r=>r.id===id)).filter(Boolean);
-        const nTomar = sel.filter(r=>puedeTomarAhora(r) && !loEntregaLaSucursal(r)).length;   // lo de sucursales lo entrega la sucursal
+        const nTomar = sel.filter(r=>puedeTomarAhora(r) && !requiereEntregaConDni(r)).length;   // lo de sucursales lo entrega la sucursal
         const nBolsin = sel.filter(r=>r.tipoPedido==="bolsin" && r.estado==="En tránsito").length;
         const entregables = sel.filter(r=>r.tipoPedido!=="bolsin" && r.estado==="En tránsito" && (!(r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si") || r.fabricaAt));
         return `
@@ -10373,6 +10620,8 @@ function renderRepartidor(){
       })():""}
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
       ${(()=>{ const _cardRepHtml = cardRepartidorHtml;
+      if(S.tabRep==="activas") return `<div class="card rep-escanea"><div style="font-size:34px">📍</div><strong>Escaneá el QR del lugar donde estás</strong>
+        <span>En Fábrica elegís tu recorrido y te entregan lo que llevás. En cada sucursal se registra tu llegada y ves qué dejar; lo que retirás te lo entregan pidiéndote tu DNI. Los bolsines se dejan con el QR del buzón de Tesorería.</span></div>`;
       if(S.tabRep!=="bolsines") return paginar("rep",list,S.tabRep).map(_cardRepHtml).join("")+botonVerMas("rep",list.length,"grid-column:1/-1");
       const alBuzon    = list.filter(r=>esDestinoBuzon(r.destino));
       const desdeBuzon = list.filter(r=>!esDestinoBuzon(r.destino));
@@ -10429,7 +10678,8 @@ function renderModals(){
   if(S.modal==="armadoEdit")    return wrapModal("m","✏️ Corregir recorrido",renderArmadoEditModal(),460);
   if(S.modal==="portadorEdit")  return wrapModal("m","🔁 Corregir quién la lleva",renderPortadorEditModal(),460);
   if(S.modal==="sinFirma")      return wrapModal("m","🔒 Retirar sin firma (excepción)",renderSinFirmaModal(),520);
-  if(S.modal==="entregaRep")    return wrapModal("m","🤝 Entregar al repartidor",renderEntregaRepModal(),540);
+  if(S.modal==="entregaRep")    return wrapModal("m","🤝 Entregar al repartidor",renderEntregaRepModal(),560);
+  if(S.modal==="etiquetaInfo")  return wrapModal("m","📦 Preparala así",renderEtiquetaInfoModal(),460);
   if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
   if(S.modal==="importarCatalogo")  return wrapModal("m","⬆ Importar productos desde un CSV",renderImportarCatalogoModal(),640);
@@ -10570,7 +10820,7 @@ function renderFormNueva(){
 // ── Detalle / Trazabilidad ────────────────────────────────
 // Las sucursales no ven el recorrido de una transferencia hasta que la ponen "Lista para retirar"
 const ESTADOS_ANTES_DE_LISTA=["Pendiente","Pendiente Tesorería","En revisión","Aprobada","Programada","Reprogramada","Rechazada","Cancelada"];
-const recorridoVisible = r => S.user?.rol!=="sucursal" || !ESTADOS_ANTES_DE_LISTA.includes(r?.estado);
+const recorridoVisible = r => S.user?.rol!=="sucursal" || !!r?.armadoId || !ESTADOS_ANTES_DE_LISTA.includes(r?.estado);   // si se asignó solo, se le avisa
 function renderDetalle(){
   const r=S.requests.find(x=>x.id===S.selId);
   if(!r) return "<p>No encontrado</p>";
@@ -11551,6 +11801,7 @@ function renderListoModal(){
   const d = S.listoModal;
   const r = S.requests.find(x=>x.id===d.id);
   return `
+  ${(()=>{ const rr=S.requests.find(x=>x.id===S.listoModal?.id); return rr?etiquetaHtml(rr):""; })()}
   ${r?`<div style="background:var(--s2);border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px">
     ${badge(r.id,"var(--blue)")}<br/><br/>
     <strong>${escH(origenLabel(r))}</strong> → <strong>${escH(r.destino)}</strong><br/>
@@ -11790,7 +12041,7 @@ function openTomarVarias(){
   const ids = [...S.repSeleccion].filter(id=>{
     const r = S.requests.find(x=>x.id===id);
     if(!r) return false;
-    return puedeTomarAhora(r) && !loEntregaLaSucursal(r);   // lo de sucursales lo entrega la sucursal
+    return puedeTomarAhora(r) && !requiereEntregaConDni(r);   // lo de sucursales lo entrega la sucursal
   });
   if(!ids.length){ toast("🏪 Lo de sucursales te lo entrega la sucursal con tu DNI","warn"); return; }
   S.tomarVariasModal = {ids, dni:"", err:"", loading:false, nombreOk:""};
@@ -13593,7 +13844,7 @@ async function submitLoteRecorrido(){
 
 function openTomarTransferencia(id){
   const rr=S.requests.find(x=>x.id===id);
-  if(S.user?.rol==="repartidor" && loEntregaLaSucursal(rr)){ toast(`🏪 Esta te la entrega ${origenLabel(rr)}: pedile que la cargue con tu DNI`,"warn"); return; }
+  if(S.user?.rol==="repartidor" && requiereEntregaConDni(rr)){ toast(`🤝 Esta te la entrega ${esSucursalReal(origenLabel(rr))?origenLabel(rr):"Recepción"}: te va a pedir tu DNI`,"warn"); return; }
   if(S.miIdentidadRep){
     ejecutarTomarTransferencia(id, S.miIdentidadRep.dni, S.miIdentidadRep.nombre);
     return;
@@ -13883,6 +14134,7 @@ async function submitListo(){
   S.modal = null;
   toast(`✅ ${check.nombre} confirmó que está lista para retirar`);
   sheetsUpdate(d.id, changes);
+  { const rr=S.requests.find(x=>x.id===d.id); if(rr && !rr.armadoId) asignarRecorridoAuto(rr).then(a=>{ if(a) toast(`🚛 La va a llevar el recorrido ${a.recorrido}`); render(); }); }
 }
 
 // Sucursal abre el modal de código (genera palabra + pide DNI)
@@ -14926,21 +15178,21 @@ async function submitNueva(){
       adjuntoUrl,
       // Logística ya es quien aprueba — su propia solicitud nace aprobada,
       // sin tener que pasar por su propio panel de gestión después.
-      estado: esLogSubmit ? "Aprobada" : "Pendiente",
+      estado: "Aprobada",            // ya no pasa por la aprobación de Logística (circuito nuevo)
       comentario:"", recorrido:"",
       dniLogistica: esLogSubmit ? dniVal : "",
       nombreLogistica: esLogSubmit ? nombreSolicitante : "",
       dniRepartidor:"", nombreQuienLevanto:"", dniEntrega:"", nombreQuienEntrego:"", codigoEntrega:"", listoAt:"", dniListoPor:"", nombreListoPor:"",
-      createdAt:nowTs, approvedAt: esLogSubmit ? nowTs : null, scheduledAt:null, deliveredAt:null, updatedAt:nowTs,
+      createdAt:nowTs, approvedAt: nowTs, scheduledAt:null, deliveredAt:null, updatedAt:nowTs,
     };
     const creada = await sheetsAdd(nueva);
     S.requests = [creada||nueva, ...S.requests];
     S.form     = emptyForm();
     S.saving   = false;
     S.modal    = null;
-    toast(`${esLogSubmit?"Transferencia":"Solicitud"} ${(creada||nueva).id} creada${esLogSubmit?" y aprobada":""} — ${nombreSolicitante}`);
     render();
     notificarNuevaSolicitud(creada||nueva); // aviso a logística, en background
+    despuesDeCrear(creada||nueva);          // recorrido automático + etiqueta para preparar
   };
 
   if(esLogSubmit){
