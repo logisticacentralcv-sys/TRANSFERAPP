@@ -1017,8 +1017,9 @@ tr[onclick]:active td{background:var(--s3)}
 .rep-entrega-suc{flex:1;font-size:13px;color:#fbbf24;background:#f5a62314;border:1px solid #f5a62344;border-radius:10px;padding:9px 12px;text-align:center}
 
 
-.rep-entrega-wrap{flex:1;display:flex;flex-direction:column;gap:6px}
-.rep-cerrada{align-self:center;font-size:12.5px}
+
+
+.qr-excepcion{display:block;margin:8px auto 0;background:none;border:0;color:var(--muted);font-family:var(--font);font-size:13px;text-decoration:underline;cursor:pointer;padding:6px}
 
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -1044,7 +1045,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261109-0854";
+const APP_VERSION = "20261109-0857";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7520,23 +7521,54 @@ function esSucursalReal(nombre){
 }
 const loEntregaLaSucursal = r => !!r && !["En fábrica","No entregada"].includes(r.estado) && esSucursalReal(origenLabel(r));
 const paraEntregarEnSucursal = suc => S.requests.filter(r=>r.estado==="Lista para retirar" && normNotif(origenLabel(r))===normNotif(suc));
-const avisoEntregaSuc = r => `<div class="rep-entrega-wrap"><div class="rep-entrega-suc">🏪 Te lo entrega ${escH(origenLabel(r))}: te va a pedir tu DNI</div>
-  <button class="btn btn-ghost btn-sm rep-cerrada" onclick="event.stopPropagation();retirarConSucursalCerrada(['${escH(r.id)}'])">🔒 Está cerrada: retirar igual</button></div>`;
+const avisoEntregaSuc = r => `<div class="rep-entrega-suc">🏪 Te lo entrega ${escH(origenLabel(r))}: te va a pedir tu DNI</div>`;
 // Si la sucursal está cerrada (ej: bolsines que quedan de noche), el repartidor puede retirar igual:
 // queda registrado que fue sin la firma de la sucursal y a la sucursal le llega un aviso.
 const ORIGEN_CERRADA = "🔒 Sucursal cerrada (sin firma)";
-async function retirarConSucursalCerrada(ids){
-  const rs=ids.map(id=>S.requests.find(r=>r.id===id)).filter(r=>r && loEntregaLaSucursal(r) && puedeTomarAhora(r));
+// EXCEPCIÓN: solo se puede desde el QR estando en la sucursal (ubicación verificada) y con motivo.
+// Queda como excepción a nombre del repartidor (se cuenta aparte en métricas) y se avisa a Logística y a la sucursal.
+function abrirRetiroSinFirma(){
+  const e=S.estoyEn; if(!e || e.fabrica || e.estado!=="ok"){ toast("Esto solo se puede desde el QR de la sucursal","warn"); return; }
+  const L=estoyEnLista(); const rs=L.retirar.filter(r=>loEntregaLaSucursal(r) && puedeTomarAhora(r));
   if(!rs.length) return;
-  const lugar=origenLabel(rs[0]);
-  if(!confirm(`¿${lugar} está cerrada?\n\nVas a retirar ${rs.length===1?`la ${rs[0].id}`:`${rs.length} transferencias`} sin la firma de la sucursal. Queda registrado a tu nombre y la sucursal recibe un aviso.`)) return;
-  await qrTomar(rs.map(r=>r.id), {nombre:ORIGEN_CERRADA, dni:""}, true);
-  const quien=S.miIdentidadRep?.nombre||"El repartidor";
-  [...new Set(rs.map(r=>origenLabel(r)))].forEach(suc=>{
-    const deAca=rs.filter(r=>origenLabel(r)===suc);
-    crearNotificacion(suc, `🔒 ${quien} retiró ${deAca.length===1?`la ${deAca[0].id}`:`${deAca.length} transferencias`} con la sucursal cerrada (sin firma)`, deAca[0].id);
-  });
+  S.sinFirma={sel:new Set(rs.map(r=>r.id)), motivo:"", nota:"", err:"", loading:false};
+  S.modal="sinFirma"; render();
 }
+function renderSinFirmaModal(){
+  const d=S.sinFirma, e=S.estoyEn, lugar=e?(e.oficial||e.sucursal):"";
+  const rs=estoyEnLista().retirar.filter(r=>loEntregaLaSucursal(r));
+  return `
+  <div class="alert-info" style="border-left-color:var(--amber);margin-bottom:12px">⚠️ <strong>Solo es para una excepción.</strong> Lo normal es que ${escH(lugar)} te lo entregue pidiéndote tu DNI. Esto queda registrado a tu nombre y se le avisa a Logística y a la sucursal.</div>
+  <div class="er-lista">${rs.map(r=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.sel.has(r.id)?"checked":""} onchange="S.sinFirma.sel[this.checked?'add':'delete']('${escH(r.id)}');render()"/>
+    <span class="mono" style="color:var(--blue)">${escH(r.id)}</span><span style="flex:1">${escH(r.descripcion||"")} → <strong>${escH(r.destino||"")}</strong></span></label>`).join("")}</div>
+  <div class="field" style="margin-top:12px"><label>¿Por qué lo retirás sin la firma? <span class="req">*</span></label>
+    <select class="inp" onchange="S.sinFirma.motivo=this.value;S.sinFirma.err=''">
+      <option value="">Elegí el motivo…</option>
+      ${["La sucursal está cerrada","No hay nadie que pueda firmar"].map(m=>`<option ${d.motivo===m?"selected":""}>${m}</option>`).join("")}
+    </select></div>
+  <div class="field"><label>Comentario <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+    <input class="inp" value="${escH(d.nota)}" oninput="S.sinFirma.nota=this.value" placeholder="Ej: cerrado a las 21 h, los bolsines estaban en la caja"/></div>
+  ${d.err?`<div class="err-msg" style="display:block;margin-bottom:10px">${escH(d.err)}</div>`:""}
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+    <button class="btn btn-warn btn-md" onclick="confirmarRetiroSinFirma()" ${d.loading||!d.sel.size?"disabled":""}>${d.loading?`<span class="spinner"></span> Guardando…`:`🔒 Retirar sin firma${d.sel.size>1?` (${d.sel.size})`:""}`}</button></div>`;
+}
+async function confirmarRetiroSinFirma(){
+  const d=S.sinFirma, e=S.estoyEn, yo=S.miIdentidadRep; if(!d||d.loading||!e||!yo) return;
+  if(!d.motivo){ d.err="Elegí el motivo."; render(); return; }
+  const ids=[...d.sel]; if(!ids.length) return;
+  d.loading=true; renderNow();
+  const lugar=e.oficial||e.sucursal, detalle=d.motivo+(d.nota.trim()?` — ${d.nota.trim()}`:"");
+  await qrTomar(ids, {nombre:ORIGEN_CERRADA, dni:""}, true);
+  const tomadas=ids.filter(id=>S.requests.find(r=>r.id===id)?.estado==="En tránsito");
+  if(tomadas.length){
+    try{ await sb.from("incidencias_repartidores").insert(tomadas.map(id=>({dni:_dniLimpio(yo.dni), nombre:yo.nombre, tipo:"RETIRO_SIN_FIRMA", solicitud_id:id, armado_id:e.armado?.id||null, id_viaje:e.viaje?.id||null, recorrido:e.viaje?.recorrido||"", cierre_automatico:false, detalle:`${lugar}: ${detalle}`}))); }catch(err){}
+    const txt=`${tomadas.length===1?`la ${tomadas[0]}`:`${tomadas.length} transferencias`} en ${lugar} sin firma (${detalle})`;
+    crearNotificacion(lugar, `🔒 ${yo.nombre} retiró ${txt}`, tomadas[0]);
+    crearNotificacion("LOGISTICA", `🔒 Excepción: ${yo.nombre} retiró ${txt}`, tomadas[0]);
+  }
+  S.modal=null; S.sinFirma=null; S.incidencias=undefined; render();
+}
+
 function renderEntregarAlRepartidorBanner(){
   if(S.user?.rol!=="sucursal" || !esSucursalReal(S.user.area)) return "";
   const lista=paraEntregarEnSucursal(S.user.area); if(!lista.length) return "";
@@ -8927,7 +8959,8 @@ function renderMetricas(){
   const repSel = S.metRepartidor ? repsTodos.find(o=>o.clave===S.metRepartidor) : null;
   if(S.incidencias===undefined){ S.incidencias=null; setTimeout(cargarIncidencias,0); }
   const incEnRango=(S.incidencias||[]).filter(x=>{ const d=String(x.createdAt||"").slice(0,10); return (!S.metDesde||d>=S.metDesde)&&(!S.metHasta||d<=S.metHasta); });
-  const incDe=clave=>incEnRango.filter(x=>("d:"+_dniLimpio(x.dni))===clave);
+  const incDe=clave=>incEnRango.filter(x=>("d:"+_dniLimpio(x.dni))===clave && (x.tipo||"NO_ENTREGO")==="NO_ENTREGO");
+  const excDe=clave=>incEnRango.filter(x=>("d:"+_dniLimpio(x.dni))===clave && x.tipo==="RETIRO_SIN_FIRMA");
 
   const total=reqs.length||1;
   const byS={},byE={};
@@ -9086,7 +9119,10 @@ function renderMetricas(){
           <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f05252">${repSel.no_entrego}</div><div class="kpi-mini-lbl">Tomó y no dejó</div></div>
           <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f5a623">${repSel.manual}</div><div class="kpi-mini-lbl">Cerradas a mano</div></div>
           <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f05252">${incDe(repSel.clave).length}</div><div class="kpi-mini-lbl">⚠️ Llamados de atención</div></div>
+          <div class="kpi-mini"><div class="kpi-mini-val" style="color:#f5a623">${excDe(repSel.clave).length}</div><div class="kpi-mini-lbl">🔒 Retiros sin firma</div></div>
         </div>
+        ${excDe(repSel.clave).length?`<div class="inc-lista" style="background:#f5a6230d;border-color:#f5a62333"><div class="ar-mini" style="margin-bottom:6px">🔒 Retiros sin firma de la sucursal (excepciones)</div>
+          ${excDe(repSel.clave).map(x=>`<div class="inc-it"><span>${fdt(x.createdAt)}</span><span class="mono" style="cursor:pointer;color:var(--blue)" onclick="openDetalle('${escH(x.solicitudId||"")}')">${escH(x.solicitudId||"")}</span><span style="color:var(--muted)">${escH(x.detalle||"")}</span>${esAdminRec()?`<button class="btn btn-ghost btn-sm" onclick="anularIncidencia('${escH(String(x.id))}')">Anular</button>`:""}</div>`).join("")}</div>`:""}
         ${incDe(repSel.clave).length?`<div class="inc-lista"><div class="ar-mini" style="margin-bottom:6px">⚠️ Llamados de atención (no entregó al cerrar su recorrido)</div>
           ${incDe(repSel.clave).map(x=>`<div class="inc-it"><span>${fdt(x.createdAt)}</span><span class="mono" style="cursor:pointer;color:var(--blue)" onclick="openDetalle('${escH(x.solicitudId||"")}')">${escH(x.solicitudId||"")}</span><span>${escH(x.recorrido||"")}</span><span style="color:var(--muted)">${x.cierreAutomatico?"cerrado solo a las 5 h":"cerró al volver"}</span>${esAdminRec()?`<button class="btn btn-ghost btn-sm" onclick="anularIncidencia('${escH(String(x.id))}')">Anular</button>`:""}</div>`).join("")}</div>`:""}
         <div class="table-wrap"><table style="font-size:14px">
@@ -9102,7 +9138,7 @@ function renderMetricas(){
         ${botonVerMas("metRepDet",ts.length,"padding:12px 0 0")}`;
       })():`
       <div class="table-wrap"><table style="font-size:14px">
-        <thead><tr><th>Repartidor</th><th>Tomó</th><th>Entregó</th><th>La lleva ahora</th><th>Tomó y no dejó</th><th>Cerradas a mano</th><th>⚠️ Llamados de atención</th><th>% entregó</th></tr></thead>
+        <thead><tr><th>Repartidor</th><th>Tomó</th><th>Entregó</th><th>La lleva ahora</th><th>Tomó y no dejó</th><th>Cerradas a mano</th><th>⚠️ Llamados de atención</th><th>🔒 Retiros sin firma</th><th>% entregó</th></tr></thead>
         <tbody>${repsTodos.map(o=>{
           const cerr=o.entrego+o.no_entrego+o.manual, pct=cerr?Math.round(o.entrego/cerr*100):null;
           return `<tr onclick="S.metRepartidor='${escH(o.clave)}';render()" style="cursor:pointer" title="Ver lo que tomó ${escH(o.nombre)}">
@@ -9112,6 +9148,7 @@ function renderMetricas(){
           <td class="mono" style="color:${o.no_entrego?"#f05252":"inherit"};font-weight:${o.no_entrego?700:400}">${o.no_entrego||"—"}</td>
           <td class="mono" style="color:${o.manual?"#f5a623":"inherit"}">${o.manual||"—"}</td>
           <td class="mono" style="color:${incDe(o.clave).length?"#f05252":"inherit"};font-weight:${incDe(o.clave).length?800:400}">${incDe(o.clave).length||"—"}</td>
+          <td class="mono" style="color:${excDe(o.clave).length?"#f5a623":"inherit"}">${excDe(o.clave).length||"—"}</td>
           <td class="mono">${pct===null?"—":pct+"%"}</td></tr>`; }).join("")}</tbody>
       </table></div>
       <p style="font-size:12.5px;color:#a9b8d0;margin-top:10px">"Tomó y no dejó": la levantó pero terminó como no entregada, volvió atrás o se canceló. "Cerradas a mano": la tomó, pero la pasó a Entregada otra persona. El % es sobre las que ya terminaron (sin contar las que lleva ahora).</p>`}
@@ -9972,7 +10009,8 @@ function renderEstoyEn(){
     ${e.viaje
       ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
       : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
-    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar)+(L.retirar.filter(loEntregaLaSucursal).length>1?`<button class="btn btn-ghost btn-sm" onclick='retirarConSucursalCerrada(${JSON.stringify(L.retirar.filter(loEntregaLaSucursal).map(r=>r.id)).replace(/'/g,"&#39;")})'>🔒 Está cerrada: retirar todo</button>`:""))}
+    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
+    ${L.retirar.some(loEntregaLaSucursal)?`<button class="qr-excepcion" onclick="abrirRetiroSinFirma()">¿La sucursal está cerrada o no hay nadie para firmar?</button>`:""}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""))}
     ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
     ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
@@ -10390,6 +10428,7 @@ function renderModals(){
   if(S.modal==="borrarArmado")  return wrapModal("m","🗑️ Borrar recorrido de prueba",renderBorrarArmadoModal(),520);
   if(S.modal==="armadoEdit")    return wrapModal("m","✏️ Corregir recorrido",renderArmadoEditModal(),460);
   if(S.modal==="portadorEdit")  return wrapModal("m","🔁 Corregir quién la lleva",renderPortadorEditModal(),460);
+  if(S.modal==="sinFirma")      return wrapModal("m","🔒 Retirar sin firma (excepción)",renderSinFirmaModal(),520);
   if(S.modal==="entregaRep")    return wrapModal("m","🤝 Entregar al repartidor",renderEntregaRepModal(),540);
   if(S.modal==="entregaFirma")  return wrapModal("m","✅ Entregar",renderEntregaFirmaModal(),480);
   if(S.modal==="productoCatalogo")  return wrapModal("m",S.catModal?.id?"✏️ Editar producto":"+ Nuevo producto",renderProductoCatalogoModal(),520);
