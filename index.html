@@ -1054,7 +1054,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261109-1001";
+const APP_VERSION = "20261109-1451";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7527,7 +7527,7 @@ function solicitudesLista(items, clave, cardFn, vacioTxt){
 // ═══════════════════════════════════════════════════════════════════
 const _NO_SON_SUCURSAL=["fabrica","tesoreria","deposito"];
 function esSucursalReal(nombre){
-  const n=normNotif(nombre||""); if(!n || _NO_SON_SUCURSAL.includes(n)) return false;
+  const n=normNotif(nombre||""); if(!n || _NO_SON_SUCURSAL.includes(n) || n==="otra direccion") return false;
   return (S.sucursales||[]).some(s=>normNotif(s)===n);
 }
 const loEntregaLaSucursal = r => !!r && !["En fábrica","No entregada"].includes(r.estado) && esSucursalReal(origenLabel(r));
@@ -7594,10 +7594,16 @@ const _esDeposito = n => normNotif(n||"").startsWith("deposito");
 // Las oficinas (Compras, Planificación, Producción, Logística…) están en Fábrica: lo que sale de ahí sale de Fábrica
 const esAreaDeFabrica = n => normNotif(n||"")==="logistica" || AREAS_OFICINA.some(a=>!_esDeposito(a) && normNotif(a)===normNotif(n||""));
 const esOrigenEnFabrica = r => { const o=origenLabel(r); return !_esDeposito(o) && !_esTesoreriaLugar(o) && (normNotif(o)==="fabrica" || normNotif(o)==="fabrica central" || esAreaDeFabrica(o)); };
+// "Otra dirección" (con la dirección exacta en Observaciones): un lugar sin nadie con la app y sin QR.
+// Estricto: las oficinas de Fábrica (Compras, etc.) NO son otra dirección aunque no estén en la lista de sucursales.
+const esOrigenOtraDireccion = r => !!r && !!r.sucursal && esOtraDireccion(r.sucursal) && !esOrigenEnFabrica(r) && !_esTesoreriaLugar(r.sucursal) && !_esDeposito(r.sucursal) && !esSucursalReal(r.sucursal);
+const esDestinoOtraDireccion = r => !!r && esOtraDireccion(r.destino) && !_esLugarFabrica(r.destino) && !_esDeposito(r.destino) && !esSucursalReal(r.destino) && !esAreaDeFabrica(r.destino);
 function requiereEntregaConDni(r){
   if(!r) return false;
   const o=origenLabel(r);
   if(_esTesoreriaLugar(o) || _esDeposito(o)) return false;
+  if(esOrigenEnFabrica(r)) return true;
+  if(esOrigenOtraDireccion(r) && !["En fábrica","No entregada"].includes(r.estado)) return false;   // otra dirección: la retira el repartidor directo (ahí no hay nadie con la app)
   return esSucursalReal(o) || esOrigenEnFabrica(r) || r.estado==="En fábrica" || r.estado==="No entregada";
 }
 const ESTADOS_ENTREGABLES_FAB = ["Lista para retirar","En fábrica","No entregada"];
@@ -7744,7 +7750,7 @@ async function asignarRecorridoAuto(r){
 // Lo que hay que escribir en el paquete: RECORRIDO-1234, o si no hay recorrido, DESTINO-1234
 function etiquetaPreparacion(r){
   const a=r&&r.armadoId?armadoDe(r.armadoId):null;
-  const base=(a?a.recorrido:(r.destino||"")).toUpperCase();
+  const base=(a?a.recorrido:(esDestinoOtraDireccion(r)?"DIRECCIÓN":(r.destino||""))).toUpperCase();
   return `${base}-${String(r.id||"").replace(/\D/g,"").slice(-4)}`;
 }
 function etiquetaHtml(r){
@@ -9862,9 +9868,9 @@ function paradasArmado(a, mias){
   const tiene=n=>base.some(p=>normNotif(p.nombre)===normNotif(n));
   const faltan=[];
   mias.forEach(r=>{
-    if(!terminaEnFabrica(r) && r.destino && !tiene(r.destino) && !faltan.some(x=>normNotif(x)===normNotif(r.destino))) faltan.push(r.destino);
+    if(!terminaEnFabrica(r) && r.destino && !esDestinoOtraDireccion(r) && !tiene(r.destino) && !faltan.some(x=>normNotif(x)===normNotif(r.destino))) faltan.push(r.destino);
     const o=origenLabel(r);
-    if(!saleDeFabrica(r) && o && !tiene(o) && !faltan.some(x=>normNotif(x)===normNotif(o))) faltan.push(o);
+    if(!saleDeFabrica(r) && o && !esOrigenOtraDireccion(r) && !tiene(o) && !faltan.some(x=>normNotif(x)===normNotif(o))) faltan.push(o);
   });
   faltan.forEach(n=>{
     let mejor=base.length, costo=Infinity;
@@ -9989,6 +9995,8 @@ function renderArmarDelDia(){
   const vuelve=mias.filter(terminaEnFabrica);
   const deja=s=>mias.filter(r=>!terminaEnFabrica(r) && normNotif(r.destino)===normNotif(s));
   const retira=s=>mias.filter(r=>!saleDeFabrica(r) && normNotif(origenLabel(r))===normNotif(s));
+  const otrasDir=mias.filter(r=>(esDestinoOtraDireccion(r) && !terminaEnFabrica(r)) || (esOrigenOtraDireccion(r) && !saleDeFabrica(r)));
+  const _dirDe=r=>escH(String(r.observaciones||"").slice(0,60)||"sin dirección cargada");
   const est={PREPARADO:["Preparado","var(--teal)"],EN_CURSO:["En curso","var(--amber)"],CERRADO:["Cerrado","var(--muted)"],CERRADO_AUTO:["Cerrado solo (5 h)","var(--muted)"],CANCELADO:["Dado de baja","var(--red)"]};
   const tiempo=a&&paradas.length?estimarArmado(a,paradas):null;
   const etaDe=n=>tiempo?tiempo.etas.find(x=>normNotif(x.nombre)===normNotif(n)):null;
@@ -10035,6 +10043,7 @@ function renderArmarDelDia(){
       ${enCurso?`<p class="ar-ayuda">🚛 Salió de Fábrica: lo que sale de Fábrica ya no se puede tocar (🔒). Podés sumarle retiros en sucursales; se le avisa al repartidor. Se cierra al volver o solo a las ${HORAS_CIERRE_AUTO} horas.</p>`:""}
       ${enFab.length?bloque("__fab","Sale de Fábrica","🏭",enFab.map(filaMia).join(""),`<span class="ar-cnt rt">📥 ${enFab.length}</span>`):""}
       ${paradasHtml || `<div class="ar-vacia">Todavía no tiene paradas: sumale transferencias.</div>`}
+      ${otrasDir.length?bloque("__otras","Otras direcciones (sin QR, no entran en el tiempo estimado)","📍",otrasDir.map(r=>filaMia(r)+`<div class="ar-sub" style="margin:-2px 0 6px 12px">📍 ${esOrigenOtraDireccion(r)?"Retira en":"Deja en"}: ${_dirDe(r)}</div>`).join(""),`<span class="ar-cnt dj">📍 ${otrasDir.length}</span>`):""}
       ${vuelve.length?bloque("__vuelve","Vuelve a Fábrica (y sale después)","🏭",vuelve.map(filaMia).join(""),`<span class="ar-cnt dj">📤 ${vuelve.length}</span>`):""}
       <div class="ar-soltar">Soltá acá una transferencia para sumarla</div>`}
     </div>
@@ -10620,8 +10629,13 @@ const list = S.tabRep==="tomadas" ? tomadasGeneral
       })():""}
       ${list.length===0?`<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--muted)">${S.tabRep==="entregadas"?"Sin entregas registradas":"No hay nada acá"}</div>`:""}
       ${(()=>{ const _cardRepHtml = cardRepartidorHtml;
-      if(S.tabRep==="activas") return `<div class="card rep-escanea"><div style="font-size:34px">📍</div><strong>Escaneá el QR del lugar donde estás</strong>
-        <span>En Fábrica elegís tu recorrido y te entregan lo que llevás. En cada sucursal se registra tu llegada y ves qué dejar; lo que retirás te lo entregan pidiéndote tu DNI. Los bolsines se dejan con el QR del buzón de Tesorería.</span></div>`;
+      if(S.tabRep==="activas"){
+        const yo=_dniLimpio(S.miIdentidadRep?.dni);
+        if(S.armados===undefined){ S.armados=[]; cargarArmados().then(()=>render()); }
+        const deOtro=r=>{ const a=r.armadoId&&armadoDe(r.armadoId); return a && a.estado==="EN_CURSO" && _dniLimpio(a.dniRep)!==yo; };
+        const otrasDir=S.requests.filter(r=>esOrigenOtraDireccion(r) && puedeTomarAhora(r) && r.tipoPedido!=="devolucion" && !deOtro(r));
+        return (otrasDir.length?`<div class="estoy-tit" style="grid-column:1/-1"><span>📍 Para retirar en otras direcciones (no tienen QR)</span><span class="tab-n" style="margin:0">${otrasDir.length}</span></div>`+otrasDir.map(_cardRepHtml).join(""):"")+`<div class="card rep-escanea"><div style="font-size:34px">📍</div><strong>Escaneá el QR del lugar donde estás</strong>
+        <span>En Fábrica elegís tu recorrido y te entregan lo que llevás. En cada sucursal se registra tu llegada y ves qué dejar; lo que retirás te lo entregan pidiéndote tu DNI. Los bolsines se dejan con el QR del buzón de Tesorería. Lo que va a otra dirección lo entregás desde "Tomadas".</span></div>`; }
       if(S.tabRep!=="bolsines") return paginar("rep",list,S.tabRep).map(_cardRepHtml).join("")+botonVerMas("rep",list.length,"grid-column:1/-1");
       const alBuzon    = list.filter(r=>esDestinoBuzon(r.destino));
       const desdeBuzon = list.filter(r=>!esDestinoBuzon(r.destino));
