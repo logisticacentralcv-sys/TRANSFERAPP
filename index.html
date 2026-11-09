@@ -1016,6 +1016,10 @@ tr[onclick]:active td{background:var(--s3)}
 .er-it{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--border);border-radius:10px;background:var(--s2);cursor:pointer;font-size:14px}
 .rep-entrega-suc{flex:1;font-size:13px;color:#fbbf24;background:#f5a62314;border:1px solid #f5a62344;border-radius:10px;padding:9px 12px;text-align:center}
 
+
+.rep-entrega-wrap{flex:1;display:flex;flex-direction:column;gap:6px}
+.rep-cerrada{align-self:center;font-size:12.5px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1040,7 +1044,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261107-1342";
+const APP_VERSION = "20261109-0854";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7516,7 +7520,23 @@ function esSucursalReal(nombre){
 }
 const loEntregaLaSucursal = r => !!r && !["En fábrica","No entregada"].includes(r.estado) && esSucursalReal(origenLabel(r));
 const paraEntregarEnSucursal = suc => S.requests.filter(r=>r.estado==="Lista para retirar" && normNotif(origenLabel(r))===normNotif(suc));
-const avisoEntregaSuc = r => `<div class="rep-entrega-suc">🏪 Te lo entrega ${escH(origenLabel(r))}: te va a pedir tu DNI</div>`;
+const avisoEntregaSuc = r => `<div class="rep-entrega-wrap"><div class="rep-entrega-suc">🏪 Te lo entrega ${escH(origenLabel(r))}: te va a pedir tu DNI</div>
+  <button class="btn btn-ghost btn-sm rep-cerrada" onclick="event.stopPropagation();retirarConSucursalCerrada(['${escH(r.id)}'])">🔒 Está cerrada: retirar igual</button></div>`;
+// Si la sucursal está cerrada (ej: bolsines que quedan de noche), el repartidor puede retirar igual:
+// queda registrado que fue sin la firma de la sucursal y a la sucursal le llega un aviso.
+const ORIGEN_CERRADA = "🔒 Sucursal cerrada (sin firma)";
+async function retirarConSucursalCerrada(ids){
+  const rs=ids.map(id=>S.requests.find(r=>r.id===id)).filter(r=>r && loEntregaLaSucursal(r) && puedeTomarAhora(r));
+  if(!rs.length) return;
+  const lugar=origenLabel(rs[0]);
+  if(!confirm(`¿${lugar} está cerrada?\n\nVas a retirar ${rs.length===1?`la ${rs[0].id}`:`${rs.length} transferencias`} sin la firma de la sucursal. Queda registrado a tu nombre y la sucursal recibe un aviso.`)) return;
+  await qrTomar(rs.map(r=>r.id), {nombre:ORIGEN_CERRADA, dni:""}, true);
+  const quien=S.miIdentidadRep?.nombre||"El repartidor";
+  [...new Set(rs.map(r=>origenLabel(r)))].forEach(suc=>{
+    const deAca=rs.filter(r=>origenLabel(r)===suc);
+    crearNotificacion(suc, `🔒 ${quien} retiró ${deAca.length===1?`la ${deAca[0].id}`:`${deAca.length} transferencias`} con la sucursal cerrada (sin firma)`, deAca[0].id);
+  });
+}
 function renderEntregarAlRepartidorBanner(){
   if(S.user?.rol!=="sucursal" || !esSucursalReal(S.user.area)) return "";
   const lista=paraEntregarEnSucursal(S.user.area); if(!lista.length) return "";
@@ -9317,9 +9337,9 @@ async function qrFinalizarViaje(){
   render();
 }
 // ── Tomar (uno o todos) con el DNI del repartidor ──
-async function qrTomar(ids, firmaOrigen){
+async function qrTomar(ids, firmaOrigen, sucursalCerrada){
   const yo=S.miIdentidadRep; if(!yo||!ids.length) return;
-  ids=ids.filter(id=>!loEntregaLaSucursal(S.requests.find(r=>r.id===id)));   // lo de sucursales lo entrega la sucursal
+  if(!sucursalCerrada) ids=ids.filter(id=>!loEntregaLaSucursal(S.requests.find(r=>r.id===id)));   // lo de sucursales lo entrega la sucursal (salvo si está cerrada)
   if(!ids.length){ toast("🏪 Esto te lo entrega la sucursal con tu DNI","warn"); return; }
   const ts=now(), arm=S.estoyEn?.armado;
   const cambios=ids.map(id=>{ const x=S.requests.find(r=>r.id===id); const seg=x&&x.estado==="En fábrica";
@@ -9952,7 +9972,7 @@ function renderEstoyEn(){
     ${e.viaje
       ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
       : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
-    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
+    ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar)+(L.retirar.filter(loEntregaLaSucursal).length>1?`<button class="btn btn-ghost btn-sm" onclick='retirarConSucursalCerrada(${JSON.stringify(L.retirar.filter(loEntregaLaSucursal).map(r=>r.id)).replace(/'/g,"&#39;")})'>🔒 Está cerrada: retirar todo</button>`:""))}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""))}
     ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>cardDevolucionEstoy(d,"tomar")).join(""))}
     ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
@@ -10602,7 +10622,7 @@ function renderDetalle(){
     const metaLev  = verHoraTomaEntrega
       ? `${tsLev?fdt(tsLev)+" · ":""}${quien||"—"}`
       : quien ? `Por ${quien}` : "En camino";
-    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev+(r.nombreEntregoOrigen?` · se la entregó ${r.nombreEntregoOrigen}`:"")+(r.armadoId&&recorridoVisible(r)?` · recorrido armado ${r.recorrido||""}`:"")});
+    steps.push({dot:S_COLOR["En tránsito"], title:titleLev, meta:metaLev+(r.nombreEntregoOrigen===ORIGEN_CERRADA?" · 🔒 retirada con la sucursal cerrada (sin firma)":r.nombreEntregoOrigen?` · se la entregó ${r.nombreEntregoOrigen}`:"")+(r.armadoId&&recorridoVisible(r)?` · recorrido armado ${r.recorrido||""}`:"")});
   }
 
   // ── PASO 4b: Llegó a fábrica ────────────────────────────
