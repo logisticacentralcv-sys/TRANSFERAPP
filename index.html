@@ -1035,6 +1035,39 @@ tr[onclick]:active td{background:var(--s3)}
 .rec-busq{flex:1;min-width:240px;max-width:560px}
 .rec-busq-n{font-size:13px;color:var(--muted)}
 
+
+/* ── Paradas y tiempos ── */
+.pt-head{display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap;padding:16px;margin-bottom:16px}
+.pt-seg{display:inline-flex;border:1px solid var(--border2);border-radius:10px;overflow:hidden}
+.pt-seg button{background:var(--s2);border:0;color:var(--muted);font-family:var(--font);font-size:13px;font-weight:600;padding:8px 12px;cursor:pointer}
+.pt-seg button.on{background:#4f9eff22;color:var(--text);box-shadow:inset 0 -2px 0 var(--blue)}
+.pt-grid{display:grid;grid-template-columns:minmax(260px,360px) 1fr;gap:16px;align-items:start}
+@media(max-width:900px){ .pt-grid{grid-template-columns:1fr} }
+.pt-lado{padding:16px}
+.pt-nota{font-size:12.5px;color:var(--muted);background:var(--s2);border-radius:10px;padding:10px 12px;line-height:1.5;margin-bottom:12px}
+.pt-nota input{width:52px;padding:1px 5px;background:var(--s3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono)}
+.pt-dirs summary{cursor:pointer;font-weight:600;font-size:13.5px;padding:6px 0}
+.pt-dir{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--s2);border-radius:8px;padding:7px 10px;margin-top:6px}
+.pt-dir strong{display:block;font-size:13px}.pt-dir span{font-size:11.5px;color:var(--faint)}
+.pt-linea{padding:16px}
+.pt-parada{position:relative}
+.pt-tramo{font-size:12px;color:var(--muted);padding:6px 0 6px 40px;border-left:2px dashed var(--border2);margin-left:16px}
+.pt-card{display:flex;align-items:center;gap:10px;background:var(--s2);border:1px solid var(--border);border-radius:12px;padding:10px 12px}
+.pt-card.pt-fab{background:var(--s1);border-style:dashed}
+.pt-grip{cursor:grab;color:var(--faint);touch-action:none}
+.pt-info{flex:1;min-width:0}
+.pt-nom{font-weight:700;font-size:14.5px}
+.pt-sub{font-size:12.5px;color:var(--muted)}.pt-sub span{color:var(--faint)}
+.pt-hora{display:flex;flex-direction:column;align-items:flex-end;font-family:var(--mono);font-size:13px}
+.pt-hora strong{color:var(--blue);font-size:14px}.pt-hora span{font-size:11px;color:var(--faint)}
+.pt-acc{display:flex;gap:3px}
+.pt-total{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}
+@media(max-width:600px){ .pt-total{grid-template-columns:repeat(2,1fr)} }
+.pt-total>div{background:var(--s2);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.pt-total span{font-size:12px;color:var(--muted)}.pt-total strong{font-size:16px}
+.pt-total .big{background:#e8a02018;border:1px solid #e8a02040}.pt-total .big strong{color:var(--amber)}
+.pt-botones{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;flex-wrap:wrap}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1059,7 +1092,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261110-0924";
+const APP_VERSION = "20261110-1045";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8936,11 +8969,17 @@ function transferenciasPendientesEntreSucursales(){
   }).sort((a,b)=>(a.fechaRequerida||"").localeCompare(b.fechaRequerida||""));
 }
 
+// Descarga en una salida que NO lleva el pedido diario (solo transferencias): mucho más corta
+function minDescargaSinPedido(){ const v=+S.config?.minDescargaSinPedido; return v>=0 && S.config?.minDescargaSinPedido!==undefined && S.config?.minDescargaSinPedido!=="" ? v : 5; }
+async function guardarDescargaSinPedido(v){
+  const val=String(Math.max(0,Math.round(+v||0)));
+  S.config={...S.config, minDescargaSinPedido:val}; render();
+  try{ await sb.from("config").upsert({clave:"minDescargaSinPedido", valor:val}); }catch(e){}
+}
 function renderArmarRecorrido(){
   const f = S.armarRecorridoForm;
   const puntos = puntosDisponiblesRecorrido();
   const nombresSugeridos = [...new Set([...(S.recorridos||[]), ...nombresRecorridosConHoja()])];
-
   if(S.flotaEstadoHoyLoading){
     return `<div style="text-align:center;padding:60px;color:var(--muted)"><span class="spinner"></span> Cargando datos de Flota...</div>`;
   }
@@ -8950,259 +8989,105 @@ function renderArmarRecorrido(){
       <div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="cargarEstadoFlotaHoy()">↻ Reintentar</button></div>
     </div>`;
   }
-
-  let acumulado = 0, anterior = "FABRICA", faltaDato = false;
-
-  // Transferencias asignadas a este recorrido que salen de FÁBRICA —
-  // no aparecen bajo ninguna parada (su origen literal es "Fábrica",
-  // no una sucursal de la lista), así que van en su propia sección
-  // arriba de todo, antes de la primera parada.
-  const asignadasDesdeFabrica = f.nombre.trim()
-    ? (S.requests||[]).filter(r=>
-        normNotif(r.recorrido)===normNotif(f.nombre) &&
-        esOrigenFabrica(r) &&
-        ["Pendiente","En revisión","Aprobada","Lista para retirar","En fábrica"].includes(r.estado) &&
-        !esDestinoBuzon(r.destino)
-      )
-    : [];
-  const filaSalidaFabrica = asignadasDesdeFabrica.length ? `
-    <div style="margin:0 0 10px 0;display:flex;flex-direction:column;gap:6px">
-      <div style="font-size:12px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.06em">🏭 Se levantan al salir de Fábrica</div>
-      ${asignadasDesdeFabrica.map(r=>`
-        <div onclick="openDetalle('${escH(r.id)}')" style="border-left:3px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--surface);border-radius:6px;padding:9px 12px;cursor:pointer">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-            <div style="font-size:13px;font-weight:700">→ ${escH(r.destino)}</div>
-            <div style="display:flex;gap:3px;flex-shrink:0" onclick="event.stopPropagation()">
-              ${badge(r.prioridad,P_COLOR[r.prioridad])}
-              <button class="btn btn-ghost btn-sm" style="padding:1px 6px" onclick="desasignarTransferenciaDeRecorrido('${escH(r.id)}')" title="Quitar del recorrido">✕</button>
-            </div>
-          </div>
-          <div style="font-size:12px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}</div>
-        </div>`).join("")}
-    </div>`:"";
-
-  const filasParadas = f.paradas.map((p,i)=>{
+  const manana = (f.tipoSalida||"manana")==="manana";
+  const [hh,mm] = String(f.horaSalida||"08:00").split(":").map(Number);
+  const base=new Date(); base.setHours(hh||0,mm||0,0,0);
+  const hora = min => { const d=new Date(base.getTime()+min*60000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
+  let t=0, viaje=0, descarga=0, anterior="FABRICA", faltaDato=false;
+  const nom=f.nombre.trim();
+  const filas = f.paradas.map((p,i)=>{
     const tramo = minutosEntre(anterior, p);
-    let legTxt;
-    if(tramo===null){ faltaDato = true; legTxt = `<span style="color:var(--red)">sin dato entre "${escH(anterior==="FABRICA"?"Fábrica":anterior)}" y "${escH(p)}"</span>`; }
-    else { acumulado += tramo; legTxt = `+${tramo} min viaje desde ${escH(anterior==="FABRICA"?"Fábrica":anterior)}`; }
-    anterior = p;
-
-    // Tiempo de descarga de esta parada — si el recorrido no tiene
-    // nombre todavía, no hay con qué buscarlo en flota_tiempos_estimados.
-    const estDescarga = f.nombre.trim() ? (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(f.nombre) && normNotif(t.sucursal)===normNotif(p)) : null;
-    const bultosHoy = f.nombre.trim() ? bultosRealesHoy(f.nombre, p) : 0;
-    const bultosMostrar = bultosHoy>0 ? bultosHoy : (estDescarga ? Number(estDescarga.bultos_ref)||0 : 0);
-    const minDescarga = f.nombre.trim() ? Math.round(tiempoDescarga(f.nombre, p)) : 0;
-    let descargaTxt = "";
-    if(f.nombre.trim() && minDescarga>0){
-      acumulado += minDescarga;
-      descargaTxt = ` · 📦 ${minDescarga} min descarga${bultosMostrar>0?` (${bultosMostrar} bultos)`:""}`;
-    }
-
-    // Transferencias ya asignadas a este recorrido que salen justo de
-    // esta parada — se muestran acá para verlas en el punto exacto del
-    // recorrido donde se recogen. Mismo criterio que el panel de
-    // arriba (no bolsines al buzón, solo estados relevantes).
-    const asignadasDesdeAca = f.nombre.trim()
-      ? (S.requests||[]).filter(r=>
-          normNotif(r.recorrido)===normNotif(f.nombre) &&
-          normNotif(r.sucursal)===normNotif(p) &&
-          ["Pendiente","En revisión","Aprobada","Lista para retirar","En fábrica"].includes(r.estado) &&
-          !esDestinoBuzon(r.destino)
-        )
-      : [];
-
+    const desde = anterior==="FABRICA"?"Fábrica":anterior;
+    if(tramo===null) faltaDato=true; else { viaje+=tramo; t+=tramo; }
+    const llega = hora(t);
+    // Descarga: en la salida de la mañana, la del pedido diario (bultos, de Flota); en otras salidas, la corta
+    let dMin, dTxt;
+    if(manana){
+      const est = nom ? (S.flotaTiemposEstimados||[]).find(x=>normNotif(x.recorrido)===normNotif(nom) && normNotif(x.sucursal)===normNotif(p)) : null;
+      const bultosHoy = nom ? bultosRealesHoy(nom, p) : 0;
+      const bultos = bultosHoy>0 ? bultosHoy : (est ? Number(est.bultos_ref)||0 : 0);
+      dMin = nom ? Math.round(tiempoDescarga(nom, p)) : minDescargaPorDefecto();
+      dTxt = est ? `${bultos?`${bultos} bultos${bultosHoy>0?" (hoy)":""}`:"tiempo de Flota"}` : "sin dato en Flota: promedio";
+    } else { dMin = minDescargaSinPedido(); dTxt = "sin pedido diario"; }
+    descarga+=dMin; t+=dMin; anterior=p;
     return `
-    <div class="card" draggable="true" ondragstart="_dragParadaStart(event,${i})" ondragover="event.preventDefault()" ondragenter="_dragParadaEnter(event,${i})" ondrop="_dragParadaDrop(event,${i})" ondragend="_dragParadaEnd(event)"
-      style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:4px;transition:opacity .15s" id="ar-parada-${i}">
-      <div style="cursor:grab;color:var(--faint);font-size:16px;flex-shrink:0;touch-action:none" title="Arrastrá para reordenar">⠿</div>
-      <div style="width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--amber);flex-shrink:0">${i+1}</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:14px">${escH(p)}</div>
-        <div style="font-size:12px;color:var(--muted)">${legTxt}${descargaTxt} · acum: ${faltaDato?"—":Math.round(acumulado)+" min"}</div>
-      </div>
-      <div style="display:flex;gap:4px;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" onclick="subirParadaRecorrido(${i})" ${i===0?"disabled":""}>↑</button>
-        <button class="btn btn-ghost btn-sm" onclick="bajarParadaRecorrido(${i})" ${i===f.paradas.length-1?"disabled":""}>↓</button>
-        <button class="btn btn-ghost btn-sm" onclick="quitarParadaRecorrido(${i})">✕</button>
-      </div>
-    </div>
-    <div ondragover="event.preventDefault()" ondrop="_dropTransferenciaEnParada(event,'${escH(p)}')" id="ar-conector-${i}"
-      style="min-height:10px;margin:0 0 8px 38px;padding:${asignadasDesdeAca.length?"6px":"2px"};border-radius:6px;border:1px dashed var(--border);display:flex;flex-direction:column;gap:6px;transition:background .15s">
-      ${asignadasDesdeAca.map(r=>`
-        <div onclick="openDetalle('${escH(r.id)}')" style="border-left:3px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--surface);border-radius:6px;padding:7px 10px;cursor:pointer">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-            <div style="font-size:12px;font-weight:700">→ ${escH(r.destino)}</div>
-            <div style="display:flex;gap:3px;flex-shrink:0" onclick="event.stopPropagation()">
-              ${badge(r.prioridad,P_COLOR[r.prioridad])}
-              <button class="btn btn-ghost btn-sm" style="padding:1px 6px" onclick="desasignarTransferenciaDeRecorrido('${escH(r.id)}')" title="Quitar del recorrido">✕</button>
-            </div>
-          </div>
-          <div style="font-size:11px;color:var(--faint)">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}</div>
-        </div>`).join("")}
-    </div>`;
-  }).join("");
-
-  // Vuelta a Fábrica — siempre el cierre del recorrido, se suma acá
-  // para que el total mostrado sea el del recorrido completo (antes
-  // solo se veía en el toast de "Sugerir orden óptimo", no acá).
-  let filaVuelta = "";
-  if(f.paradas.length>0){
-    const tramoVuelta = minutosEntre(anterior, "FABRICA");
-    if(tramoVuelta===null){ faltaDato = true; }
-    else { acumulado += tramoVuelta; }
-    filaVuelta = `
-    <div class="card" style="padding:11px 14px;background:var(--s2);display:flex;align-items:center;gap:12px;margin-bottom:8px;opacity:.75">
-      <div style="width:26px;height:26px;border-radius:50%;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">🏠</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:14px">Fábrica (vuelta)</div>
-        <div style="font-size:12px;color:var(--muted)">${tramoVuelta===null?`<span style="color:var(--red)">sin dato desde "${escH(anterior)}"</span>`:`+${tramoVuelta} min desde ${escH(anterior)}`} · acum: ${faltaDato?"—":Math.round(acumulado)+" min"}</div>
-      </div>
-    </div>`;
-  }
-
-  // Transferencias PENDIENTES entre sucursales (no las que salen de
-  // Fábrica — esas ya están en "Carga planificada" — sino las que van
-  // de una sucursal a otra, que son las que definen si conviene armar
-  // el recorrido en un sentido o en el otro).
-  const transferenciasEntreSucursales = transferenciasPendientesEntreSucursales();
-  const cubiertasSinAsignar = transferenciasEntreSucursales.filter(r=>
-    esAsignable(r, f.paradas) &&
-    !(f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre))
-  );
-
-  const panelTransferencias = `
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-        <label style="margin-bottom:0">🔄 Transferencias pendientes entre sucursales (${transferenciasEntreSucursales.length})</label>
-        ${cubiertasSinAsignar.length && f.nombre.trim()?`<button class="btn btn-success btn-sm" onclick="asignarTodasLasCubiertas()">✅ Asignar las ${cubiertasSinAsignar.length} cubiertas</button>`:""}
-      </div>
-      <p style="font-size:12px;color:var(--faint);margin-bottom:10px">Tocá una para gestionarla. Con que el recorrido pase por el origen ya se puede asignar — si no agregás también el destino, vuelve a Fábrica con el resto.</p>
-      ${!transferenciasEntreSucursales.length?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:12px">No hay transferencias pendientes entre sucursales ahora mismo.</p>`:`
-      <div style="display:flex;flex-direction:column;gap:6px;max-height:480px;overflow-y:auto">
-        ${transferenciasEntreSucursales.map(r=>{
-          const origenEnLista = origenCubierto(r, f.paradas);
-          const destinoEnLista = f.paradas.includes(r.destino);
-          // Si sale de Fábrica, no alcanza con "pasar por el origen"
-          // (ya arranca ahí siempre) — hace falta que el destino
-          // también esté en la lista, porque si no, no tiene sentido
-          // levantarla para volver a traerla a Fábrica sin entregarla.
-          const asignable = esOrigenFabrica(r) ? destinoEnLista : origenEnLista;
-          const yaAsignada = f.nombre.trim() && normNotif(r.recorrido)===normNotif(f.nombre);
-          // Última hora de la trazabilidad (lo que haya pasado más
-          // reciente: se generó, se aprobó, o quedó lista para retirar).
-          const ultimaHora = [r.createdAt, r.approvedAt, r.listoAt, r.updatedAt].filter(Boolean).sort().pop();
-          return `
-          <div draggable="true" ondragstart="_dragTransferenciaStart(event,'${escH(r.id)}')" ondragend="_dragTransferenciaEnd(event)" onclick="openDetalle('${escH(r.id)}')"
-            style="border-left:4px solid ${S_COLOR[r.estado]||"var(--border)"};background:var(--s2);border-radius:6px;padding:8px 12px;cursor:grab;${destinoEnLista?"box-shadow:0 0 0 1px #1fa86a50":origenEnLista?"box-shadow:0 0 0 1px #e8a02050":""}">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-              <div style="font-size:15px;font-weight:700;flex:1;min-width:140px">${escH(r.sucursal)} → ${escH(r.destino)}</div>
-              ${ultimaHora?`<span style="font-size:11px;color:var(--faint);flex-shrink:0">${fdt(ultimaHora)}</span>`:""}
-              <div style="display:flex;gap:5px;flex-shrink:0">${badge(r.prioridad,P_COLOR[r.prioridad])}${badge(r.estado,S_COLOR[r.estado])}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:3px">
-              <div style="font-size:12px;color:var(--muted);flex:1;min-width:120px">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${yaAsignada?` · <span style="color:#4ade80;font-weight:600">✓ asignada</span>`:""}${(yaAsignada && origenEnLista && !destinoEnLista)?` · <span style="color:var(--amber);font-weight:600">🏠 vuelve a Fábrica</span>`:""}</div>
-              <div style="display:flex;gap:6px;flex-shrink:0" onclick="event.stopPropagation()">
-                ${!origenEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.sucursal)}')" title="Agregar ${escH(r.sucursal)}">+${escH(r.sucursal.slice(0,3))}</button>`:""}
-                ${!destinoEnLista?`<button class="btn btn-ghost btn-sm" onclick="agregarParadaDirecta('${escH(r.destino)}')" title="Agregar ${escH(r.destino)}">+${escH(r.destino.slice(0,3))}</button>`:""}
-                ${asignable && f.nombre.trim() && !yaAsignada?`<button class="btn btn-success btn-sm" onclick="asignarTransferenciaARecorrido('${escH(r.id)}','${escH(f.nombre)}')">📍 Asignar</button>`:""}
-              </div>
-            </div>
-          </div>`;
-        }).join("")}
-      </div>`}
-    </div>`;
-
-  return `
-  <div>
-    <div class="card" style="margin-bottom:16px">
-      <div class="field">
-        <label>Nombre del recorrido</label>
-        <div style="display:flex;gap:10px">
-          <input id="ar-nombre" class="inp" list="ar-dl-recorridos" placeholder="Ej: SUR, CENTRO, NORTE..." value="${escH(f.nombre)}"
-            oninput="onCambiaNombreRecorrido(this.value)"/>
-          <datalist id="ar-dl-recorridos">${nombresSugeridos.map(n=>`<option value="${escH(n)}">`).join("")}</datalist>
+    <div class="pt-parada" draggable="true" ondragstart="_dragParadaStart(event,${i})" ondragover="event.preventDefault()" ondragenter="_dragParadaEnter(event,${i})" ondrop="_dragParadaDrop(event,${i})" ondragend="_dragParadaEnd(event)" id="ar-parada-${i}">
+      <div class="pt-tramo">${tramo===null?`<span style="color:var(--red)">⚠️ falta el tiempo entre ${escH(desde)} y ${escH(p)}</span>`:`🚚 ${tramo} min desde ${escH(desde)}`}</div>
+      <div class="pt-card">
+        <span class="pt-grip" title="Arrastrá para reordenar">⠿</span>
+        <span class="ar-num">${i+1}</span>
+        <div class="pt-info"><div class="pt-nom">${escH(p)}</div>
+          <div class="pt-sub">📦 ${dMin} min de descarga <span>· ${escH(dTxt)}</span></div></div>
+        <div class="pt-hora"><strong>≈ ${llega}</strong><span>sale ${hora(t)}</span></div>
+        <div class="pt-acc">
+          <button class="btn btn-ghost btn-sm" onclick="subirParadaRecorrido(${i})" ${i===0?"disabled":""}>↑</button>
+          <button class="btn btn-ghost btn-sm" onclick="bajarParadaRecorrido(${i})" ${i===f.paradas.length-1?"disabled":""}>↓</button>
+          <button class="btn btn-ghost btn-sm" onclick="quitarParadaRecorrido(${i})">✕</button>
         </div>
       </div>
+    </div>`;
+  }).join("");
+  let vuelta="";
+  if(f.paradas.length){
+    const tv=minutosEntre(anterior,"FABRICA");
+    if(tv===null) faltaDato=true; else { viaje+=tv; t+=tv; }
+    vuelta=`<div class="pt-parada"><div class="pt-tramo">${tv===null?`<span style="color:var(--red)">⚠️ falta el tiempo entre ${escH(anterior)} y Fábrica</span>`:`🚚 ${tv} min desde ${escH(anterior)}`}</div>
+      <div class="pt-card pt-fab"><span class="ar-num">🏭</span><div class="pt-info"><div class="pt-nom">Vuelve a Fábrica</div></div><div class="pt-hora"><strong>≈ ${hora(t)}</strong></div></div></div>`;
+  }
+  const manuales = (S.flotaDirecciones||[]).filter(d=>!d.es_original);
+  const editando = f.editandoDireccion;
+  return `
+  <div class="pt-wrap">
+    <div class="card pt-head">
+      <div class="field" style="margin:0;flex:1;min-width:200px"><label>Recorrido</label>
+        <input id="ar-nombre" class="inp" list="ar-dl-recorridos" placeholder="Ej: SUR, CENTRO, NORTE..." value="${escH(f.nombre)}" oninput="onCambiaNombreRecorrido(this.value)"/>
+        <datalist id="ar-dl-recorridos">${nombresSugeridos.map(n=>`<option value="${escH(n)}">`).join("")}</datalist></div>
+      <div class="field" style="margin:0"><label>Tipo de salida</label>
+        <div class="pt-seg">
+          <button class="${manana?"on":""}" onclick="S.armarRecorridoForm.tipoSalida='manana';render()">☀️ Mañana · con pedido diario</button>
+          <button class="${!manana?"on":""}" onclick="S.armarRecorridoForm.tipoSalida='otra';render()">🔁 Otra salida · solo transferencias</button>
+        </div></div>
+      <div class="field" style="margin:0"><label>Sale a las</label>
+        <input type="time" class="inp" style="width:120px" value="${escH(f.horaSalida||"08:00")}" onchange="S.armarRecorridoForm.horaSalida=this.value;render()"/></div>
     </div>
-
-    ${panelTransferencias}
-
-    <div class="card" style="margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="S.armarRecorridoForm.mostrarAgregarDireccion=!S.armarRecorridoForm.mostrarAgregarDireccion;render()">
-        <label style="margin-bottom:0;cursor:pointer">➕ Direcciones agregadas a mano</label>
-        <span style="color:var(--faint)">${S.armarRecorridoForm.mostrarAgregarDireccion?"▲":"▼"}</span>
-      </div>
-      ${S.armarRecorridoForm.mostrarAgregarDireccion?(()=>{
-        const manuales = (S.flotaDirecciones||[]).filter(d=>!d.es_original);
-        const editando = S.armarRecorridoForm.editandoDireccion;
-        return `
-        <div style="margin-top:12px">
-          ${manuales.length?`
-          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
-            ${manuales.map(d=>`
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--s2);border-radius:8px;padding:8px 12px">
-                <div style="min-width:0">
-                  <div style="font-size:13px;font-weight:600">${escH(d.nombre)}</div>
-                  <div style="font-size:11px;color:var(--faint)">${escH(d.direccion)}</div>
-                </div>
-                <div style="display:flex;gap:4px;flex-shrink:0">
-                  <button class="btn btn-ghost btn-sm" onclick="editarDireccionManual('${escH(d.nombre)}','${escH(d.direccion)}')">✏️</button>
-                  <button class="btn btn-ghost btn-sm" onclick="borrarDireccionManual('${escH(d.nombre)}')">🗑️</button>
-                </div>
-              </div>`).join("")}
-          </div>`:`<p style="font-size:12px;color:var(--muted);margin-bottom:12px">Todavía no agregaste ninguna dirección a mano — las sucursales fijas no aparecen acá.</p>`}
-
-          <p style="font-size:12px;color:var(--faint);margin-bottom:10px;padding-top:10px;border-top:1px dashed var(--border)">
-            ${editando?`✏️ Editando "${escH(editando)}"`:"Calcula el tiempo hacia y desde todos los puntos que ya existen — tarda unos segundos."}
-          </p>
-          <div class="field">
-            <label>Nombre (como querés que aparezca)</label>
-            <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Ej: Marconi" value="${escH(editando||"")}" ${editando?"disabled":""}/>
-          </div>
-          <div class="field" style="margin-top:10px">
-            <label>Dirección completa</label>
-            <input id="ar-nueva-direccion-calle" class="inp" placeholder="Ej: Marconi 1234, Mar del Plata" value="${escH(S.armarRecorridoForm.editandoDireccionValor||"")}"/>
-          </div>
+    <div class="pt-grid">
+      <div class="card pt-lado">
+        <label>Agregar parada</label>
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <select id="ar-sel-parada" class="inp" style="flex:1">${puntos.map(p=>`<option>${escH(p)}</option>`).join("")}</select>
+          <button class="btn btn-teal btn-md" onclick="agregarParadaRecorrido()">+ Agregar</button>
+        </div>
+        ${f.paradas.length>1?`<button class="btn btn-primary btn-sm btn-full" style="margin-bottom:12px" onclick="sugerirOrdenOptimo()">🧭 Sugerir el orden más corto</button>`:""}
+        <div class="pt-nota">${manana
+          ? `☀️ <strong>Salida de la mañana:</strong> la descarga de cada parada sale de Flota según los bultos del pedido diario (los de hoy si ya están cargados; si no, los de referencia). Si una parada no tiene dato, usa ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>.`
+          : `🔁 <strong>Otra salida:</strong> no lleva el pedido diario, solo transferencias, así que cada parada tarda menos: <input type="number" min="0" value="${minDescargaSinPedido()}" onchange="guardarDescargaSinPedido(this.value)"/> min por parada.`}</div>
+        <details class="pt-dirs" ${f.mostrarAgregarDireccion?"open":""} ontoggle="S.armarRecorridoForm.mostrarAgregarDireccion=this.open">
+          <summary>📍 Direcciones agregadas a mano (${manuales.length})</summary>
+          ${manuales.map(d=>`<div class="pt-dir"><div style="min-width:0"><strong>${escH(d.nombre)}</strong><span>${escH(d.direccion)}</span></div>
+            <div style="display:flex;gap:4px"><button class="btn btn-ghost btn-sm" onclick="editarDireccionManual('${escH(d.nombre)}','${escH(d.direccion)}')">✏️</button><button class="btn btn-ghost btn-sm" onclick="borrarDireccionManual('${escH(d.nombre)}')">🗑️</button></div></div>`).join("")}
+          <p class="pt-sub" style="margin:10px 0 8px">${editando?`✏️ Editando "${escH(editando)}"`:"Calcula el tiempo hacia y desde todos los puntos que ya existen (tarda unos segundos)."}</p>
+          <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Nombre (ej: Marconi)" value="${escH(editando||"")}" ${editando?"disabled":""}/>
+          <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Marconi 1234, Mar del Plata)" value="${escH(f.editandoDireccionValor||"")}"/>
           <div id="ar-nueva-direccion-msg"></div>
-          <div style="display:flex;gap:8px;margin-top:10px">
-            ${editando?`<button class="btn btn-ghost btn-md" onclick="cancelarEdicionDireccion()">Cancelar</button>`:""}
-            <button class="btn btn-teal btn-md" onclick="agregarDireccionNueva()" id="ar-btn-agregar-direccion">
-              📍 ${editando?"Recalcular y guardar":"Calcular y agregar"}
-            </button>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            ${editando?`<button class="btn btn-ghost btn-sm" onclick="cancelarEdicionDireccion()">Cancelar</button>`:""}
+            <button class="btn btn-teal btn-sm" onclick="agregarDireccionNueva()" id="ar-btn-agregar-direccion">📍 ${editando?"Recalcular y guardar":"Calcular y agregar"}</button>
           </div>
-        </div>`;
-      })():""}
-    </div>
-
-    <div class="card">
-      <label style="display:block;margin-bottom:8px">Agregar parada</label>
-      <div style="display:flex;gap:10px;margin-bottom:16px">
-        <select id="ar-sel-parada" class="inp" style="flex:1">
-          ${puntos.map(p=>`<option>${escH(p)}</option>`).join("")}
-        </select>
-        <button class="btn btn-teal btn-md" onclick="agregarParadaRecorrido()">+ Agregar</button>
+        </details>
       </div>
-
-      ${f.paradas.length>1?`<button class="btn btn-primary btn-sm" style="margin-bottom:14px" onclick="sugerirOrdenOptimo()">🧭 Sugerir orden óptimo</button>`:""}
-
-      ${filaSalidaFabrica}
-      ${f.paradas.length===0?`<p style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Todavía no agregaste ninguna parada — arranca siempre desde Fábrica.</p>`:filasParadas+filaVuelta}
-
-      ${f.paradas.length>0?`
-      <div style="margin-top:6px;padding:12px 16px;background:#e8a02018;border:1px solid #e8a02040;border-radius:8px;display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:13px">🕐 Tiempo total del recorrido completo (viaje + descarga, ida y vuelta)</span>
-        <strong style="color:var(--amber)">${faltaDato?"Faltan datos":Math.round(acumulado)+" min"}</strong>
-      </div>`:""}
-
-      <p style="font-size:12px;color:var(--faint);margin-top:12px;padding-top:12px;border-top:1px dashed var(--border)">📦 El tiempo de descarga de cada parada ya está sumado en el total — se calcula con los bultos reales que van hoy a esa sucursal (si no encuentra carga cargada para hoy, usa el tiempo de referencia de Sheets).</p>
-
-      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:16px">
-        <button class="btn btn-danger btn-md" onclick="borrarArmarRecorrido()" ${!f.nombre.trim()?"disabled":""}>🗑️ Borrar este recorrido</button>
-        <button class="btn btn-success btn-md" onclick="guardarArmarRecorrido()" ${(!f.nombre.trim()||f.loading)?"disabled":""}>
-          ${f.loading?`<span class="spinner"></span> Guardando...`:"💾 Guardar recorrido"}
-        </button>
+      <div class="card pt-linea">
+        <div class="pt-card pt-fab"><span class="ar-num">🏭</span><div class="pt-info"><div class="pt-nom">Sale de Fábrica</div></div><div class="pt-hora"><strong>${escH(f.horaSalida||"08:00")}</strong></div></div>
+        ${f.paradas.length?filas+vuelta:`<p style="color:var(--muted);font-size:13px;text-align:center;padding:24px">Agregá paradas a la izquierda. Arrancan siempre desde Fábrica.</p>`}
+        ${f.paradas.length?`<div class="pt-total">
+          <div><span>Viaje</span><strong>${_fmtMin(viaje)}</strong></div>
+          <div><span>Descargas</span><strong>${_fmtMin(descarga)}</strong></div>
+          <div class="big"><span>Total ida y vuelta</span><strong>${faltaDato?"Faltan datos":_fmtMin(viaje+descarga)}</strong></div>
+          <div><span>Vuelve ≈</span><strong>${faltaDato?"—":hora(t)}</strong></div>
+        </div>`:""}
+        <div class="pt-botones">
+          <button class="btn btn-danger btn-md" onclick="borrarArmarRecorrido()" ${!nom?"disabled":""}>🗑️ Borrar recorrido</button>
+          <button class="btn btn-success btn-md" onclick="guardarArmarRecorrido()" ${(!nom||f.loading)?"disabled":""}>${f.loading?`<span class="spinner"></span> Guardando...`:"💾 Guardar recorrido"}</button>
+        </div>
       </div>
     </div>
   </div>`;
@@ -9935,7 +9820,15 @@ async function guardarDescargaDefecto(v){
 // Tiempo estimado: viaje entre paradas + descarga en CADA parada + vuelta a Fábrica.
 // La descarga sale de Flota (flota_tiempos_estimados: tiempo por parada de ese recorrido,
 // ajustado por los bultos del día). Si esa parada no tiene un tiempo cargado, se usa el promedio.
-function descargaParada(rec, suc){
+// ¿Esta salida lleva el pedido diario? Por defecto, la primera salida del día de ese recorrido (la de la mañana)
+function esSalidaManana(a){
+  if(!a) return true;
+  const o=(S.tipoSalidaArmado||{})[a.id]; if(o) return o==="manana";
+  const mismos=(S.armados||[]).filter(x=>normNotif(x.recorrido)===normNotif(a.recorrido) && x.estado!=="CANCELADO" && String(x.fecha||"")===String(a.fecha||"")).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
+  return !mismos.length || mismos[0].id===a.id;
+}
+function descargaParada(rec, suc, manana=true){
+  if(!manana) return {min:minDescargaSinPedido(), fuente:"sin pedido diario"};
   const est=(S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(rec) && normNotif(t.sucursal)===normNotif(suc));
   return {min:Math.round(tiempoDescarga(rec,suc)), fuente: est?"cargado en Flota":"promedio"};
 }
@@ -9945,18 +9838,19 @@ function horaSalidaArmado(){
   return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
 }
 function estimarArmado(a, paradas){
+  const manana=esSalidaManana(a);
   const [h,m]=horaSalidaArmado().split(":").map(Number);
   const base=new Date(); base.setHours(h||0,m||0,0,0);
   const hora=min=>{ const d=new Date(base.getTime()+min*60000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
   let viaje=0, descarga=0, t=0, ant="FABRICA", falta=null, conFlota=0; const etas=[];
   paradas.forEach(p=>{
     const tr=minutosEntre(ant,p.nombre); if(tr===null){ if(!falta) falta=[ant,p.nombre]; } else { viaje+=tr; t+=tr; }
-    const dsc=descargaParada(a.recorrido,p.nombre); if(dsc.fuente!=="promedio") conFlota++;
+    const dsc=descargaParada(a.recorrido,p.nombre,manana); if(dsc.fuente==="cargado en Flota") conFlota++;
     etas.push({nombre:p.nombre, hora:hora(t), descarga:dsc.min, fuente:dsc.fuente});
     descarga+=dsc.min; t+=dsc.min; ant=p.nombre;
   });
   if(paradas.length){ const tr=minutosEntre(ant,"FABRICA"); if(tr===null){ if(!falta) falta=[ant,"FABRICA"]; } else { viaje+=tr; t+=tr; } }
-  return {viaje, descarga, total:viaje+descarga, falta, etas, vuelta:hora(t), conFlota};
+  return {viaje, descarga, total:viaje+descarga, falta, etas, vuelta:hora(t), conFlota, manana};
 }
 function toggleParada(k){ const a=S.armadoSel; S.paradasAbiertas=S.paradasAbiertas||new Set(); const key=a+"|"+k; S.paradasAbiertas.has(key)?S.paradasAbiertas.delete(key):S.paradasAbiertas.add(key); render(); }
 const _fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${String(Math.round(m%60)).padStart(2,"0")} min`:`${Math.round(m)} min`;
@@ -10078,7 +9972,12 @@ function renderArmarDelDia(){
       ${tiempo?`<div class="ar-tiempo">
         <div class="ar-t-fila"><label>🕐 Sale a las <input type="time" value="${escH(horaSalidaArmado())}" onchange="S.armadoHoraSalida=this.value;render()"/></label>
           <span>⏱️ Tiempo estimado: <strong>${_fmtMin(tiempo.total)}</strong> · vuelve ≈ <strong>${tiempo.vuelta}</strong></span></div>
-        <div class="ar-t-sub">viaje ${_fmtMin(tiempo.viaje)} + descargas ${_fmtMin(tiempo.descarga)} (${tiempo.conFlota} de ${paradas.length} paradas con el tiempo de descarga cargado en Flota; el resto, ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>)</div>
+        <div class="pt-seg" style="margin-top:8px">
+          <button class="${tiempo.manana?"on":""}" onclick="S.tipoSalidaArmado={...(S.tipoSalidaArmado||{}),'${escH(a.id)}':'manana'};render()">☀️ Mañana · con pedido diario</button>
+          <button class="${!tiempo.manana?"on":""}" onclick="S.tipoSalidaArmado={...(S.tipoSalidaArmado||{}),'${escH(a.id)}':'otra'};render()">🔁 Otra salida · solo transferencias</button></div>
+        <div class="ar-t-sub">viaje ${_fmtMin(tiempo.viaje)} + descargas ${_fmtMin(tiempo.descarga)} ${tiempo.manana
+          ? `(pedido diario: ${tiempo.conFlota} de ${paradas.length} paradas con el tiempo de Flota según los bultos; el resto, ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>)`
+          : `(sin pedido diario: <input type="number" min="0" value="${minDescargaSinPedido()}" onchange="guardarDescargaSinPedido(this.value)"/> min por parada)`}</div>
         ${tiempo.falta?`<div class="ar-falta">Falta el tiempo entre ${escH(tiempo.falta[0]==="FABRICA"?"Fábrica":tiempo.falta[0])} y ${escH(tiempo.falta[1]==="FABRICA"?"Fábrica":tiempo.falta[1])}: el total puede ser mayor.</div>`:""}
         <div class="ar-t-sub">Es solo una estimación para probar: la hora de salida no se guarda.</div></div>`:""}
       ${a.estado==="PREPARADO"?`<p class="ar-ayuda">✅ Ya está preparado: el repartidor lo ve al escanear el QR de Fábrica.</p>`:""}
