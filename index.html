@@ -1030,6 +1030,11 @@ tr[onclick]:active td{background:var(--s3)}
 .rep-escanea{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center;padding:28px 20px}
 .rep-escanea span{font-size:14px;color:var(--muted);line-height:1.5;max-width:520px}
 
+
+.rec-busq-wrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.rec-busq{flex:1;min-width:240px;max-width:560px}
+.rec-busq-n{font-size:13px;color:var(--muted)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1054,7 +1059,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261110-0912";
+const APP_VERSION = "20261110-0924";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7206,6 +7211,13 @@ async function confirmarBorrarUsuario(dni, usuario){
   render();
 }
 
+// ¿La transferencia coincide con lo buscado? (texto ya normalizado)
+function coincideBusqueda(r, q){
+  if(!q) return true;
+  const id=String(r.id||"");
+  return [id, id.replace(/\D/g,"").slice(-4), origenLabel(r), r.destino, r.descripcion, solicitanteLabel(r), r.observaciones, r.recorrido, etiquetaPreparacion(r), r.estado, r.nombreQuienLevanto, r.nombreQuienEntrego]
+    .some(v=>normNotif(String(v||"")).includes(q));
+}
 function renderRecepcionista(){
   if(esRecepcionFresco()) return renderRecepcionFresco();
   const u = S.user;
@@ -7220,20 +7232,28 @@ function renderRecepcionista(){
   const salActivas = salientes.filter(r=>!["Entregada","Rechazada","Cancelada","No entregada","No levantada"].includes(r.estado));
   const salHist    = salientes.filter(r=>["Entregada","Rechazada","Cancelada","No entregada","No levantada"].includes(r.estado));
 
+  // Búsqueda: N° (o sus últimos 4), etiqueta del paquete (NORTE-1045), sucursales, producto, solicitante…
+  const q = normNotif(S.recBusq||"").trim();
+  const filtra = arr => q ? arr.filter(r=>coincideBusqueda(r,q)) : arr;
+  const [eA,sA,eH,sH] = [entActivas,salActivas,entHist,salHist].map(filtra);
   const tab  = S.tabSuc||"entrantes";
-  const list = tab==="entrantes" ? entActivas
-             : tab==="salientes" ? salActivas
-             : [...entHist,...salHist];
+  const list = tab==="entrantes" ? eA
+             : tab==="salientes" ? sA
+             : [...eH,...sH];
 
   return `
   <div style="animation:fadeUp .3s ease">
     ${pageHead("Recepción","Gestión de transferencias en fábrica",accesosRapidosHtml())}
     ${renderEntregarAlRepartidorBanner()}
+    <div class="rec-busq-wrap">
+      <input class="inp rec-busq" type="search" placeholder="🔎 Buscar por N°, etiqueta (ej. NORTE-1045), sucursal, producto, solicitante…" value="${escH(S.recBusq||"")}" oninput="S.recBusq=this.value;render()" autocomplete="off"/>
+      ${q?`<button class="btn btn-ghost btn-sm" onclick="S.recBusq='';render()">✕ Limpiar</button><span class="rec-busq-n">${eA.length+sA.length+eH.length+sH.length} resultado${eA.length+sA.length+eH.length+sH.length!==1?"s":""}</span>`:""}
+    </div>
     <div class="toolbar">
       <div class="tabs">
-        <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes<span class="tab-n">${entActivas.length}</span></button>
-        <button class="tab ${tab==="salientes"?"active":""}" onclick="S.tabSuc='salientes';render()">📤 Salientes<span class="tab-n">${salActivas.length}</span></button>
-        <button class="tab ${tab==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial<span class="tab-n">${entHist.length+salHist.length}</span></button>
+        <button class="tab ${tab==="entrantes"?"active":""}" onclick="S.tabSuc='entrantes';render()">📥 Entrantes<span class="tab-n">${eA.length}</span></button>
+        <button class="tab ${tab==="salientes"?"active":""}" onclick="S.tabSuc='salientes';render()">📤 Salientes<span class="tab-n">${sA.length}</span></button>
+        <button class="tab ${tab==="historial"?"active":""}" onclick="S.tabSuc='historial';render()">Historial<span class="tab-n">${eH.length+sH.length}</span></button>
       </div>
     </div>
     ${solicitudesLista(list,"rec-"+tab,r=>{
@@ -7244,7 +7264,7 @@ function renderRecepcionista(){
         ${puedeRecibir?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar llegada</button>`:""}
         ${puedeLista?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Lista para salir</button>`:""}`.trim();
       return solicitudCard(r, `${escH(origenLabel(r))} <span style="color:var(--faint)">→</span> ${escH(r.destino)}`, botones, `<span class="chip">👤 ${escH(solicitanteLabel(r))}</span>`);
-    },"Sin transferencias")}
+    },q?`Nada coincide con «${escH(S.recBusq)}»`:"Sin transferencias")}
     <div style="margin-top:16px;padding:12px 16px;background:var(--s2);border-radius:8px;font-size:13px;color:var(--muted);border-left:3px solid var(--teal)">
       📥 <strong>Entrantes:</strong> tocá <strong>Confirmar llegada</strong> cuando llega un repartidor — ingresás tu DNI y aparece la palabra para darle.<br/>
       📤 <strong>Salientes:</strong> tocá <strong>Lista para salir</strong> cuando tenés lista la mercadería para que retire el repartidor.
@@ -7678,9 +7698,12 @@ function renderEntregaRepModal(){
       ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}${d.arm&&r.armadoId===d.arm.id?`<span class="sk-chip green">${escH(d.arm.recorrido)}</span>`:""}</label>`;
   const filaDev=(x)=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.devSel.has(String(x.id))?"checked":""} onchange="S.entregaRep.devSel[this.checked?'add':'delete']('${escH(String(x.id))}');render()"/>
       <span class="mono" style="color:var(--blue)">Dev. ${escH(String(x.id))}</span><span style="flex:1">${escH(x.tipoDevolucion||"Fresco")} · ${productosDeDevolucion(x).length} producto${productosDeDevolucion(x).length!==1?"s":""}</span><span class="sk-chip">🔁 devolución</span></label>`;
-  const mias=d.arm?c.trans.filter(r=>r.armadoId===d.arm.id):[], otras=c.trans.filter(r=>!mias.includes(r));
+  const mias=d.arm?c.trans.filter(r=>r.armadoId===d.arm.id):[];
+  const qe=normNotif(d.q||"").trim();
+  const otras=c.trans.filter(r=>!mias.includes(r) && (!qe || d.sel.has(r.id) || coincideBusqueda(r,qe)));   // lo marcado nunca se esconde
   return `
   <p style="font-size:14px;margin:0 0 10px">🚚 <strong>${escH(d.rep.nombre)}</strong>${d.arm?` · recorrido <strong>${escH(d.arm.recorrido)}</strong>`:` · <span style="color:var(--amber)">no tiene un recorrido iniciado</span>`}</p>
+  ${c.trans.length>6?`<input class="inp" style="margin-bottom:8px" type="search" placeholder="🔎 Buscar N°, etiqueta, destino…" value="${escH(d.q||"")}" oninput="S.entregaRep.q=this.value;render()" autocomplete="off"/>`:""}
   <div class="er-lista">
     ${mias.length?`<div class="ar-mini">De su recorrido</div>${mias.map(fila).join("")}`:""}
     ${otras.length?`<div class="ar-mini">${d.modo==="fabrica"?"Otras listas en Fábrica":"Para retirar acá"}</div>${otras.map(fila).join("")}`:""}
