@@ -1068,6 +1068,10 @@ tr[onclick]:active td{background:var(--s3)}
 .pt-total .big{background:#e8a02018;border:1px solid #e8a02040}.pt-total .big strong{color:var(--amber)}
 .pt-botones{display:flex;justify-content:flex-end;gap:10px;margin-top:16px;flex-wrap:wrap}
 
+
+.pt-bultos{display:inline-flex;align-items:center;gap:4px;margin-left:8px;font-size:12px;color:var(--faint)}
+.pt-bultos input{width:56px;padding:1px 5px;background:var(--s3);border:1px solid var(--border2);border-radius:6px;color:var(--text);font-family:var(--mono)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1092,7 +1096,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261110-1045";
+const APP_VERSION = "20261110-1057";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1996,16 +2000,30 @@ function bultosRealesHoy(recorrido, sucursal){
   ).reduce((a,r)=>a+(Number(r.cantidad)||0),0);
 }
 
+// Bultos del PEDIDO DIARIO de hoy en una parada, si alguien los escribió (solo para hoy).
+// El pedido diario no está en TransferLog: por defecto se usa la referencia de Flota.
+function _claveBultosHoy(){ return "tl_bultos_"+hoyLocalISO(); }
+function bultosPedidoHoy(recorrido, sucursal){
+  try{ const m=JSON.parse(localStorage.getItem(_claveBultosHoy())||"{}"); const v=m[normNotif(recorrido)+"|"+normNotif(sucursal)]; return (v===undefined||v===null||v==="")?null:+v; }catch(e){ return null; }
+}
+function setBultosPedidoHoy(recorrido, sucursal, valor){
+  try{ const k=_claveBultosHoy(), m=JSON.parse(localStorage.getItem(k)||"{}"), key=normNotif(recorrido)+"|"+normNotif(sucursal);
+    if(valor===""||valor===null||isNaN(+valor)) delete m[key]; else m[key]=Math.max(0,Math.round(+valor));
+    localStorage.setItem(k, JSON.stringify(m)); }catch(e){}
+  render();
+}
+// Tiempo de descarga del pedido diario en esa parada (minutos).
+// Antes "ajustaba a los bultos de hoy" sumando las TRANSFERENCIAS que salen de Fábrica, que no son el
+// pedido diario: con una transferencia de 2 cajas calculaba la descarga de 2 bultos y daba 1 o 2 minutos.
+// Ahora: el tiempo de referencia de Flota (el pedido típico); si se escriben los bultos de hoy, se ajusta a esa cantidad.
 function tiempoDescarga(recorrido, sucursal){
   const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(recorrido) && normNotif(t.sucursal)===normNotif(sucursal));
-  if(!est) return minDescargaPorDefecto();   // antes devolvía 0 y el recorrido parecía más corto de lo que es
+  if(!est) return minDescargaPorDefecto();
   const bultosRef = Number(est.bultos_ref)||0;
   const tiempoRefSeg = Number(est.tiempo_est_seg)||0;
-  if(bultosRef<=0) return tiempoRefSeg/60; // sin referencia de cuántos bultos representa ese tiempo — usar el fijo tal cual
-  const segPorBulto = tiempoRefSeg/bultosRef;
-  const bultosHoy = bultosRealesHoy(recorrido, sucursal);
-  if(bultosHoy<=0) return tiempoRefSeg/60; // no se encontró carga real de hoy para esa parada — usar el de referencia como respaldo
-  return (segPorBulto*bultosHoy)/60;
+  const hoy = bultosPedidoHoy(recorrido, sucursal);
+  if(hoy!==null && bultosRef>0) return (tiempoRefSeg/bultosRef*hoy)/60;
+  return tiempoRefSeg/60;
 }
 
 // Arma, parada por parada, la hora estimada de llegada — y a medida que
@@ -9004,10 +9022,12 @@ function renderArmarRecorrido(){
     let dMin, dTxt;
     if(manana){
       const est = nom ? (S.flotaTiemposEstimados||[]).find(x=>normNotif(x.recorrido)===normNotif(nom) && normNotif(x.sucursal)===normNotif(p)) : null;
-      const bultosHoy = nom ? bultosRealesHoy(nom, p) : 0;
-      const bultos = bultosHoy>0 ? bultosHoy : (est ? Number(est.bultos_ref)||0 : 0);
+      const ref = est ? Number(est.bultos_ref)||0 : 0, refMin = est ? Math.round((Number(est.tiempo_est_seg)||0)/60) : 0;
+      const hoyB = nom ? bultosPedidoHoy(nom, p) : null;
       dMin = nom ? Math.round(tiempoDescarga(nom, p)) : minDescargaPorDefecto();
-      dTxt = est ? `${bultos?`${bultos} bultos${bultosHoy>0?" (hoy)":""}`:"tiempo de Flota"}` : "sin dato en Flota: promedio";
+      dTxt = !est ? "sin dato en Flota: promedio"
+           : `Flota: ${refMin} min${ref?` para ${ref} bultos`:""}${hoyB!==null?` · hoy ${hoyB} bultos`:""}`;
+      if(est && ref) dTxt += `@@BULTOS@@`;
     } else { dMin = minDescargaSinPedido(); dTxt = "sin pedido diario"; }
     descarga+=dMin; t+=dMin; anterior=p;
     return `
@@ -9017,7 +9037,7 @@ function renderArmarRecorrido(){
         <span class="pt-grip" title="Arrastrá para reordenar">⠿</span>
         <span class="ar-num">${i+1}</span>
         <div class="pt-info"><div class="pt-nom">${escH(p)}</div>
-          <div class="pt-sub">📦 ${dMin} min de descarga <span>· ${escH(dTxt)}</span></div></div>
+          <div class="pt-sub">📦 ${dMin} min de descarga <span>· ${escH(dTxt.replace("@@BULTOS@@",""))}</span>${dTxt.includes("@@BULTOS@@")?`<label class="pt-bultos" onclick="event.stopPropagation()">bultos de hoy <input type="number" min="0" placeholder="${escH(String((S.flotaTiemposEstimados||[]).find(x=>normNotif(x.recorrido)===normNotif(nom) && normNotif(x.sucursal)===normNotif(p))?.bultos_ref||""))}" value="${bultosPedidoHoy(nom,p)??""}" onchange="setBultosPedidoHoy('${escH(nom)}','${escH(p)}',this.value)"/></label>`:""}</div></div>
         <div class="pt-hora"><strong>≈ ${llega}</strong><span>sale ${hora(t)}</span></div>
         <div class="pt-acc">
           <button class="btn btn-ghost btn-sm" onclick="subirParadaRecorrido(${i})" ${i===0?"disabled":""}>↑</button>
@@ -9059,7 +9079,7 @@ function renderArmarRecorrido(){
         </div>
         ${f.paradas.length>1?`<button class="btn btn-primary btn-sm btn-full" style="margin-bottom:12px" onclick="sugerirOrdenOptimo()">🧭 Sugerir el orden más corto</button>`:""}
         <div class="pt-nota">${manana
-          ? `☀️ <strong>Salida de la mañana:</strong> la descarga de cada parada sale de Flota según los bultos del pedido diario (los de hoy si ya están cargados; si no, los de referencia). Si una parada no tiene dato, usa ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>.`
+          ? `☀️ <strong>Salida de la mañana:</strong> la descarga de cada parada es el tiempo de referencia de Flota para el pedido diario. Si sabés los bultos del pedido de hoy en una parada, escribilos y se ajusta (queda solo por hoy). Si una parada no tiene dato en Flota, usa ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>.`
           : `🔁 <strong>Otra salida:</strong> no lleva el pedido diario, solo transferencias, así que cada parada tarda menos: <input type="number" min="0" value="${minDescargaSinPedido()}" onchange="guardarDescargaSinPedido(this.value)"/> min por parada.`}</div>
         <details class="pt-dirs" ${f.mostrarAgregarDireccion?"open":""} ontoggle="S.armarRecorridoForm.mostrarAgregarDireccion=this.open">
           <summary>📍 Direcciones agregadas a mano (${manuales.length})</summary>
