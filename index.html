@@ -1054,7 +1054,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261109-1451";
+const APP_VERSION = "20261110-0912";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -4462,6 +4462,15 @@ function rpAbrirEdicion(i){
     cant:String(_llegoCant(x)), unidad:x.unidad||"Kg", err:""};
   S.modal="rpEdit"; render(); setTimeout(()=>$("rp-busq")?.focus(),120);
 }
+// El catálogo solo lo puede leer una sesión con el acceso activado. Si la cuenta entró "a la vieja"
+// (sin acceso), la búsqueda vuelve vacía: en vez de "sin resultados", se avisa qué hacer.
+let _sinAccesoCache=null;
+async function sesionSinAccesoCatalogo(){
+  if(_sinAccesoCache!==null) return _sinAccesoCache;
+  try{ const { data } = await sb.auth.getSession(); _sinAccesoCache = !data?.session; }catch(e){ _sinAccesoCache=false; }
+  return _sinAccesoCache;
+}
+const AVISO_SIN_ACCESO = `<div class="alert-info" style="border-left-color:var(--amber);margin-top:8px">🔒 Tu usuario entró sin el acceso activado, por eso no ve el catálogo. Pedile a Admin: <strong>Usuarios → Editar tu usuario → poner una contraseña → Guardar</strong> (eso activa el acceso). Después salí y volvé a entrar.</div>`;
 function rpBuscar(q){
   const e=S.rpEdit; e.q=q; clearTimeout(_timerRpBusq);
   const t=q.trim(); if(t.length<2){ e.res=[]; e.buscando=false; render(); return; }
@@ -4472,8 +4481,8 @@ function rpBuscar(q){
       const { data, error } = await sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras")
         .or(`descripcion.ilike.%${l}%,codigo_interno.ilike.%${l}%,codigo_barras.ilike.%${l}%`).limit(15);
       if(error) throw error;
-      if(S.rpEdit===e){ e.res=toCamelRows(data||[]); }
-    }catch(err){ console.warn("Buscar producto:",err); e.res=[]; }
+      if(S.rpEdit===e){ e.res=toCamelRows(data||[]); e.sinAcceso = !e.res.length && await sesionSinAccesoCatalogo(); }
+    }catch(err){ console.warn("Buscar producto:",err); e.res=[]; e.sinAcceso = await sesionSinAccesoCatalogo(); }
     e.buscando=false; render();
   },300);
 }
@@ -4490,7 +4499,7 @@ function renderRpEditModal(){
       <span class="rp-prod-tag">${reut?"🏭 reutilizable":"no se reutiliza (se descarta)"}</span></div>
     <input id="rp-busq" class="inp" style="margin-top:8px" type="text" placeholder="🔎 Cambiar: buscá por nombre, código interno o de barras…" value="${escH(e.q)}" oninput="rpBuscar(this.value)" autocomplete="off"/>
     ${e.buscando?`<div style="font-size:13px;color:var(--muted);margin-top:6px"><span class="spinner"></span> Buscando…</div>`:""}
-    ${e.res.length?`<div class="rp-res">${e.res.map((p,k)=>`<button class="rp-res-it" onclick="rpElegir(${k})"><span>${escH(p.descripcion)}</span><span class="mono">${p.codigoInterno?`Int. ${escH(p.codigoInterno)}`:""}${esReutilizable(p)?" · 🏭":""}</span></button>`).join("")}</div>`:(e.q.trim().length>=2&&!e.buscando?`<div style="font-size:13px;color:var(--muted);margin-top:6px">No se encontró «${escH(e.q)}».</div>`:"")}
+    ${e.res.length?`<div class="rp-res">${e.res.map((p,k)=>`<button class="rp-res-it" onclick="rpElegir(${k})"><span>${escH(p.descripcion)}</span><span class="mono">${p.codigoInterno?`Int. ${escH(p.codigoInterno)}`:""}${esReutilizable(p)?" · 🏭":""}</span></button>`).join("")}</div>`:(e.q.trim().length>=2&&!e.buscando?(e.sinAcceso?AVISO_SIN_ACCESO:`<div style="font-size:13px;color:var(--muted);margin-top:6px">No se encontró «${escH(e.q)}».</div>`):"")}
   </div>
   <div class="tes-2col">
     <div class="field"><label>Cantidad que llegó</label>
@@ -6965,7 +6974,7 @@ function renderAdminUsuarios(){
           <tbody>
             ${lista.length===0?`<tr class="empty-row"><td colspan="7">Sin resultados</td></tr>`:""}
             ${lista.map(us=>`<tr>
-              <td class="id-cell">${escH(us.usuario)}</td>
+              <td class="id-cell">${escH(us.usuario)}${S.usuarios.some(x=>_mismaCuenta(x.usuario,us.usuario) && x.authUserId)?"":` <span class="sk-chip amber" title="Esta cuenta entra sin el acceso activado: no ve el catálogo ni lo que exige sesión. Editala, poné una contraseña y guardá para activarlo.">🔒 sin acceso</span>`}</td>
               <td>${escH(us.tipo||"—")}</td>
               <td>${escH(us.nombre||"—")}</td>
               <td class="muted-cell">${escH(us.area||"—")}</td>
@@ -7531,7 +7540,7 @@ function esSucursalReal(nombre){
   return (S.sucursales||[]).some(s=>normNotif(s)===n);
 }
 const loEntregaLaSucursal = r => !!r && !["En fábrica","No entregada"].includes(r.estado) && esSucursalReal(origenLabel(r));
-const paraEntregarEnSucursal = suc => S.requests.filter(r=>r.estado==="Lista para retirar" && normNotif(origenLabel(r))===normNotif(suc));
+const paraEntregarEnSucursal = suc => S.requests.filter(r=>r.estado==="Lista para retirar" && r.tipoPedido!=="bolsin" && normNotif(origenLabel(r))===normNotif(suc));   // los bolsines no: los toma el repartidor
 // Si la sucursal está cerrada (ej: bolsines que quedan de noche), el repartidor puede retirar igual:
 // queda registrado que fue sin la firma de la sucursal y a la sucursal le llega un aviso.
 const ORIGEN_CERRADA = "🔒 Sucursal cerrada (sin firma)";
@@ -7539,14 +7548,14 @@ const ORIGEN_CERRADA = "🔒 Sucursal cerrada (sin firma)";
 // Queda como excepción a nombre del repartidor (se cuenta aparte en métricas) y se avisa a Logística y a la sucursal.
 function abrirRetiroSinFirma(){
   const e=S.estoyEn; if(!e || e.fabrica || e.estado!=="ok"){ toast("Esto solo se puede desde el QR de la sucursal","warn"); return; }
-  const L=estoyEnLista(); const rs=L.retirar.filter(r=>loEntregaLaSucursal(r) && puedeTomarAhora(r));
+  const L=estoyEnLista(); const rs=L.retirar.filter(r=>loEntregaLaSucursal(r) && puedeTomarAhora(r) && r.tipoPedido!=="bolsin");
   if(!rs.length && !devolucionesParaEntregar(e.oficial||e.sucursal).length) return;
   S.sinFirma={sel:new Set(rs.map(r=>r.id)), devSel:new Set(devolucionesParaEntregar(e.oficial||e.sucursal).map(x=>String(x.id))), motivo:"", nota:"", err:"", loading:false};
   S.modal="sinFirma"; render();
 }
 function renderSinFirmaModal(){
   const d=S.sinFirma, e=S.estoyEn, lugar=e?(e.oficial||e.sucursal):"";
-  const rs=estoyEnLista().retirar.filter(r=>loEntregaLaSucursal(r));
+  const rs=estoyEnLista().retirar.filter(r=>loEntregaLaSucursal(r) && r.tipoPedido!=="bolsin");
   return `
   <div class="alert-info" style="border-left-color:var(--amber);margin-bottom:12px">⚠️ <strong>Solo es para una excepción.</strong> Lo normal es que ${escH(lugar)} te lo entregue pidiéndote tu DNI. Esto queda registrado a tu nombre y se le avisa a Logística y a la sucursal.</div>
   <div class="er-lista">${rs.map(r=>`<label class="er-it"><input type="checkbox" class="chk-round" ${d.sel.has(r.id)?"checked":""} onchange="S.sinFirma.sel[this.checked?'add':'delete']('${escH(r.id)}');render()"/>
@@ -7601,6 +7610,7 @@ const esDestinoOtraDireccion = r => !!r && esOtraDireccion(r.destino) && !_esLug
 function requiereEntregaConDni(r){
   if(!r) return false;
   const o=origenLabel(r);
+  if(r.tipoPedido==="bolsin") return false;   // los bolsines los toma el repartidor directo, sin que nadie le pida el DNI
   if(_esTesoreriaLugar(o) || _esDeposito(o)) return false;
   if(esOrigenEnFabrica(r)) return true;
   if(esOrigenOtraDireccion(r) && !["En fábrica","No entregada"].includes(r.estado)) return false;   // otra dirección: la retira el repartidor directo (ahí no hay nadie con la app)
@@ -7721,14 +7731,15 @@ async function confirmarEntregaRep(){
 // Sale de una sucursal → un recorrido que pase por el origen ANTES que por el destino y que
 // todavía no haya pasado por el origen. Logística después la puede sacar o cambiar.
 async function asignarRecorridoAuto(r){
-  if(!r || r.armadoId || ["Entregada","Cancelada","Rechazada"].includes(r.estado) || r.tipoPedido==="bolsin") return null;
+  if(!r || r.armadoId || ["Entregada","Cancelada","Rechazada"].includes(r.estado)) return null;
   try{ await cargarDatosQR(); }catch(e){}
   await cargarArmados();
-  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r);
+  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o);   // Tesorería está en Fábrica
   const abiertos=(S.armados||[]).filter(_armadoAbierto).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
   for(const a of abiertos){
-    const par=paradasDe(a.recorrido).map(p=>normNotif(p.sucursal)), iD=par.indexOf(normNotif(dst));
-    if(iD<0) continue;
+    const par=paradasDe(a.recorrido).map(p=>normNotif(p.sucursal));
+    const iD = _esLugarFabrica(dst) ? par.length : par.indexOf(normNotif(dst));   // ir a Fábrica/Tesorería = al final del recorrido
+    if(iD<0 || (desdeFab && iD>=par.length)) continue;
     if(desdeFab){ if(a.estado!=="PREPARADO") continue; }
     else{
       const iO=par.indexOf(normNotif(o)); if(iO<0 || iO>=iD) continue;
@@ -7870,7 +7881,13 @@ async function qrDejarBuzon(){
   await ejecutarDejarBolsines(ids, _dniLimpio(yo.dni), yo.nombre);
   e.loading=false; toast(`📫 Dejaste ${ids.length} bolsín${ids.length!==1?"es":""} en el buzón`); render();
 }
+function bolsinesParaLlevar(e){
+  const yo=_dniLimpio(S.miIdentidadRep?.dni);
+  const deOtro=r=>{ const a=r.armadoId&&armadoDe(r.armadoId); return a && a.estado==="EN_CURSO" && !(e.socios||[yo]).includes(_dniLimpio(a.dniRep)); };
+  return S.requests.filter(r=>r.tipoPedido==="bolsin" && _esTesoreriaLugar(origenLabel(r)) && puedeTomarAhora(r) && !deOtro(r));
+}
 function renderBuzon(e, pagina){
+  const paraLlevar=bolsinesParaLlevar(e);
   const lista=bolsinesParaBuzon(e), hm=iso=>{ try{ return new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}); }catch(x){ return ""; } };
   return pagina(`
     ${e.llegada?`<div class="qr-banner ok">✅ ${e.llegada.yaEstaba?"Ya habías llegado":"Llegada al buzón registrada"} a las <strong>${hm(e.llegada.ts)}</strong></div>`:""}
@@ -7879,7 +7896,9 @@ function renderBuzon(e, pagina){
         <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
         <div class="qr-card-desc">${escH(r.descripcion||"")}${(portadorSolicitud(r)||{}).dni!==_dniLimpio(S.miIdentidadRep?.dni)?` · lo levantó ${escH((portadorSolicitud(r)||{}).nombre||"")}`:""}</div></div>`).join("")}</div>
       <div class="qr-fin"><button class="btn btn-success btn-md btn-full" onclick="qrDejarBuzon()" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`📫 Dejar ${lista.length>1?`los ${lista.length}`:"el bolsín"} en el buzón`}</button></div></div>`
-    :`<div class="pk-vacio">No tenés bolsines para dejar en el buzón. ✅</div>`}`);
+    :`<div class="pk-vacio">No tenés bolsines para dejar en el buzón. ✅</div>`}
+    ${paraLlevar.length?`<div class="estoy-sec"><div class="estoy-tit"><span>📤 Bolsines de Tesorería para llevar</span><span class="tab-n" style="margin:0">${paraLlevar.length}</span></div>
+      <div class="qr-grid">${paraLlevar.map(r=>cardQR(r,"tomar")).join("")}</div></div>`:""}`);
 }
 
 function renderSucursalArea(opts){
@@ -10141,7 +10160,7 @@ function estoyEnLista(){
   const mi=S.miIdentidadRep?normNotif(S.miIdentidadRep.nombre):"";
   const retirar=vis.filter(r=>{
     if(r.estado==="En tránsito") return false;
-    if(e.fabrica && (r.estado==="En fábrica" || esOrigenEnFabrica(r))) return true;           // lo que espera en fábrica para su 2º tramo
+    if(e.fabrica && (r.estado==="En fábrica" || esOrigenEnFabrica(r) || (r.tipoPedido==="bolsin" && _esTesoreriaLugar(origenLabel(r))))) return true;           // lo que espera en fábrica para su 2º tramo
     return normNotif(origenLabel(r))===n;
   });
   const dejar=vis.filter(r=>{
@@ -10265,7 +10284,7 @@ function renderEstoyEn(){
       ? `<div class="qr-banner ok">✅ ${e.llegada?.yaEstaba?`Ya habías llegado a las <strong>${hm(e.llegada.ts)}</strong>`:`Llegada registrada a las <strong>${hm(e.llegada?.ts)}</strong>`} · ${escH(e.viaje.recorrido)}</div>`
       : `<div class="qr-banner warn">⚠️ No tenés un recorrido iniciado, así que la llegada no quedó registrada. Iniciá el recorrido escaneando el QR de Fábrica.</div>`}
     ${seccion("📥 Para retirar acá",L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
-    ${(L.retirar.some(loEntregaLaSucursal)||devolucionesParaEntregar(lugar).length)?`<button class="qr-excepcion" onclick="abrirRetiroSinFirma()">¿La sucursal está cerrada o no hay nadie para firmar?</button>`:""}
+    ${(L.retirar.some(r=>loEntregaLaSucursal(r)&&r.tipoPedido!=="bolsin")||devolucionesParaEntregar(lugar).length)?`<button class="qr-excepcion" onclick="abrirRetiroSinFirma()">¿La sucursal está cerrada o no hay nadie para firmar?</button>`:""}
     ${seccion("📤 Para dejar acá",L.dejar,L.dejar.map(r=>cardQR(r,"entregar")).join(""),L.dejar.length>1?`<button class="btn btn-success btn-sm" onclick='abrirEntregaFirma(${JSON.stringify(L.dejar.map(r=>r.id)).replace(/'/g,"&#39;")})'>✅ Entregar todo</button>`:"")}
     ${seccion("🔁 Devoluciones para levantar",L.devTomar,L.devTomar.map(d=>`<div class="qr-card"><div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">Dev. ${escH(String(d.id))}</span><span class="sk-chip">🔁 ${escH(d.tipoDevolucion||"Fresco")}</span></div><div class="qr-card-desc">${productosDeDevolucion(d).length} producto${productosDeDevolucion(d).length!==1?"s":""}</div><div class="qr-card-acc"><div class="rep-entrega-suc">🏪 Te la entrega ${escH(lugar)}: te va a pedir tu DNI</div></div></div>`).join(""))}
     ${total===0?`<div class="pk-vacio">No hay nada para retirar ni dejar en ${escH(lugar)}. ✅</div>`:""}`);
@@ -13137,6 +13156,7 @@ async function submitEnviarBolsin(){
       S.saving = false;
       toast(`📤 ${cantidadTotal} ${cantidadTotal!==1?"bolsines":"bolsín"} (${cierresTotal} cierres) enviados a Tesorería — ${(creada||optimista).id}`);
       render();
+      if(creada) asignarRecorridoAuto(creada).then(a=>{ if(a){ toast(`🚛 Lo va a llevar el recorrido ${a.recorrido}`); render(); } });
     }
   };
   S.modal = "dniConfirm"; render();
@@ -13317,6 +13337,7 @@ async function submitNuevoLote(){
         if(error) throw error;
         toast(`📦 Lote ${loteId} creado — ${data.length} sucursales`);
         S.requests = [...toCamelRows(data), ...S.requests];
+        (async()=>{ let n=0; for(const r of toCamelRows(data)){ if(await asignarRecorridoAuto(r)) n++; } if(n){ toast(`🚛 ${n} se asignaron solos a su recorrido`); render(); } })();
       } catch(e){
         console.warn(e);
         toast("⚠️ No se pudo crear el lote — revisá la conexión", "warn");
