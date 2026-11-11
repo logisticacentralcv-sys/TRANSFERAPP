@@ -1109,7 +1109,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261111-1003";
+const APP_VERSION = "20261111-1054";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1924,7 +1924,8 @@ async function sheetsLoadDatos(){
   // arranque.
   // Lo mismo para repartidor (su pestaña "Devoluciones" muestra un
   // contador desde el arranque), Logística y Depósito.
-  const cargaDevolucionesAlEntrar = S.user?.rol==="calidad" || S.user?.rol==="repartidor" || S.user?.rol==="logistica"
+  // La sucursal también: se las entrega al repartidor desde su pantalla principal ("Entregar al repartidor")
+  const cargaDevolucionesAlEntrar = S.user?.rol==="calidad" || S.user?.rol==="repartidor" || S.user?.rol==="logistica" || S.user?.rol==="sucursal"
     || esDeposito() || puedeVerMetricasDevoluciones();
   if(cargaDevolucionesAlEntrar && !S.devolucionesLoaded) cargarDevoluciones().then(()=>render());
   // Quienes miran historial y métricas tienen todo, pero sin frenar la entrada: se trae después
@@ -7713,7 +7714,10 @@ function avisoEntregaSuc(r){
 // Aviso arriba de todo para quien entrega
 function renderEntregarAlRepartidorBanner(){
   let modo=null, n=0;
-  if(S.user?.rol==="sucursal" && esSucursalReal(S.user.area)){ modo="sucursal"; n=paraEntregarEnSucursal(S.user.area).length+devolucionesParaEntregar(S.user.area).length; }
+  if(S.user?.rol==="sucursal" && esSucursalReal(S.user.area)){
+    if(!S.devolucionesLoaded && !S._cargandoDevSuc){ S._cargandoDevSuc=true; cargarDevoluciones().then(()=>{ S._cargandoDevSuc=false; render(); }).catch(()=>{ S._cargandoDevSuc=false; }); }   // por si todavía no estaban
+    modo="sucursal"; n=paraEntregarEnSucursal(S.user.area).length+devolucionesParaEntregar(S.user.area).length;
+  }
   else if(puedeEntregarEnFabrica()){ modo="fabrica"; n=paraEntregarEnFabrica().filter(r=>r.estado==="Lista para retirar"||r.armadoId).length; }
   if(!modo || !n) return "";
   return `<div class="card entrega-rep">
