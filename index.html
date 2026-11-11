@@ -1096,7 +1096,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261110-1057";
+const APP_VERSION = "20261111-0724";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8324,11 +8324,12 @@ async function borrarDireccionManual(nombre){
 
 function onCambiaNombreRecorrido(nombre){
   S.armarRecorridoForm.nombre = nombre;
-  const existe = (S.flotaTiemposViaje||[]).some(t=>t.recorrido===nombre);
-  if(existe && nombre!==S.armarRecorridoForm._ultimoCargado){
+  // sin importar mayúsculas: "sur" carga las paradas de "SUR"
+  const existe = (S.flotaTiemposViaje||[]).some(t=>normNotif(t.recorrido)===normNotif(nombre));
+  if(existe && normNotif(nombre)!==normNotif(S.armarRecorridoForm._ultimoCargado||"")){
     S.armarRecorridoForm._ultimoCargado = nombre;
     S.armarRecorridoForm.paradas = (S.flotaTiemposViaje||[])
-      .filter(t=>t.recorrido===nombre)
+      .filter(t=>normNotif(t.recorrido)===normNotif(nombre))
       .sort((a,b)=>a.orden_parada-b.orden_parada)
       .map(t=>t.sucursal);
   } else if(!existe){
@@ -8577,20 +8578,35 @@ function _ordenVecinoMasCercano(paradas, restricciones){
   return orden;
 }
 
+// Nombre "oficial" de un recorrido: si ya existe con otras mayúsculas/tildes (SUR vs sur), se usa ese
+function nombreRecorridoCanonico(nombre){
+  const n=normNotif(nombre||"");
+  return [...(S.flotaTiemposViaje||[]).map(t=>t.recorrido), ...(S.recorridos||[]), ...(_recorridosQR||[])].find(x=>x && normNotif(x)===n) || String(nombre||"").trim();
+}
+const _variantesRecorrido = nombre => [...new Set([nombre, ...(S.flotaTiemposViaje||[]).map(t=>t.recorrido).filter(x=>normNotif(x)===normNotif(nombre))])];
+// Después de guardar o borrar: que "Armar recorridos del día" y el QR lean las paradas nuevas
+async function refrescarHojasDeRuta(){ try{ _hojasRuta=null; await cargarDatosQR(true); }catch(e){} }
 async function guardarArmarRecorrido(){
-  const nombre = S.armarRecorridoForm.nombre.trim();
+  const escrito = S.armarRecorridoForm.nombre.trim();
   const paradas = S.armarRecorridoForm.paradas;
-  if(!nombre){ toast("Ponele un nombre al recorrido","warn"); return; }
+  if(!escrito){ toast("Ponele un nombre al recorrido","warn"); return; }
   if(!paradas.length){ toast("Agregá al menos una parada","warn"); return; }
+  const nombre = nombreRecorridoCanonico(escrito);
   S.armarRecorridoForm.loading = true; render();
   try{
-    const { error: eDel } = await sb.from("flota_tiempos_viaje").delete().eq("recorrido", nombre);
+    // se reemplazan TODAS las versiones del nombre (SUR, sur, Sur…) para que no queden paradas mezcladas
+    const { error: eDel } = await sb.from("flota_tiempos_viaje").delete().in("recorrido", _variantesRecorrido(nombre));
     if(eDel) throw eDel;
     const filas = paradas.map((sucursal,i)=>({recorrido:nombre, orden_parada:i+1, sucursal}));
     const { error: eIns } = await sb.from("flota_tiempos_viaje").insert(filas);
     if(eIns) throw eIns;
-    // Actualizar el estado local para que se refleje ya mismo, sin recargar
-    S.flotaTiemposViaje = [...(S.flotaTiemposViaje||[]).filter(t=>t.recorrido!==nombre), ...filas];
+    // si es un recorrido nuevo, se suma a la lista de recorridos (para elegirlo al armar el día y en el QR)
+    if(!(S.recorridos||[]).some(r=>normNotif(r)===normNotif(nombre))){
+      try{ const { error:eRec } = await sb.from("recorridos").insert({nombre}); if(!eRec) S.recorridos=[...(S.recorridos||[]), nombre]; }catch(e){}
+    }
+    S.flotaTiemposViaje = [...(S.flotaTiemposViaje||[]).filter(t=>normNotif(t.recorrido)!==normNotif(nombre)), ...filas];
+    S.armarRecorridoForm.nombre = nombre; S.armarRecorridoForm._ultimoCargado = nombre;
+    await refrescarHojasDeRuta();
     toast(`✅ "${nombre}" guardado con ${paradas.length} paradas`);
   }catch(e){
     toast("⚠️ No se pudo guardar: "+e.message, "warn");
@@ -8599,15 +8615,16 @@ async function guardarArmarRecorrido(){
   render();
 }
 async function borrarArmarRecorrido(){
-  const nombre = S.armarRecorridoForm.nombre.trim();
+  const nombre = nombreRecorridoCanonico(S.armarRecorridoForm.nombre.trim());
   if(!nombre) return;
   if(!confirm(`¿Borrar todas las paradas guardadas de "${nombre}"?`)) return;
   try{
-    const { error } = await sb.from("flota_tiempos_viaje").delete().eq("recorrido", nombre);
+    const { error } = await sb.from("flota_tiempos_viaje").delete().in("recorrido", _variantesRecorrido(nombre));
     if(error) throw error;
-    S.flotaTiemposViaje = (S.flotaTiemposViaje||[]).filter(t=>t.recorrido!==nombre);
+    S.flotaTiemposViaje = (S.flotaTiemposViaje||[]).filter(t=>normNotif(t.recorrido)!==normNotif(nombre));
     S.armarRecorridoForm.paradas = [];
     S.armarRecorridoForm._ultimoCargado = "";
+    await refrescarHojasDeRuta();
     toast(`Borrado "${nombre}"`);
   }catch(e){
     toast("⚠️ No se pudo borrar: "+e.message, "warn");
@@ -9705,7 +9722,7 @@ async function cargarArmados(){
 }
 async function abrirArmarDelDia(){
   S.subTabRec="armar";
-  await Promise.all([cargarArmados(), cargarDatosQR().catch(()=>{}), (S.flotaTiemposEstimados&&S.flotaMatrizTiempos)?null:cargarEstadoFlotaHoy().catch(()=>{})]);
+  await Promise.all([cargarArmados(), cargarDatosQR(true).catch(()=>{}), (S.flotaTiemposEstimados&&S.flotaMatrizTiempos)?null:cargarEstadoFlotaHoy().catch(()=>{})]);
   if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
   if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
   render();
@@ -9980,7 +9997,7 @@ function renderArmarDelDia(){
       <div class="ar-chips">
         ${visibles.map(x=>`<button class="ar-chip ${x.id===S.armadoSel?"on":""}" onclick="S.armadoSel='${escH(x.id)}';cargarAvanceArmado('${escH(x.id)}');render()">${escH(x.recorrido)} <small>${est[x.estado][0]}${x.nombreRep?` · ${escH(x.nombreRep)}`:""}</small></button>`).join("")}
         ${admin?`<label class="ar-cerr"><input type="checkbox" ${S.verCerradosRec?"checked":""} onchange="S.verCerradosRec=this.checked;render()"/> ver cerrados</label>`:""}
-        <span class="ar-nuevo"><select class="inp" onchange="S.nuevoArmadoRec=this.value"><option value="">+ Nuevo recorrido…</option>${[...new Set([...(S.recorridos||[]),...(_recorridosQR||[])])].map(r=>`<option ${S.nuevoArmadoRec===r?"selected":""}>${escH(r)}</option>`).join("")}</select>
+        <span class="ar-nuevo"><select class="inp" onchange="S.nuevoArmadoRec=this.value"><option value="">+ Nuevo recorrido…</option>${(()=>{ const vistos=new Set(), lista=[]; [...(S.recorridos||[]),...(_recorridosQR||[]),...(_hojasRuta||[]).map(h=>h.recorrido)].forEach(r=>{ const k=normNotif(r||""); if(r && !vistos.has(k)){ vistos.add(k); lista.push(r); } }); return lista; })().map(r=>`<option ${S.nuevoArmadoRec===r?"selected":""}>${escH(r)}</option>`).join("")}</select>
           <button class="btn btn-success btn-sm" onclick="crearArmado()">Crear</button></span>
       </div>
       ${!a?`<div class="pk-vacio" style="margin-top:14px">No hay recorridos armados abiertos. Creá uno para empezar.</div>`:`
