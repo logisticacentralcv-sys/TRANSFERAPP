@@ -1082,6 +1082,9 @@ tr[onclick]:active td{background:var(--s3)}
 
 .ar-desc-det{font-size:12.5px;color:var(--muted);padding:2px 0 6px;display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 
+
+.aviso-rec{font-size:12.5px;color:#7dd3fc;background:#4f9eff14;border:1px solid #4f9eff40;border-radius:8px;padding:5px 9px;margin-bottom:4px;width:100%}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1106,7 +1109,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261111-0950";
+const APP_VERSION = "20261111-1003";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5623,7 +5626,8 @@ function renderPlanificacion(){
       const botones = `
         ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
         ${puedeRecibirFab?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar en fábrica</button>`:""}
-        ${["Aprobada","Programada"].includes(r.estado)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}`.trim();
+        ${avisoRecorridoHoy(r)}
+        ${["Aprobada","Programada"].includes(r.estado) && !esOrigenOtraDireccion(r)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}`.trim();
       return solicitudCard(r, `${escH(origenLabel(r))} <span style="color:var(--faint)">→</span> ${escH(r.destino)}`, botones);
     }, S.fPlanFecha?"No hay solicitudes en esa fecha":S.tabSuc==="abiertas"?"No hay solicitudes abiertas":"Sin historial")}
   </div>`;
@@ -7821,7 +7825,7 @@ async function asignarRecorridoAuto(r){
   const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o);   // Tesorería está en Fábrica
   const abiertos=(S.armados||[]).filter(_armadoAbierto).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
   for(const a of abiertos){
-    const par=paradasDe(a.recorrido).map(p=>normNotif(p.sucursal));
+    const par=paradasDeArmado(a).map(p=>normNotif(p));
     const iD = _esLugarFabrica(dst) ? par.length : par.indexOf(normNotif(dst));   // ir a Fábrica/Tesorería = al final del recorrido
     if(iD<0 || (desdeFab && iD>=par.length)) continue;
     if(desdeFab){ if(a.estado!=="PREPARADO") continue; }
@@ -7850,7 +7854,7 @@ function etiquetaPreparacion(r){
 }
 function etiquetaHtml(r){
   const a=r&&r.armadoId?armadoDe(r.armadoId):null;
-  return `<div class="etiq"><div class="etiq-tit">${a?`🚛 La va a llevar el recorrido <strong>${escH(a.recorrido)}</strong>`:`📦 Todavía no hay un recorrido que la lleve`}</div>
+  return `<div class="etiq"><div class="etiq-tit">${a?`🚛 Tu pedido se retira hoy con el recorrido <strong>${escH(codigoArmado(a))}</strong>`:`📦 Todavía no hay un recorrido que la lleve`}</div>
     <div>Escribile en el paquete: <span class="etiq-cod">${escH(etiquetaPreparacion(r))}</span></div></div>`;
 }
 async function despuesDeCrear(r){
@@ -7863,7 +7867,7 @@ function renderEtiquetaInfoModal(){
   const r=S.requests.find(x=>x.id===S.etiquetaInfo?.id); if(!r) return "";
   return `<p style="font-size:15px;margin:0 0 12px">✅ Transferencia <strong class="mono">${escH(r.id)}</strong> creada: ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></p>
     ${etiquetaHtml(r)}
-    <p style="font-size:13.5px;color:var(--muted);margin:12px 0 0">Cuando la tengas preparada, marcala <strong>"Lista para retirar"</strong>.${esOrigenEnFabrica(r)?" Después dejala en Recepción.":""}</p>
+    <p style="font-size:13.5px;color:var(--muted);margin:12px 0 0">${esOrigenOtraDireccion(r)?`📍 Es un retiro en otra dirección (ej. un proveedor): lo levanta el repartidor allá, <strong>no hace falta marcarla lista</strong>.`:`Cuando la tengas preparada, marcala <strong>"Lista para retirar"</strong>.${esOrigenEnFabrica(r)?" Después dejala en Recepción.":""}`}</p>
     <div class="cc-acciones"><button class="btn btn-success btn-md" onclick="closeModal()">Entendido</button></div>`;
 }
 
@@ -8034,7 +8038,8 @@ function renderSucursalArea(opts){
     const esOrigen = matchArea(r.sucursal)||matchArea(r.area);
     const ruta = esOrigen ? `<small>Para</small> ${escH(r.destino)}` : `<small>De</small> ${escH(origenLabel(r))}`;
     const botones = `
-      ${esOrigen && ["Aprobada","Programada"].includes(r.estado)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}
+      ${avisoRecorridoHoy(r)}
+      ${esOrigen && ["Aprobada","Programada"].includes(r.estado) && !esOrigenOtraDireccion(r)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}
       ${!esOrigen && r.estado==="En tránsito" && !esOtraDireccion(r.destino)?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Recibir</button>`:""}
       ${!esOrigen && r.estado==="Entregada (sin confirmar)" && !(r.tipoPedido==="bolsin" && esDestinoBuzon(r.destino))?`<button class="btn btn-success btn-sm" onclick="openConfirmarCerrado('${escH(r.id)}')">✅ Confirmar transferencia</button>`:""}`.trim();
     return solicitudCard(r, ruta, botones);
@@ -9536,8 +9541,8 @@ async function iniciarEstoyEn(){
     e.armado = e.viaje ? ((S.armados||[]).find(a=>a.idViaje===e.viaje.id && a.estado==="EN_CURSO")||null) : null;
     if(!e.fabrica && _esBaseDeposito(e.oficial||e.sucursal)){
       // El Depósito es punto de salida/regreso si hay un recorrido preparado que sale de ahí, o el mío vuelve ahí
-      const empiezaAca=!e.viaje && (S.armados||[]).some(a=>a.estado==="PREPARADO" && _esBaseDeposito(extremosDe(a.recorrido).inicio));
-      const terminaAca=e.viaje && _esBaseDeposito(extremosDe(e.viaje.recorrido).fin);
+      const empiezaAca=!e.viaje && (S.armados||[]).some(a=>a.estado==="PREPARADO" && _esBaseDeposito(extremosDe(a).inicio));
+      const terminaAca=e.viaje && e.armado && _esBaseDeposito(extremosDe(e.armado).fin);
       if(empiezaAca || terminaAca){ e.fabrica=true; e.base=e.oficial||e.sucursal; }
     }
     if(e.fabrica){
@@ -9755,11 +9760,15 @@ async function crearArmado(){
   const rec=String(S.nuevoArmadoRec||"").trim(); if(!rec){ toast("Elegí el recorrido","warn"); return; }
   const d=new Date(), p=n=>String(n).padStart(2,"0");
   const id=`RA-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-  const fila={id, fecha:fechaISO(), recorrido:rec, estado:"PREPARADO", creado_por:quienFirmaSesion?.()||S.user?.nombre||""};
+  // Código único del día: NOMBRE-DDMMNN (NORTE-111101 = NORTE, 11/11, el 1º del día)
+  const usados=new Set((S.armados||[]).map(x=>x.codigo).filter(Boolean));
+  let n=(S.armados||[]).filter(x=>normNotif(x.recorrido)===normNotif(rec) && String(x.fecha||"")===fechaISO()).length+1, codigo;
+  do{ codigo=`${rec.toUpperCase()}-${p(d.getDate())}${p(d.getMonth()+1)}${p(n)}`; n++; }while(usados.has(codigo));
+  const fila={id, fecha:fechaISO(), recorrido:rec, estado:"PREPARADO", creado_por:quienFirmaSesion?.()||S.user?.nombre||"", codigo, paradas:[], inicio:"Fábrica", fin:"Fábrica"};
   const { error } = await sb.from("recorridos_armados").insert(fila);
-  if(error){ console.warn(error); toast(/recorridos_armados/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo crear","warn"); return; }
+  if(error){ console.warn(error); toast(/codigo|paradas|inicio/.test(error.message||"")?"⚠️ Falta correr recorridos_04_unicos_por_dia.sql en Supabase":/recorridos_armados/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo crear","warn"); return; }
   S.armados=[toCamelRow(fila),...(S.armados||[])]; S.armadoSel=id; S.nuevoArmadoRec="";
-  toast(`✅ Recorrido ${rec} armado — sumale las transferencias`); render();
+  toast(`✅ ${codigo} armado — sumale paradas y transferencias`); render();
 }
 // ¿Esta transferencia sale de Fábrica en este recorrido? (origen Fábrica, espera su 2º tramo, o se reasignó desde Fábrica)
 // (Tesorería está físicamente en Fábrica: para el recorrido es el mismo lugar)
@@ -9845,8 +9854,8 @@ async function guardarPortador(){
 // Si sumás una transferencia a una sucursal que no está en el recorrido, se agrega como parada
 // (en el lugar donde menos tiempo suma). Las que van a Fábrica no agregan parada: vuelven a Fábrica.
 function paradasArmado(a, mias){
-  const base=rutaBase(a.recorrido).map(n=>({nombre:n, extra:false}));
-  const ex=extremosDe(a.recorrido);
+  const base=paradasDeArmado(a).map(n=>({nombre:n, extra:false}));
+  const ex=extremosDe(a);
   const tiene=n=>base.some(p=>normNotif(p.nombre)===normNotif(n));
   const faltan=[];
   mias.forEach(r=>{
@@ -9897,7 +9906,7 @@ function estimarArmado(a, paradas){
   const [h,m]=horaSalidaArmado().split(":").map(Number);
   const base=new Date(); base.setHours(h||0,m||0,0,0);
   const hora=min=>{ const d=new Date(base.getTime()+min*60000); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); };
-  const ex=extremosDe(a.recorrido);
+  const ex=extremosDe(a);
   let viaje=0, descarga=0, t=0, ant=_ptoMatriz(ex.inicio), falta=null, conFlota=0; const etas=[];
   paradas.forEach(p=>{
     const tr=minutosEntre(ant,p.nombre); if(tr===null){ if(!falta) falta=[ant,p.nombre]; } else { viaje+=tr; t+=tr; }
@@ -9945,60 +9954,62 @@ function renderRecorridosTab(){
   if(sub!=="armar"){ S.subTabRec="armar"; if(!S.armadosCargados){ S.armadosCargados=true; setTimeout(abrirArmarDelDia,0); } }
   return renderArmarDelDia();
 }
-// ═══ Salida y vuelta de cada recorrido: Fábrica o Depósito (lo elige Logística) ═══
+// ═══ Cada recorrido armado es ÚNICO y de un solo día: tiene su código (NORTE-111101) y sus propias
+//     paradas, salida y vuelta. Nada queda guardado como plantilla: al otro día se arman de nuevo. ═══
 const BASES_RECORRIDO=["Fábrica","Depósito"];
-function extremosDe(rec){
-  try{ const m=JSON.parse(S.config?.recorrido_extremos||"{}"), x=m[normNotif(rec||"")]||{}; return {inicio:x.inicio||"Fábrica", fin:x.fin||"Fábrica"}; }
-  catch(e){ return {inicio:"Fábrica", fin:"Fábrica"}; }
-}
-async function setExtremo(rec, campo, valor){
-  let m={}; try{ m=JSON.parse(S.config?.recorrido_extremos||"{}"); }catch(e){}
-  const k=normNotif(rec); m[k]={...extremosDe(rec), [campo]:valor};
-  const val=JSON.stringify(m); S.config={...S.config, recorrido_extremos:val}; render();
-  try{ await sb.from("config").upsert({clave:"recorrido_extremos", valor:val}); toast(`✅ ${rec}: ${campo==="inicio"?"sale de":"vuelve a"} ${valor}`); }catch(e){ toast("⚠️ No se pudo guardar","warn"); }
-}
 const _ptoMatriz = b => normNotif(b||"")==="fabrica" ? "FABRICA" : b;      // la matriz de tiempos llama "FABRICA" a Fábrica
 const _esBaseDeposito = n => normNotif(n||"").startsWith("deposito");
-
-// ═══ Editar las paradas del recorrido desde el armado del día (todo en una sola pantalla) ═══
-function rutaBase(rec){
-  const ed=S.rutaEdit;
-  if(ed && normNotif(ed.rec)===normNotif(rec)) return ed.paradas;
-  return paradasDe(rec).map(p=>p.sucursal);
+function paradasDeArmado(a){
+  if(!a) return [];
+  let p=a.paradas; if(typeof p==="string"){ try{ p=JSON.parse(p); }catch(e){ p=[]; } }
+  if(Array.isArray(p) && p.length) return p;
+  if(!a.codigo) return paradasDe(a.recorrido).map(x=>x.sucursal);   // recorridos de antes de este cambio
+  return [];
 }
-function _rutaEditable(rec){
-  if(!S.rutaEdit || normNotif(S.rutaEdit.rec)!==normNotif(rec)) S.rutaEdit={rec, paradas:paradasDe(rec).map(p=>p.sucursal), dirty:false};
-  return S.rutaEdit;
+const extremosDe = a => ({inicio:(a&&a.inicio)||"Fábrica", fin:(a&&a.fin)||"Fábrica"});
+const codigoArmado = a => a ? (a.codigo||a.recorrido) : "";
+// Guarda un cambio en ESE recorrido del día (paradas, salida o vuelta)
+async function guardarArmadoCampos(id, ch){
+  const a=armadoDe(id); if(!a) return false;
+  const antes={...a}; Object.assign(a, ch); render();
+  const { error } = await sb.from("recorridos_armados").update(ch).eq("id",id);
+  if(error){ Object.assign(a, antes); render(); toast(/paradas|inicio|fin|codigo/.test(error.message||"")?"⚠️ Falta correr recorridos_04_unicos_por_dia.sql en Supabase":"⚠️ No se pudo guardar","warn"); return false; }
+  return true;
 }
-function rutaMover(rec,i,d){ const r=_rutaEditable(rec), j=i+d; if(j<0||j>=r.paradas.length) return; [r.paradas[i],r.paradas[j]]=[r.paradas[j],r.paradas[i]]; r.dirty=true; render(); }
-function rutaQuitar(rec,i){ const r=_rutaEditable(rec); r.paradas.splice(i,1); r.dirty=true; render(); }
-function rutaAgregar(rec, nombre){
+function rutaMover(id,i,d){ const p=[...paradasDeArmado(armadoDe(id))], j=i+d; if(j<0||j>=p.length) return; [p[i],p[j]]=[p[j],p[i]]; guardarArmadoCampos(id,{paradas:p}); }
+function rutaQuitar(id,i){ const p=[...paradasDeArmado(armadoDe(id))]; p.splice(i,1); guardarArmadoCampos(id,{paradas:p}); }
+function rutaAgregar(id, nombre){
   nombre=String(nombre||"").trim(); if(!nombre) return;
-  const r=_rutaEditable(rec);
-  if(r.paradas.some(p=>normNotif(p)===normNotif(nombre))){ toast("Esa parada ya está en el recorrido","warn"); return; }
-  r.paradas.push(nombre); r.dirty=true; render();
+  const p=[...paradasDeArmado(armadoDe(id))];
+  if(p.some(x=>normNotif(x)===normNotif(nombre))){ toast("Esa parada ya está en el recorrido","warn"); return; }
+  p.push(nombre); guardarArmadoCampos(id,{paradas:p});
 }
-async function rutaGuardar(rec){
-  const r=_rutaEditable(rec);
-  S.armarRecorridoForm={...(S.armarRecorridoForm||{}), nombre:rec, paradas:[...r.paradas]};
-  if(!r.paradas.length){ toast("Agregá al menos una parada","warn"); return; }
-  await guardarArmarRecorrido();
-  S.rutaEdit=null; render();
+function setExtremo(id, campo, valor){ guardarArmadoCampos(id,{[campo]:valor}); }
+// Para no empezar de cero: copiar paradas, salida y vuelta del último recorrido con ese nombre
+function ultimoParecido(a){
+  return (S.armados||[]).filter(x=>x.id!==a.id && normNotif(x.recorrido)===normNotif(a.recorrido) && paradasDeArmado(x).length)
+    .sort((x,y)=>String(y.createdAt||"").localeCompare(String(x.createdAt||"")))[0] || null;
 }
-function onAgregarParadaArmado(rec){
+function copiarParadasUltimo(id){
+  const a=armadoDe(id), prev=a&&ultimoParecido(a);
+  if(prev) return guardarArmadoCampos(id,{paradas:[...paradasDeArmado(prev)], inicio:extremosDe(prev).inicio, fin:extremosDe(prev).fin});
+  const plantilla=paradasDe(a.recorrido).map(x=>x.sucursal);
+  if(plantilla.length) guardarArmadoCampos(id,{paradas:plantilla});
+}
+function onAgregarParadaArmado(id){
   const v=$("ar-add-parada")?.value||"";
-  if(v==="__dir") return abrirDireccionNueva(rec, null, "");
-  rutaAgregar(rec, v);
+  if(v==="__dir") return abrirDireccionNueva(id, null, "");
+  rutaAgregar(id, v);
 }
 // Otra dirección: se busca, se calculan los tiempos (igual que las direcciones de Flota) y se agrega como parada
-function abrirDireccionNueva(rec, transfId, sugerida){
+function abrirDireccionNueva(armadoId, transfId, sugerida){
   S.armarRecorridoForm={...(S.armarRecorridoForm||{}), editandoDireccion:null, editandoDireccionValor:sugerida||""};
-  S.dirNueva={rec, transfId, sugerida:sugerida||""}; S.modal="dirNueva"; render();
+  S.dirNueva={armadoId, transfId, sugerida:sugerida||""}; S.modal="dirNueva"; render();
   setTimeout(()=>$("ar-nueva-direccion-nombre")?.focus(),120);
 }
 function renderDirNuevaModal(){
   const d=S.dirNueva||{};
-  return `<p style="font-size:13.5px;color:var(--muted);margin:0 0 10px">Escribí un nombre corto y la dirección completa. Se calculan los tiempos de viaje desde y hacia todos los puntos (tarda unos segundos) y queda como parada de <strong>${escH(d.rec||"")}</strong>.</p>
+  return `<p style="font-size:13.5px;color:var(--muted);margin:0 0 10px">Escribí un nombre corto y la dirección completa. Se calculan los tiempos de viaje desde y hacia todos los puntos (tarda unos segundos) y queda como parada de <strong>${escH(codigoArmado(armadoDe(d.armadoId)))}</strong>.</p>
     <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Nombre corto (ej: Proveedor Colón)"/>
     <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Av. Colón 1234, Mar del Plata)" value="${escH(d.sugerida||"")}"/>
     <div id="ar-nueva-direccion-msg"></div>
@@ -10010,7 +10021,7 @@ async function agregarDireccionYParada(){
   const nombre=($("ar-nueva-direccion-nombre")?.value||"").trim();
   await agregarDireccionNueva();
   if(!(S.flotaDirecciones||[]).some(x=>normNotif(x.nombre)===normNotif(nombre))) return;   // el error ya se muestra en la ventana
-  rutaAgregar(d.rec, nombre);
+  rutaAgregar(d.armadoId, nombre);
   if(d.transfId){   // la transferencia queda atada a esa parada (destino u origen = la dirección nueva)
     const r=S.requests.find(x=>x.id===d.transfId);
     if(r){
@@ -10020,12 +10031,19 @@ async function agregarDireccionYParada(){
     }
   }
   S.modal=null; S.dirNueva=null;
-  toast(`📍 "${nombre}" agregada al recorrido — tocá 💾 Guardar paradas`); render();
+  toast(`📍 "${nombre}" agregada al recorrido`); render();
 }
 function nuevoNombreRecorrido(){
   const n=(prompt("Nombre del recorrido nuevo (ej: VERDULERÍA, OESTE):")||"").trim();
   if(!n) { render(); return; }
   S.nuevoArmadoRec=nombreRecorridoCanonico(n); render();
+}
+// Aviso para quien cargó la transferencia: con qué recorrido se retira hoy
+function avisoRecorridoHoy(r){
+  if(!r || !r.armadoId || ["Entregada","Cancelada","Rechazada","Entregada (sin confirmar)"].includes(r.estado)) return "";
+  if(S.armados===undefined){ S.armados=null; cargarArmados().then(()=>render()).catch(()=>{}); return ""; }
+  const a=armadoDe(r.armadoId); if(!a || !_armadoAbierto(a)) return "";
+  return `<div class="aviso-rec">🚛 Tu pedido se retira hoy con el recorrido <strong>${escH(codigoArmado(a))}</strong></div>`;
 }
 function renderArmarDelDia(){
   if(S.armadosFalta) return `<div class="card" style="padding:20px">⚠️ Para armar recorridos falta correr una vez <strong>recorridos_01_armados.sql</strong> en Supabase.</div>`;
@@ -10086,8 +10104,8 @@ function renderArmarDelDia(){
     const desc = et ? `<div class="ar-desc-det">📦 ${et.descarga} min de descarga · ${!tiempo.manana?"sin pedido diario":estF?`Flota: ${Math.round((+estF.tiempo_est_seg||0)/60)} min${+estF.bultos_ref?` para ${+estF.bultos_ref} bultos`:""}`:"sin dato en Flota: promedio"}
       ${tiempo.manana&&estF&&+estF.bultos_ref?`<label class="pt-bultos">bultos de hoy <input type="number" min="0" placeholder="${+estF.bultos_ref}" value="${bultosPedidoHoy(a.recorrido,p.nombre)??""}" onchange="setBultosPedidoHoy('${escH(a.recorrido)}','${escH(p.nombre)}',this.value)"/></label>`:""}</div>` : "";
     const det=desc+(dj.length?`<div class="ar-mini">📤 Deja</div>${dj.map(filaMia).join("")}`:"")+(rt.length?`<div class="ar-mini">📥 Retira</div>${rt.map(filaMia).join("")}`:"");
-    const iBase=rutaBase(a.recorrido).findIndex(x=>normNotif(x)===normNotif(p.nombre));
-    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.recorrido)}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.recorrido)}',${iBase},1)" ${iBase===rutaBase(a.recorrido).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${escH(a.recorrido)}',${iBase})">✕</button></span>` : "";
+    const iBase=paradasDeArmado(a).findIndex(x=>normNotif(x)===normNotif(p.nombre));
+    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${escH(a.id)}',${iBase})">✕</button></span>` : "";
     return bloque(p.nombre, escH(p.nombre), i+1, det,
       `${ctrl}${p.extra?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
       `${ll?"ok":""} ${p.extra?"extra":""}`);
@@ -10102,25 +10120,26 @@ function renderArmarDelDia(){
     </div>
     <div class="card ar-col ar-drop" ondragover="if(${editable?"true":"false"}){event.preventDefault();this.classList.add('sobre')}" ondragleave="this.classList.remove('sobre')" ondrop="event.preventDefault();this.classList.remove('sobre');asignarAArmado(event.dataTransfer.getData('text/plain'))">
       <div class="ar-chips">
-        ${visibles.map(x=>`<button class="ar-chip ${x.id===S.armadoSel?"on":""}" onclick="S.armadoSel='${escH(x.id)}';cargarAvanceArmado('${escH(x.id)}');render()">${escH(x.recorrido)} <small>${est[x.estado][0]}${x.nombreRep?` · ${escH(x.nombreRep)}`:""}</small></button>`).join("")}
+        ${visibles.map(x=>`<button class="ar-chip ${x.id===S.armadoSel?"on":""}" onclick="S.armadoSel='${escH(x.id)}';cargarAvanceArmado('${escH(x.id)}');render()">${escH(codigoArmado(x))} <small>${est[x.estado][0]}${x.nombreRep?` · ${escH(x.nombreRep)}`:""}</small></button>`).join("")}
         ${admin?`<label class="ar-cerr"><input type="checkbox" ${S.verCerradosRec?"checked":""} onchange="S.verCerradosRec=this.checked;render()"/> ver cerrados</label>`:""}
         <span class="ar-nuevo"><select class="inp" onchange="if(this.value==='__nuevo'){nuevoNombreRecorrido()}else{S.nuevoArmadoRec=this.value}"><option value="">+ Nuevo recorrido…</option>${(()=>{ const vistos=new Set(), lista=[]; [...(S.recorridos||[]),...(_recorridosQR||[]),...(_hojasRuta||[]).map(h=>h.recorrido)].forEach(r=>{ const k=normNotif(r||""); if(r && !vistos.has(k)){ vistos.add(k); lista.push(r); } }); return lista; })().map(r=>`<option ${S.nuevoArmadoRec===r?"selected":""}>${escH(r)}</option>`).join("")}${S.nuevoArmadoRec&&![...(S.recorridos||[]),...(_hojasRuta||[]).map(h=>h.recorrido)].some(x=>normNotif(x)===normNotif(S.nuevoArmadoRec))?`<option selected>${escH(S.nuevoArmadoRec)}</option>`:""}<option value="__nuevo">✏️ Recorrido nuevo…</option></select>
           <button class="btn btn-success btn-sm" onclick="crearArmado()">Crear</button></span>
       </div>
       ${!a?`<div class="pk-vacio" style="margin-top:14px">No hay recorridos armados abiertos. Creá uno para empezar.</div>`:`
       <div class="ar-head">
-        <div><div class="ar-rec">${escH(a.recorrido)} <span class="badge" style="color:${est[a.estado][1]};border-color:${est[a.estado][1]}55">${est[a.estado][0]}</span></div>
+        <div><div class="ar-rec">${escH(codigoArmado(a))} <span class="badge" style="color:${est[a.estado][1]};border-color:${est[a.estado][1]}55">${est[a.estado][0]}</span></div>
           <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong>${a.tomadoAt?` desde las ${hm(a.tomadoAt)}`:""}`:""}</div></div>
         <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button><button class="btn btn-danger btn-sm" onclick="abrirBorrarArmado('${escH(a.id)}')" title="Borrar un recorrido de prueba">🗑️</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}</div>
       </div>
-      ${editable?(()=>{ const ex=extremosDe(a.recorrido), ed=S.rutaEdit&&normNotif(S.rutaEdit.rec)===normNotif(a.recorrido)?S.rutaEdit:null;
-        const puntos=puntosDisponiblesRecorrido().filter(x=>!rutaBase(a.recorrido).some(y=>normNotif(y)===normNotif(x)));
+      ${editable?(()=>{ const ex=extremosDe(a), pars=paradasDeArmado(a);
+        const puntos=puntosDisponiblesRecorrido().filter(x=>!pars.some(y=>normNotif(y)===normNotif(x)));
+        const prev=!pars.length?ultimoParecido(a):null, plantilla=!pars.length&&!prev?paradasDe(a.recorrido).length:0;
         return `<div class="ar-ruta-ed">
-          <label>🚩 Sale de <select onchange="setExtremo('${escH(a.recorrido)}','inicio',this.value)">${BASES_RECORRIDO.map(b=>`<option ${normNotif(ex.inicio)===normNotif(b)?"selected":""}>${b}</option>`).join("")}</select></label>
-          <label>🏁 Vuelve a <select onchange="setExtremo('${escH(a.recorrido)}','fin',this.value)">${BASES_RECORRIDO.map(b=>`<option ${normNotif(ex.fin)===normNotif(b)?"selected":""}>${b}</option>`).join("")}</select></label>
+          <label>🚩 Sale de <select onchange="setExtremo('${escH(a.id)}','inicio',this.value)">${BASES_RECORRIDO.map(b=>`<option ${normNotif(ex.inicio)===normNotif(b)?"selected":""}>${b}</option>`).join("")}</select></label>
+          <label>🏁 Vuelve a <select onchange="setExtremo('${escH(a.id)}','fin',this.value)">${BASES_RECORRIDO.map(b=>`<option ${normNotif(ex.fin)===normNotif(b)?"selected":""}>${b}</option>`).join("")}</select></label>
           <span class="ar-add"><select id="ar-add-parada"><option value="">+ Agregar parada…</option>${puntos.map(x=>`<option>${escH(x)}</option>`).join("")}<option value="__dir">📍 Otra dirección (buscarla)…</option></select>
-            <button class="btn btn-teal btn-sm" onclick="onAgregarParadaArmado('${escH(a.recorrido)}')">Agregar</button></span>
-          ${ed&&ed.dirty?`<button class="btn btn-success btn-sm" onclick="rutaGuardar('${escH(a.recorrido)}')">💾 Guardar paradas</button><button class="btn btn-ghost btn-sm" onclick="S.rutaEdit=null;render()">Descartar</button>`:""}
+            <button class="btn btn-teal btn-sm" onclick="onAgregarParadaArmado('${escH(a.id)}')">Agregar</button></span>
+          ${prev?`<button class="btn btn-ghost btn-sm" onclick="copiarParadasUltimo('${escH(a.id)}')">📋 Copiar paradas de ${escH(codigoArmado(prev))}</button>`:plantilla?`<button class="btn btn-ghost btn-sm" onclick="copiarParadasUltimo('${escH(a.id)}')">📋 Usar las paradas habituales de ${escH(a.recorrido)}</button>`:""}
         </div>`; })():""}
       ${tiempo?`<div class="ar-tiempo">
         <div class="ar-t-fila"><label>🕐 Sale a las <input type="time" value="${escH(horaSalidaArmado())}" onchange="S.armadoHoraSalida=this.value;render()"/></label>
@@ -10135,10 +10154,10 @@ function renderArmarDelDia(){
         <div class="ar-t-sub">Es solo una estimación para probar: la hora de salida no se guarda.</div></div>`:""}
       ${a.estado==="PREPARADO"?`<p class="ar-ayuda">✅ Ya está preparado: el repartidor lo ve al escanear el QR de Fábrica.</p>`:""}
       ${enCurso?`<p class="ar-ayuda">🚛 Salió de Fábrica: lo que sale de Fábrica ya no se puede tocar (🔒). Podés sumarle retiros en sucursales; se le avisa al repartidor. Se cierra al volver o solo a las ${HORAS_CIERRE_AUTO} horas.</p>`:""}
-      ${enFab.length?bloque("__fab",`Sale de ${escH(extremosDe(a.recorrido).inicio)}`,"🏭",enFab.map(filaMia).join(""),`<span class="ar-cnt rt">📥 ${enFab.length}</span>`):""}
+      ${enFab.length?bloque("__fab",`Sale de ${escH(extremosDe(a).inicio)}`,"🏭",enFab.map(filaMia).join(""),`<span class="ar-cnt rt">📥 ${enFab.length}</span>`):""}
       ${paradasHtml || `<div class="ar-vacia">Todavía no tiene paradas: sumale transferencias.</div>`}
-      ${otrasDir.length?bloque("__otras","Otras direcciones (sin QR, no entran en el tiempo estimado)","📍",otrasDir.map(r=>filaMia(r)+`<div class="ar-sub" style="margin:-2px 0 6px 12px">📍 ${esOrigenOtraDireccion(r)?"Retira en":"Deja en"}: ${_dirDe(r)} ${editable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirDireccionNueva('${escH(a.recorrido)}','${escH(r.id)}','${escH(String(r.observaciones||"").replace(/'/g,""))}')">📍 Buscar y agregar como parada</button>`:""}</div>`).join(""),`<span class="ar-cnt dj">📍 ${otrasDir.length}</span>`):""}
-      ${vuelve.length?bloque("__vuelve",`Vuelve a ${escH(extremosDe(a.recorrido).fin)} (y sale después)`,"🏭",vuelve.map(filaMia).join(""),`<span class="ar-cnt dj">📤 ${vuelve.length}</span>`):""}
+      ${otrasDir.length?bloque("__otras","Otras direcciones (sin QR, no entran en el tiempo estimado)","📍",otrasDir.map(r=>filaMia(r)+`<div class="ar-sub" style="margin:-2px 0 6px 12px">📍 ${esOrigenOtraDireccion(r)?"Retira en":"Deja en"}: ${_dirDe(r)} ${editable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirDireccionNueva('${escH(a.id)}','${escH(r.id)}','${escH(String(r.observaciones||"").replace(/'/g,""))}')">📍 Buscar y agregar como parada</button>`:""}</div>`).join(""),`<span class="ar-cnt dj">📍 ${otrasDir.length}</span>`):""}
+      ${vuelve.length?bloque("__vuelve",`Vuelve a ${escH(extremosDe(a).fin)} (y sale después)`,"🏭",vuelve.map(filaMia).join(""),`<span class="ar-cnt dj">📤 ${vuelve.length}</span>`):""}
       <div class="ar-soltar">Soltá acá una transferencia para sumarla</div>`}
     </div>
   </div>`;
@@ -10311,17 +10330,17 @@ function renderEstoyEn(){
 
   // ── Fábrica sin recorrido: elegir uno de los PREPARADOS por Logística ──
   if(e.fabrica && e.estado==="iniciar"){
-    const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO" && normNotif(extremosDe(x.recorrido).inicio)===normNotif(e.base||"Fábrica"));
+    const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO" && normNotif(extremosDe(x).inicio)===normNotif(e.base||"Fábrica"));
     return pagina(`
     <div class="card qr-iniciar">
       <div class="qr-iniciar-tit">🚛 Elegí tu recorrido</div>
       ${!prep.length?`<p style="color:#fbbf24;font-size:15px;line-height:1.5">No hay recorridos preparados todavía. Pedile a Logística que arme el tuyo y volvé a escanear.</p>
         <button class="btn btn-ghost btn-md btn-full" onclick="iniciarEstoyEn()">🔄 Volver a buscar</button>`:
-      prep.map(x=>{ const its=S.requests.filter(r=>r.armadoId===x.id); const par=paradasDe(x.recorrido);
+      prep.map(x=>{ const its=S.requests.filter(r=>r.armadoId===x.id); const par=paradasDeArmado(x);
         return `<div class="qr-armado">
-          <div class="qr-armado-tit">${escH(x.recorrido)} <span>${its.length} transferencia${its.length!==1?"s":""}</span></div>
-          ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p.sucursal)}</span>`).join("")}</div>`:""}
-          <button class="btn btn-success btn-md btn-full qr-salir" onclick="qrTomarArmado('${escH(x.id)}')" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`✅ Salir con ${escH(x.recorrido)}`}</button>
+          <div class="qr-armado-tit">${escH(codigoArmado(x))} <span>${its.length} transferencia${its.length!==1?"s":""}</span></div>
+          ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p)}</span>`).join("")}</div>`:""}
+          <button class="btn btn-success btn-md btn-full qr-salir" onclick="qrTomarArmado('${escH(x.id)}')" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`✅ Salir con ${escH(codigoArmado(x))}`}</button>
         </div>`; }).join("")}
       <details class="qr-acomp"><summary>¿Vas con acompañante?</summary>
         <input id="qr-acomp" class="inp" type="number" inputmode="numeric" placeholder="DNI del acompañante" value="${escH(e.dni2||"")}" oninput="S.estoyEn.dni2=this.value"/></details>
@@ -14212,6 +14231,8 @@ async function submitPlanificarCantidad(){
 }
 
 function openListo(id){
+  const rx=S.requests.find(x=>x.id===id);
+  if(rx && esOrigenOtraDireccion(rx)){ toast("📍 Es un retiro en otra dirección: lo levanta el repartidor allá, no se marca lista","warn"); return; }
   S.listoModal = {id, dni:"", err:"", loading:false, nombreOk:""};
   S.modal = "listo";
   render();
