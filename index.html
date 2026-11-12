@@ -1127,7 +1127,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261112-0723";
+const APP_VERSION = "20261112-0734";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -9909,14 +9909,27 @@ async function guardarDescargaDefecto(v){
 // ¿Esta salida lleva el pedido diario? Por defecto, la primera salida del día de ese recorrido (la de la mañana)
 function esSalidaManana(a){
   if(!a) return true;
-  const o=(S.tipoSalidaArmado||{})[a.id]; if(o) return o==="manana";
+  const o=ajustesDe(a).tipoSalida; if(o) return o==="manana";
   const mismos=(S.armados||[]).filter(x=>normNotif(x.recorrido)===normNotif(a.recorrido) && x.estado!=="CANCELADO" && String(x.fecha||"")===String(a.fecha||"")).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
   return !mismos.length || mismos[0].id===a.id;
 }
-function descargaParada(rec, suc, manana=true){
+// Ajustes que Logística hizo ESE día en ese recorrido (quedan guardados en el recorrido, así cualquier
+// celular calcula lo mismo y la foto del día los incluye)
+function ajustesDe(a){ let x=a&&a.ajustes; if(typeof x==="string"){ try{ x=JSON.parse(x); }catch(e){ x={}; } } return x&&typeof x==="object"?x:{}; }
+const bultosArmado = (a, suc) => { const b=ajustesDe(a).bultos||{}, v=b[normNotif(suc)]; return (v===undefined||v===null||v==="")?null:+v; };
+function setBultosArmado(id, suc, valor){
+  const a=armadoDe(id); if(!a) return;
+  const aj=ajustesDe(a), b={...(aj.bultos||{})}, k=normNotif(suc);
+  if(valor===""||valor===null||isNaN(+valor)) delete b[k]; else b[k]=Math.max(0,Math.round(+valor));
+  guardarArmadoCampos(id,{ajustes:{...aj, bultos:b}});
+}
+function setTipoSalidaArmado(id, tipo){ const a=armadoDe(id); if(a) guardarArmadoCampos(id,{ajustes:{...ajustesDe(a), tipoSalida:tipo}}); }
+function descargaParada(rec, suc, manana=true, a=null){
   if(!manana) return {min:minDescargaSinPedido(), fuente:"sin pedido diario"};
   const est=(S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(rec) && normNotif(t.sucursal)===normNotif(suc));
-  return {min:Math.round(tiempoDescarga(rec,suc)), fuente: est?"cargado en Flota":"promedio"};
+  const hoy=a?bultosArmado(a,suc):null;
+  if(est && hoy!==null && +est.bultos_ref>0) return {min:Math.round((+est.tiempo_est_seg||0)/(+est.bultos_ref)*hoy/60), fuente:"cargado en Flota", bultos:hoy};
+  return {min:Math.round(tiempoDescarga(rec,suc)), fuente: est?"cargado en Flota":"promedio", bultos: est?(+est.bultos_ref||null):null};
 }
 function horaSalidaArmado(){
   if(S.armadoHoraSalida) return S.armadoHoraSalida;
@@ -9933,8 +9946,8 @@ function estimarArmado(a, paradas, salida){
   let viaje=0, descarga=0, t=0, ant=_ptoMatriz(ex.inicio), falta=null, conFlota=0; const etas=[];
   paradas.forEach(p=>{
     const tr=minutosEntre(ant,p.nombre); if(tr===null){ if(!falta) falta=[ant,p.nombre]; } else { viaje+=tr; t+=tr; }
-    const dsc=descargaParada(a.recorrido,p.nombre,manana); if(dsc.fuente==="cargado en Flota") conFlota++;
-    etas.push({nombre:p.nombre, hora:hora(t), min:t, descarga:dsc.min, fuente:dsc.fuente});
+    const dsc=descargaParada(a.recorrido,p.nombre,manana,a); if(dsc.fuente==="cargado en Flota") conFlota++;
+    etas.push({nombre:p.nombre, hora:hora(t), min:t, descarga:dsc.min, fuente:dsc.fuente, bultos:dsc.bultos??null});
     descarga+=dsc.min; t+=dsc.min; ant=p.nombre;
   });
   if(paradas.length){ const fin=_ptoMatriz(ex.fin), tr=minutosEntre(ant,fin); if(tr===null){ if(!falta) falta=[ant,fin]; } else { viaje+=tr; t+=tr; } }
@@ -10000,7 +10013,7 @@ async function guardarArmadoCampos(id, ch){
   const a=armadoDe(id); if(!a) return false;
   const antes={...a}; Object.assign(a, ch); render();
   const { error } = await sb.from("recorridos_armados").update(ch).eq("id",id);
-  if(error){ Object.assign(a, antes); render(); toast(/paradas|inicio|fin|codigo/.test(error.message||"")?"⚠️ Falta correr recorridos_04_unicos_por_dia.sql en Supabase":"⚠️ No se pudo guardar","warn"); return false; }
+  if(error){ Object.assign(a, antes); render(); toast(/ajustes|estimacion/.test(error.message||"")?"⚠️ Falta correr recorridos_05_foto_del_dia.sql en Supabase":/paradas|inicio|fin|codigo/.test(error.message||"")?"⚠️ Falta correr recorridos_04_unicos_por_dia.sql en Supabase":"⚠️ No se pudo guardar","warn"); return false; }
   return true;
 }
 function rutaMover(id,i,d){ const p=[...paradasDeArmado(armadoDe(id))], j=i+d; if(j<0||j>=p.length) return; [p[i],p[j]]=[p[j],p[i]]; guardarArmadoCampos(id,{paradas:p}); }
@@ -10108,8 +10121,11 @@ function analizarRecorrido(a){
   const vuelta = v?.hora_llegada || regreso?.ts || a.cerradoAt || null;
   const realMin = salida && vuelta ? Math.round((new Date(vuelta)-new Date(salida))/60000) : null;
   const transf=[...S.requests, ...(S.histTransf||[])].filter((r,i,arr)=>r.armadoId===a.id && arr.findIndex(x=>x.id===r.id)===i);
-  const paradas=paradasArmado(a, transf);
-  const est = salida && paradas.length ? estimarArmado(a, paradas, salida) : null;
+  let foto=a.estimacion; if(typeof foto==="string"){ try{ foto=JSON.parse(foto); }catch(e){ foto=null; } }
+  // Con foto del día: lo que se esperaba ESE día. Sin foto (recorridos viejos): se recalcula y se aclara
+  const paradas = foto&&Array.isArray(foto.paradas)&&foto.paradas.length ? foto.paradas.map(x=>({nombre:x.nombre})) : paradasArmado(a, transf);
+  const est = foto&&Array.isArray(foto.paradas) ? {total:foto.total, falta:foto.falta, etas:foto.paradas, manana:foto.manana}
+            : (salida && paradas.length ? estimarArmado(a, paradas, salida) : null);
   const llegadas=regs.filter(x=>x.evento==="LLEGADA");
   const filas=paradas.map(p=>{
     const ll=llegadas.find(x=>normNotif(x.sucursal)===normNotif(p.nombre));
@@ -10118,7 +10134,7 @@ function analizarRecorrido(a){
     const realP=ll&&salida ? Math.round((new Date(ll.ts)-new Date(salida))/60000) : null;
     return {nombre:p.nombre, estHora:et?.hora||null, llego:ll?.ts||null, dif:(estMin!==null&&realP!==null)?realP-estMin:null, sinGps:/sin ubicación/i.test(ll?.gps_obs||"")};
   });
-  return {salida, vuelta, realMin, estMin:est&&!est.falta?est.total:null, filas, transf:transf.length, faltas:h.faltas[a.id]||0, auto:!!(v?.cierre_automatico||a.cierreAutomatico)};
+  return {salida, vuelta, realMin, estMin:est&&!est.falta&&est.total!=null?est.total:null, filas, transf:foto&&Array.isArray(foto.transferencias)?foto.transferencias.length:transf.length, faltas:h.faltas[a.id]||0, auto:!!(v?.cierre_automatico||a.cierreAutomatico), conFoto:!!foto, manana:est?est.manana:null};
 }
 function _hm(iso){ try{ const d=new Date(iso); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }catch(e){ return "—"; } }
 function _fd(iso){ try{ const d=new Date(iso.length<=10?iso+"T12:00:00":iso); return d.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"}); }catch(e){ return iso||""; } }
@@ -10164,11 +10180,11 @@ function renderHistoricoRecorridos(){
     return `<div class="card hs-rec">
       <div class="hs-cab" onclick="S.histAbiertos=S.histAbiertos||new Set();S.histAbiertos.has('${escH(a.id)}')?S.histAbiertos.delete('${escH(a.id)}'):S.histAbiertos.add('${escH(a.id)}');render()">
         <div><div class="hs-cod">${escH(codigoArmado(a))} <span class="badge">${est[a.estado]||a.estado}</span>${x.auto?` <span class="sk-chip amber">cerró solo</span>`:""}</div>
-          <div class="ar-sub">${_fd(a.fecha||a.createdAt)} · ${escH(a.nombreRep||"sin repartidor")} · ${x.transf} transferencia${x.transf!==1?"s":""}${x.faltas?` · <span style="color:#f05252">${x.faltas} falta${x.faltas!==1?"s":""}</span>`:""}</div></div>
+          <div class="ar-sub">${_fd(a.fecha||a.createdAt)} · ${escH(a.nombreRep||"sin repartidor")} · ${x.manana===true?"☀️ mañana con pedido":x.manana===false?"🔁 otra salida":""} · ${x.transf} transferencia${x.transf!==1?"s":""}${x.conFoto?"":` · <span style="color:var(--faint)">sin foto del día (estimado recalculado)</span>`}${x.faltas?` · <span style="color:#f05252">${x.faltas} falta${x.faltas!==1?"s":""}</span>`:""}</div></div>
         <div class="hs-tiempos">
           <div><span>Salió</span><strong>${x.salida?_hm(x.salida):"—"}</strong></div>
           <div><span>Volvió</span><strong>${x.vuelta?_hm(x.vuelta):"—"}</strong></div>
-          <div><span>Se esperaba</span><strong>${x.estMin!==null?_fmtMin(x.estMin):"—"}</strong></div>
+          <div><span>Se esperaba ${x.conFoto?`<span title="Foto de lo que se esperaba cuando salió">📸</span>`:`<span title="Recorrido sin foto del día: recalculado con los tiempos de hoy">≈</span>`}</span><strong>${x.estMin!==null?_fmtMin(x.estMin):"—"}</strong></div>
           <div><span>Tardó</span><strong>${x.realMin!==null?_fmtMin(x.realMin):"—"}</strong></div>
           <div>${x.realMin!==null&&x.estMin!==null?_dif(x.realMin-x.estMin):""}</div>
           <span class="ar-flecha">${abierto?"▲":"▼"}</span>
@@ -10239,7 +10255,7 @@ function renderArmarDelDia(){
     // descarga de esta parada: de dónde sale y, en la salida de la mañana, los bultos del pedido de hoy
     const estF=(S.flotaTiemposEstimados||[]).find(x=>normNotif(x.recorrido)===normNotif(a.recorrido) && normNotif(x.sucursal)===normNotif(p.nombre));
     const desc = et ? `<div class="ar-desc-det">📦 ${et.descarga} min de descarga · ${!tiempo.manana?"sin pedido diario":estF?`Flota: ${Math.round((+estF.tiempo_est_seg||0)/60)} min${+estF.bultos_ref?` para ${+estF.bultos_ref} bultos`:""}`:"sin dato en Flota: promedio"}
-      ${tiempo.manana&&estF&&+estF.bultos_ref?`<label class="pt-bultos">bultos de hoy <input type="number" min="0" placeholder="${+estF.bultos_ref}" value="${bultosPedidoHoy(a.recorrido,p.nombre)??""}" onchange="setBultosPedidoHoy('${escH(a.recorrido)}','${escH(p.nombre)}',this.value)"/></label>`:""}</div>` : "";
+      ${tiempo.manana&&estF&&+estF.bultos_ref?`<label class="pt-bultos">bultos de hoy <input type="number" min="0" placeholder="${+estF.bultos_ref}" value="${bultosArmado(a,p.nombre)??""}" onchange="setBultosArmado('${escH(a.id)}','${escH(p.nombre)}',this.value)"/></label>`:""}</div>` : "";
     const det=desc+(dj.length?`<div class="ar-mini">📤 Deja</div>${dj.map(filaMia).join("")}`:"")+(rt.length?`<div class="ar-mini">📥 Retira</div>${rt.map(filaMia).join("")}`:"");
     const iBase=paradasDeArmado(a).findIndex(x=>normNotif(x)===normNotif(p.nombre));
     const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${escH(a.id)}',${iBase})">✕</button></span>` : "";
@@ -10282,8 +10298,8 @@ function renderArmarDelDia(){
         <div class="ar-t-fila"><label>🕐 Sale a las <input type="time" value="${escH(horaSalidaArmado())}" onchange="S.armadoHoraSalida=this.value;render()"/></label>
           <span>⏱️ Tiempo estimado: <strong>${_fmtMin(tiempo.total)}</strong> · vuelve ≈ <strong>${tiempo.vuelta}</strong></span></div>
         <div class="pt-seg" style="margin-top:8px">
-          <button class="${tiempo.manana?"on":""}" onclick="S.tipoSalidaArmado={...(S.tipoSalidaArmado||{}),'${escH(a.id)}':'manana'};render()">☀️ Mañana · con pedido diario</button>
-          <button class="${!tiempo.manana?"on":""}" onclick="S.tipoSalidaArmado={...(S.tipoSalidaArmado||{}),'${escH(a.id)}':'otra'};render()">🔁 Otra salida · solo transferencias</button></div>
+          <button class="${tiempo.manana?"on":""}" onclick="setTipoSalidaArmado('${escH(a.id)}','manana')">☀️ Mañana · con pedido diario</button>
+          <button class="${!tiempo.manana?"on":""}" onclick="setTipoSalidaArmado('${escH(a.id)}','otra')">🔁 Otra salida · solo transferencias</button></div>
         <div class="ar-t-sub">viaje ${_fmtMin(tiempo.viaje)} + descargas ${_fmtMin(tiempo.descarga)} ${tiempo.manana
           ? `(pedido diario: ${tiempo.conFlota} de ${paradas.length} paradas con el tiempo de Flota según los bultos; el resto, ${minDescargaPorDefecto()} min <input type="number" min="0" value="${minDescargaPorDefecto()}" onchange="guardarDescargaDefecto(this.value)"/>)`
           : `(sin pedido diario: <input type="number" min="0" value="${minDescargaSinPedido()}" onchange="guardarDescargaSinPedido(this.value)"/> min por parada)`}</div>
@@ -10379,6 +10395,22 @@ async function qrTomarArmado(id){
   if(!e.viaje){ await sb.from("recorridos_armados").update({estado:"PREPARADO",dni_rep:null,nombre_rep:null,tomado_at:null}).eq("id",id); await cargarArmados(); render(); return; }
   await sb.from("recorridos_armados").update({id_viaje:e.viaje.id}).eq("id",id);
   await cargarArmados(); e.armado=armadoDe(id); render();
+  guardarFotoDelDia(id, e.viaje.hora_salida||new Date().toISOString());
+}
+// Foto de lo que se esperaba en el momento en que salió: hora estimada en cada parada, descargas, total.
+// Queda fija: el histórico la compara con lo que pasó, aunque después cambien los tiempos o la carga.
+async function guardarFotoDelDia(id, salida){
+  try{
+    if(!(S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)) await cargarEstadoFlotaHoy().catch(()=>{});
+    const a=armadoDe(id); if(!a) return;
+    const mias=S.requests.filter(r=>r.armadoId===id), par=paradasArmado(a,mias);
+    const est=par.length?estimarArmado(a,par,salida):null;
+    const foto={tomadaAt:new Date().toISOString(), salida, manana:est?est.manana:esSalidaManana(a), total:est&&!est.falta?est.total:null, viaje:est?est.viaje:null, descarga:est?est.descarga:null,
+      vuelta:est?est.vuelta:null, falta:est?.falta||null, transferencias:mias.map(r=>r.id), extremos:extremosDe(a),
+      paradas:(est?.etas||[]).map(x=>({nombre:x.nombre, hora:x.hora, min:x.min, descarga:x.descarga, fuente:x.fuente, bultos:x.bultos}))};
+    await sb.from("recorridos_armados").update({estimacion:foto}).eq("id",id);
+    a.estimacion=foto;
+  }catch(err){ console.warn("Foto del día:",err); }
 }
 function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
