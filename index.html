@@ -1148,7 +1148,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261112-0759";
+const APP_VERSION = "20261112-0915";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2721,27 +2721,53 @@ function quitarFotoDevolucion(i){
   (f.fotos||[]).splice(i,1); render();
 }
 let _timerBusquedaProducto = null;
+// ═══ Búsqueda en el catálogo (una sola, robusta, para todos) ═══
+//  · limpia caracteres que rompen la consulta (comas, paréntesis, puntos…)
+//  · varias palabras: todas, en cualquier orden ("muslo pata" encuentra "PATA CON MUSLO")
+//  · si no encuentra, prueba sin importar las tildes
+//  · corta a los 9 s (con mala señal no queda "Buscando…" para siempre)
+//  · el código exacto va primero
+function _limpiarBusqueda(q){ return String(q||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[%,()*"'\\.:;]/g," ").replace(/\s+/g," ").trim(); }
+async function _consultaCatalogo(t, limite, comodinVocales){
+  const pal=t.split(" ").filter(Boolean).map(w=>comodinVocales?w.replace(/[aeiou]/gi,"_"):w);
+  let q=sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras");
+  if(pal.length>1) pal.forEach(w=>{ q=q.ilike("descripcion",`%${w}%`); });
+  else q=q.or(`descripcion.ilike.%${pal[0]}%,codigo_interno.ilike.%${t}%,codigo_barras.ilike.%${t}%`);
+  const { data, error } = await q.limit(limite);
+  if(error) throw error;
+  return toCamelRows(data||[]);
+}
+async function buscarEnCatalogo(q, limite=15){
+  const t=_limpiarBusqueda(q); if(t.length<2) return {rows:[]};
+  try{
+    const corte=new Promise((_,rej)=>setTimeout(()=>rej(new Error("timeout")),9000));   // toda la búsqueda corta a los 9 s
+    let rows=await Promise.race([(async()=>{
+      let r=await _consultaCatalogo(t, limite, false);
+      if(!r.length && /[a-z]/i.test(t)) r=await _consultaCatalogo(t, limite, true);   // por si en el catálogo está con tilde
+      return r;
+    })(), corte]);
+    const exacto=r=>normNotif(r.codigoInterno||"")===normNotif(t) || String(r.codigoBarras||"")===t;
+    rows.sort((a,b)=>(exacto(b)?1:0)-(exacto(a)?1:0));
+    return {rows, sinAcceso: !rows.length && await sesionSinAccesoCatalogo()};
+  }catch(e){
+    console.warn("Buscar en el catálogo:",e);
+    return {rows:[], error: e.message==="timeout"?"lento":"error", sinAcceso: await sesionSinAccesoCatalogo()};
+  }
+}
+const _avisoBusqueda=(st,q,reintentar)=> st.sinAcceso ? AVISO_SIN_ACCESO
+  : st.error ? `<div style="font-size:13px;color:#fbbf24;margin-top:6px">⚠️ ${st.error==="lento"?"La búsqueda está tardando (¿mala señal?)":"No se pudo buscar"}. <button class="btn btn-ghost btn-sm" onclick="${reintentar}">Reintentar</button></div>`
+  : `<div style="font-size:13px;color:var(--muted);margin-top:6px">No se encontró «${escH(q)}». Probá con otra palabra o con el código.</div>`;
+let _seqDevBusq=0, _seqRpBusq=0, _seqPickBusq=0;
 function buscarProductosDevolucion(query){
-  S.devolucionForm.productoQuery = query;
+  const f=S.devolucionForm; f.productoQuery=query;
   if(_timerBusquedaProducto) clearTimeout(_timerBusquedaProducto);
-  const q = query.trim();
-  if(q.length < 2){ S.devolucionForm.productoResultados = []; S.devolucionForm.productoBuscando=false; render(); return; }
-  S.devolucionForm.productoBuscando = true;
-  render();
-  _timerBusquedaProducto = setTimeout(async ()=>{
-    try{
-      const { data, error } = await sb.from("productos")
-        .select("id,descripcion,codigo_interno,codigo_barras")
-        .or(`descripcion.ilike.%${q}%,codigo_interno.ilike.%${q}%,codigo_barras.ilike.%${q}%`)
-        .limit(15);
-      if(error) throw error;
-      S.devolucionForm.productoResultados = toCamelRows(data||[]);
-    }catch(e){
-      console.warn("Buscar productos:", e);
-      S.devolucionForm.productoResultados = [];
-    }
-    S.devolucionForm.productoBuscando = false;
-    render();
+  const mi=++_seqDevBusq;
+  if(_limpiarBusqueda(query).length<2){ f.productoResultados=[]; f.productoBuscando=false; f.productoEstado=null; render(); return; }
+  f.productoBuscando=true; f.productoEstado=null; render();
+  _timerBusquedaProducto=setTimeout(async()=>{
+    const r=await buscarEnCatalogo(query, 15);
+    if(mi!==_seqDevBusq || S.devolucionForm!==f) return;      // llegó tarde: ya escribieron otra cosa
+    f.productoResultados=r.rows; f.productoEstado=r.rows.length?null:r; f.productoBuscando=false; render();
   }, 300);
 }
 // Elegir del desplegable agrega DIRECTO a la lista (arriba de todo,
@@ -3540,19 +3566,14 @@ function pickeoBuscarManual(){
 let _timerPickeoBusq=null;
 function pickeoBuscar(q){
   const p=S.pickeo; if(!p) return;
-  p.query=q;
-  clearTimeout(_timerPickeoBusq);
-  const t=q.trim();
-  if(t.length<2){ p.resultados=[]; p.buscando=false; render(); return; }
-  p.buscando=true; render();
+  p.query=q; clearTimeout(_timerPickeoBusq);
+  const mi=++_seqPickBusq;
+  if(_limpiarBusqueda(q).length<2){ p.resultados=[]; p.buscando=false; p.estadoBusq=null; render(); return; }
+  p.buscando=true; p.estadoBusq=null; render();
   _timerPickeoBusq=setTimeout(async ()=>{
-    try{
-      const { data, error } = await sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras")
-        .or(`descripcion.ilike.%${t}%,codigo_interno.ilike.%${t}%,codigo_barras.ilike.%${t}%`).limit(12);
-      if(error) throw error;
-      if(S.pickeo) S.pickeo.resultados=toCamelRows(data||[]);
-    }catch(e){ console.warn("Buscar:",e); if(S.pickeo) S.pickeo.resultados=[]; }
-    if(S.pickeo){ S.pickeo.buscando=false; render(); }
+    const r=await buscarEnCatalogo(q, 12);
+    if(mi!==_seqPickBusq || S.pickeo!==p) return;
+    p.resultados=r.rows; p.estadoBusq=r.rows.length?null:r; p.buscando=false; render();
   },280);
 }
 function pickeoElegirResultado(prod){ if(S.pickeo?.camara) pickeoCerrarCamara(true); pickeoSeleccionarProducto(prod); }
@@ -3632,6 +3653,7 @@ function renderPickeoPagina(){
         <button class="btn btn-ghost btn-md" onclick="pickeoBuscarManual()" ${armar&&p.actual?"disabled":""}>Agregar</button>
       </div>
       ${armar && p.buscando?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Buscando…</div>`:""}
+      ${armar && !p.buscando && p.estadoBusq && _limpiarBusqueda(p.query).length>=2 ? _avisoBusqueda(p.estadoBusq, p.query, "pickeoBuscar(S.pickeo.query)") : ""}
       ${armar && (p.resultados||[]).length?`
       <div class="card" style="position:absolute;left:0;right:0;top:56px;z-index:30;max-height:260px;overflow-y:auto;padding:6px;box-shadow:0 12px 32px #000a">
         ${p.resultados.map(r=>`
@@ -4582,17 +4604,13 @@ async function sesionSinAccesoCatalogo(){
 const AVISO_SIN_ACCESO = `<div class="alert-info" style="border-left-color:var(--amber);margin-top:8px">🔒 Tu usuario entró sin el acceso activado, por eso no ve el catálogo. Pedile a Admin: <strong>Usuarios → Editar tu usuario → poner una contraseña → Guardar</strong> (eso activa el acceso). Después salí y volvé a entrar.</div>`;
 function rpBuscar(q){
   const e=S.rpEdit; e.q=q; clearTimeout(_timerRpBusq);
-  const t=q.trim(); if(t.length<2){ e.res=[]; e.buscando=false; render(); return; }
-  e.buscando=true; render();
+  const mi=++_seqRpBusq;
+  if(_limpiarBusqueda(q).length<2){ e.res=[]; e.buscando=false; e.estado=null; e.sinAcceso=false; render(); return; }
+  e.buscando=true; e.estado=null; render();
   _timerRpBusq=setTimeout(async()=>{
-    try{
-      const l=t.replace(/[%,()]/g," ");
-      const { data, error } = await sb.from("productos").select("id,descripcion,codigo_interno,codigo_barras")
-        .or(`descripcion.ilike.%${l}%,codigo_interno.ilike.%${l}%,codigo_barras.ilike.%${l}%`).limit(15);
-      if(error) throw error;
-      if(S.rpEdit===e){ e.res=toCamelRows(data||[]); e.sinAcceso = !e.res.length && await sesionSinAccesoCatalogo(); }
-    }catch(err){ console.warn("Buscar producto:",err); e.res=[]; e.sinAcceso = await sesionSinAccesoCatalogo(); }
-    e.buscando=false; render();
+    const r=await buscarEnCatalogo(q, 15);
+    if(mi!==_seqRpBusq || S.rpEdit!==e) return;
+    e.res=r.rows; e.sinAcceso=!!r.sinAcceso; e.estado=r.rows.length?null:r; e.buscando=false; render();
   },300);
 }
 function rpElegir(k){ const e=S.rpEdit, p=e.res[k]; if(!p) return; e.prod={id:p.id, descripcion:p.descripcion, codigoInterno:p.codigoInterno||"", codigoBarras:p.codigoBarras||""}; e.q=""; e.res=[]; render(); }
@@ -4608,7 +4626,7 @@ function renderRpEditModal(){
       <span class="rp-prod-tag">${reut?"🏭 reutilizable":"no se reutiliza (se descarta)"}</span></div>
     <input id="rp-busq" class="inp" style="margin-top:8px" type="text" placeholder="🔎 Cambiar: buscá por nombre, código interno o de barras…" value="${escH(e.q)}" oninput="rpBuscar(this.value)" autocomplete="off"/>
     ${e.buscando?`<div style="font-size:13px;color:var(--muted);margin-top:6px"><span class="spinner"></span> Buscando…</div>`:""}
-    ${e.res.length?`<div class="rp-res">${e.res.map((p,k)=>`<button class="rp-res-it" onclick="rpElegir(${k})"><span>${escH(p.descripcion)}</span><span class="mono">${p.codigoInterno?`Int. ${escH(p.codigoInterno)}`:""}${esReutilizable(p)?" · 🏭":""}</span></button>`).join("")}</div>`:(e.q.trim().length>=2&&!e.buscando?(e.sinAcceso?AVISO_SIN_ACCESO:`<div style="font-size:13px;color:var(--muted);margin-top:6px">No se encontró «${escH(e.q)}».</div>`):"")}
+    ${e.res.length?`<div class="rp-res">${e.res.map((p,k)=>`<button class="rp-res-it" onclick="rpElegir(${k})"><span>${escH(p.descripcion)}</span><span class="mono">${p.codigoInterno?`Int. ${escH(p.codigoInterno)}`:""}${esReutilizable(p)?" · 🏭":""}</span></button>`).join("")}</div>`:(_limpiarBusqueda(e.q).length>=2&&!e.buscando&&e.estado?_avisoBusqueda(e.estado,e.q,"rpBuscar(S.rpEdit.q)"):"")}
   </div>
   <div class="tes-2col">
     <div class="field"><label>Cantidad que llegó</label>
@@ -4908,7 +4926,8 @@ function renderDevoluciones(){
         <input id="devol-producto-query" class="inp" type="text" placeholder="Escribí la descripción o el código interno..."
           value="${escH(S.devolucionForm.productoQuery||"")}"
           oninput="buscarProductosDevolucion(this.value)" autocomplete="off"/>
-        ${S.devolucionForm.productoBuscando?`<div style="font-size:12px;color:var(--muted);margin-top:6px">Buscando...</div>`:""}
+        ${S.devolucionForm.productoBuscando?`<div style="font-size:12px;color:var(--muted);margin-top:6px"><span class="spinner"></span> Buscando...</div>`:""}
+        ${!S.devolucionForm.productoBuscando && S.devolucionForm.productoEstado && _limpiarBusqueda(S.devolucionForm.productoQuery).length>=2 ? _avisoBusqueda(S.devolucionForm.productoEstado, S.devolucionForm.productoQuery, "buscarProductosDevolucion(S.devolucionForm.productoQuery)") : ""}
         ${(S.devolucionForm.productoResultados||[]).length>0?`
         <div class="card" style="position:absolute;left:0;right:0;top:66px;z-index:20;max-height:260px;overflow-y:auto;padding:6px">
           ${S.devolucionForm.productoResultados.map(p=>`
