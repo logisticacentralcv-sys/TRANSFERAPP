@@ -1109,7 +1109,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261111-1054";
+const APP_VERSION = "20261112-0700";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10087,7 +10087,10 @@ function renderArmarDelDia(){
       ${quitable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quitarDeArmado('${escH(r.id)}')" title="Quitar del recorrido">✕</button>`:(enCurso&&saleDeFabrica(r)&&!admin?`<span class="ar-lock" title="Ya salió de Fábrica">🔒</span>`:"")}
     </div>`; };
   const enFab=mias.filter(saleDeFabrica);
+  // Al volver: lo que TERMINA en Fábrica/Tesorería (ej. bolsines al buzón) y lo que solo PASA por Fábrica y sale después
   const vuelve=mias.filter(terminaEnFabrica);
+  const quedaEnBase=vuelve.filter(r=>_esLugarFabrica(r.destino));
+  const pasaYSigue=vuelve.filter(r=>!_esLugarFabrica(r.destino));
   const deja=s=>mias.filter(r=>!terminaEnFabrica(r) && normNotif(r.destino)===normNotif(s));
   const retira=s=>mias.filter(r=>!saleDeFabrica(r) && normNotif(origenLabel(r))===normNotif(s));
   const enParada=n=>paradas.some(p=>normNotif(p.nombre)===normNotif(n));
@@ -10161,7 +10164,8 @@ function renderArmarDelDia(){
       ${enFab.length?bloque("__fab",`Sale de ${escH(extremosDe(a).inicio)}`,"🏭",enFab.map(filaMia).join(""),`<span class="ar-cnt rt">📥 ${enFab.length}</span>`):""}
       ${paradasHtml || `<div class="ar-vacia">Todavía no tiene paradas: sumale transferencias.</div>`}
       ${otrasDir.length?bloque("__otras","Otras direcciones (sin QR, no entran en el tiempo estimado)","📍",otrasDir.map(r=>filaMia(r)+`<div class="ar-sub" style="margin:-2px 0 6px 12px">📍 ${esOrigenOtraDireccion(r)?"Retira en":"Deja en"}: ${_dirDe(r)} ${editable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirDireccionNueva('${escH(a.id)}','${escH(r.id)}','${escH(String(r.observaciones||"").replace(/'/g,""))}')">📍 Buscar y agregar como parada</button>`:""}</div>`).join(""),`<span class="ar-cnt dj">📍 ${otrasDir.length}</span>`):""}
-      ${vuelve.length?bloque("__vuelve",`Vuelve a ${escH(extremosDe(a).fin)} (y sale después)`,"🏭",vuelve.map(filaMia).join(""),`<span class="ar-cnt dj">📤 ${vuelve.length}</span>`):""}
+      ${quedaEnBase.length?bloque("__vuelve",`Al volver se deja en ${escH(extremosDe(a).fin)}`,"🏁",quedaEnBase.map(r=>filaMia(r)+(r.tipoPedido==="bolsin"?`<div class="ar-sub" style="margin:-2px 0 6px 12px">📫 Va al buzón de Tesorería</div>`:"")).join(""),`<span class="ar-cnt dj">📤 ${quedaEnBase.length}</span>${quedaEnBase.some(r=>r.tipoPedido==="bolsin")?`<span class="ar-cnt">📫 ${quedaEnBase.filter(r=>r.tipoPedido==="bolsin").length} al buzón</span>`:""}`):""}
+      ${pasaYSigue.length?bloque("__pasa",`Pasa por ${escH(extremosDe(a).fin)} y sale después`,"🔁",pasaYSigue.map(filaMia).join(""),`<span class="ar-cnt dj">📤 ${pasaYSigue.length}</span>`):""}
       <div class="ar-soltar">Soltá acá una transferencia para sumarla</div>`}
     </div>
   </div>`;
