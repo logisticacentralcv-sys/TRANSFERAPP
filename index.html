@@ -1148,7 +1148,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261112-0915";
+const APP_VERSION = "20261112-0939";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7800,8 +7800,16 @@ async function entregaRepSeguir(){
   const chk=await validarDNIConRespaldo(dni);
   const rep=chk.ok && S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
   if(!chk.ok || !rep){ d.loading=false; d.err=!chk.ok?chk.msg:`Ese DNI es de ${chk.nombre}, que no es repartidor.`; render(); return; }
-  let arm=null;
+  let arm=null, viajeAct=null;
   try{ const { data } = await sb.from("recorridos_armados").select("*").eq("estado","EN_CURSO").eq("dni_rep",dni).limit(1); arm=data&&data[0]?toCamelRow(data[0]):null; }catch(e){}
+  try{ const { data } = await sb.from("flota_viajes").select("id,recorrido,dni_rep1,dni_rep2").eq("estado","ACTIVO").or(`dni_rep1.eq.${dni},dni_rep2.eq.${dni}`).limit(1); viajeAct=data&&data[0]||null; }catch(e){}
+  if(!arm && viajeAct){ try{ const { data } = await sb.from("recorridos_armados").select("*").eq("id_viaje",viajeAct.id).eq("estado","EN_CURSO").limit(1); arm=data&&data[0]?toCamelRow(data[0]):null; }catch(e){} }   // va de acompañante
+  if(!arm && !viajeAct){
+    d.loading=false;
+    d.err = d.modo==="fabrica" ? `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR de Fábrica y elija su recorrido; después le entregás.`
+                               : `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR de la sucursal y elija en qué recorrido está; después le entregás.`;
+    render(); return;
+  }
   const c=_candidatosEntrega(d);
   // En Fábrica se marcan las de SU recorrido; en la sucursal, todo lo que hay para retirar
   d.sel=new Set(c.trans.filter(r=> d.modo==="sucursal" || (arm ? r.armadoId===arm.id : r.estado==="Lista para retirar" && !r.armadoId)).map(r=>r.id));
@@ -9625,9 +9633,9 @@ async function iniciarEstoyEn(){
     } else {
       const pres=await verificarEstoyAca(e.oficial||e.sucursal);
       if(!pres.ok){ e.estado="bloqueado"; e.motivo=pres.motivo; e.dist=pres.dist; render(); return; }
-      e.sinGps=!!pres.sinGps;
-      if(e.viaje) e.llegada=await qrRegistrarLlegada(e.viaje, e.oficial||e.sucursal, pres.obs);
-      e.estado="ok";
+      e.sinGps=!!pres.sinGps; e.presObs=pres.obs;
+      if(e.viaje){ e.llegada=await qrRegistrarLlegada(e.viaje, e.oficial||e.sucursal, pres.obs); e.estado="ok"; }
+      else e.estado="elegirRec";   // escaneó una sucursal sin haber iniciado un recorrido: tiene que elegir en cuál está
     }
   }catch(err){ console.warn("QR:",err); e.estado="bloqueado"; e.motivo="error"; }
   render();
@@ -10562,6 +10570,71 @@ async function guardarFotoDelDia(id, salida){
     a.estimacion=foto;
   }catch(err){ console.warn("Foto del día:",err); }
 }
+// ═══ Escaneó una sucursal (o el Depósito) SIN haber iniciado un recorrido ═══
+// No se lo deja seguir "suelto": elige en qué recorrido está (de los que nadie tomó) o con quién va.
+// Así queda logueado, se registra la llegada y nada queda colgado sin recorrido.
+async function qrTomarArmadoEnCamino(id){
+  const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||e.loading||!yo) return;
+  const a=armadoDe(id); if(!a) return;
+  const lugar=e.oficial||e.sucursal, dni=_dniLimpio(yo.dni);
+  e.loading=true; e.err=""; renderNow();
+  try{
+    const ahora=new Date().toISOString();
+    const { data:res, error:e1 } = await sb.from("recorridos_armados").update({estado:"EN_CURSO", dni_rep:dni, nombre_rep:yo.nombre, tomado_at:ahora}).eq("id",id).eq("estado","PREPARADO").select();
+    if(e1 || !res || !res.length) throw new Error(e1?"No se pudo tomar — probá de nuevo.":"Ese recorrido ya lo tomó otra persona.");
+    const vid=await _proximoIdViaje();
+    const fila={id:vid, fecha:fechaISO(), recorrido:a.recorrido, dni_rep1:dni, nombre_rep1:yo.nombre, dni_rep2:null, nombre_rep2:null, hora_salida:ahora, estado:"ACTIVO", celular_id:_idCelularQR(), fase_verd:""};
+    const { error:e2 } = await sb.from("flota_viajes").insert(fila);
+    if(e2){ await sb.from("recorridos_armados").update({estado:"PREPARADO",dni_rep:null,nombre_rep:null,tomado_at:null}).eq("id",id); throw e2; }
+    await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:vid, sucursal:String(lugar).toUpperCase(), evento:"SALIDA SIN QR FABRICA", gps_obs:`No escaneó Fábrica: tomó el recorrido en ${lugar}`, recorrido:a.recorrido});
+    await sb.from("recorridos_armados").update({id_viaje:vid}).eq("id",id);
+    // lo que ya tenía encima sin recorrido, pasa a este recorrido (así no queda colgado)
+    const sueltas=S.requests.filter(r=>r.estado==="En tránsito" && !r.armadoId && (portadorSolicitud(r)||{}).dni===dni);
+    for(const r of sueltas){ const ch={armadoId:id, recorrido:a.recorrido, updatedAt:now()}; const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id); if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x); }
+    crearNotificacion("LOGISTICA", `⚠️ ${yo.nombre} no escaneó Fábrica: tomó ${codigoArmado(a)} en ${lugar}${sueltas.length?` (tenía ${sueltas.length} sin recorrido: se sumaron)`:""}`, null);
+    await cargarArmados();
+    e.viaje=fila; e.armado=armadoDe(id); e.loading=false;
+    e.llegada=await qrRegistrarLlegada(fila, lugar, e.presObs||"");
+    guardarFotoDelDia(id, ahora);
+    e.estado="ok"; toast(`🚛 Quedaste en ${codigoArmado(a)}`);
+  }catch(err){ console.warn("Tomar recorrido en camino:",err); e.loading=false; e.err=err.message||"No se pudo"; await cargarArmados(); }
+  render();
+}
+async function qrUnirmeArmado(id){
+  const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||e.loading||!yo) return;
+  const a=armadoDe(id); if(!a||!a.idViaje) return;
+  const dni=_dniLimpio(yo.dni), lugar=e.oficial||e.sucursal;
+  e.loading=true; e.err=""; renderNow();
+  try{
+    const { data:v } = await sb.from("flota_viajes").select("*").eq("id",a.idViaje).limit(1);
+    const vj=v&&v[0]; if(!vj || vj.estado!=="ACTIVO") throw new Error("Ese recorrido ya terminó.");
+    if(vj.dni_rep2 && _dniLimpio(vj.dni_rep2)!==dni) throw new Error(`${codigoArmado(a)} ya tiene acompañante (${vj.nombre_rep2}).`);
+    if(_dniLimpio(vj.dni_rep1)!==dni && !vj.dni_rep2){ await sb.from("flota_viajes").update({dni_rep2:dni, nombre_rep2:yo.nombre}).eq("id",vj.id); vj.dni_rep2=dni; vj.nombre_rep2=yo.nombre; }
+    e.viaje=vj; e.armado=a; e.loading=false;
+    e.llegada=await qrRegistrarLlegada(vj, lugar, e.presObs||"");
+    e.estado="ok"; toast(`🚛 Vas con ${a.nombreRep||"tu compañero"} en ${codigoArmado(a)}`);
+  }catch(err){ e.loading=false; e.err=err.message||"No se pudo"; }
+  render();
+}
+function renderElegirRecorridoEnCamino(e, pagina){
+  const lugar=e.oficial||e.sucursal;
+  const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO");
+  const curso=(S.armados||[]).filter(x=>x.estado==="EN_CURSO" && x.idViaje);
+  return pagina(`
+    <div class="qr-banner warn">⚠️ Estás en <strong>${escH(lugar)}</strong> pero no iniciaste un recorrido (no escaneaste Fábrica). Elegí en cuál estás para seguir.</div>
+    <div class="card qr-iniciar">
+      <div class="qr-iniciar-tit">🚛 ¿En qué recorrido estás?</div>
+      ${prep.length?prep.map(x=>{ const par=paradasDeArmado(x); return `<div class="qr-armado">
+          <div class="qr-armado-tit">${escH(codigoArmado(x))}</div>
+          ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p)}</span>`).join("")}</div>`:""}
+          <button class="btn btn-success btn-md btn-full" onclick="qrTomarArmadoEnCamino('${escH(x.id)}')" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`✅ Estoy en ${escH(codigoArmado(x))}`}</button></div>`; }).join("")
+        :`<p style="color:var(--muted);font-size:14px">No hay recorridos preparados sin tomar.</p>`}
+      ${curso.length?`<div class="qr-iniciar-tit" style="margin-top:14px;font-size:15px">👥 ¿Vas con alguien que ya salió?</div>
+        ${curso.map(x=>`<button class="btn btn-ghost btn-md btn-full" style="margin-bottom:6px" onclick="qrUnirmeArmado('${escH(x.id)}')" ${e.loading?"disabled":""}>Voy con ${escH(x.nombreRep||"")} · ${escH(codigoArmado(x))}</button>`).join("")}`:""}
+      ${!prep.length&&!curso.length?`<p style="color:#fbbf24;font-size:14px">Avisale a Logística que arme tu recorrido y volvé a escanear.</p>`:""}
+      ${e.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(e.err)}</div>`:""}
+    </div>`);
+}
 function salirEstoyEn(){ S.estoyEn=null; render(); }
 const _pasaPorFab=r=>r.pasaPorFabrica===true||r.pasaPorFabrica==="true"||r.pasaPorFabrica==="si";
 // Lo que este repartidor puede ver y hacer (sin los filtros de pantalla)
@@ -10641,6 +10714,7 @@ function renderEstoyEn(){
       <button class="btn btn-primary btn-md" onclick="iniciarEstoyEn()">🔄 Reintentar</button></div>`);
   }
   if(e.buzon) return renderBuzon(e, pagina);
+  if(e.estado==="elegirRec") return renderElegirRecorridoEnCamino(e, pagina);
   const seccion=(titulo,items,html,extra)=> items.length ? `
     <div class="estoy-sec">
       <div class="estoy-tit"><span>${titulo}</span><span style="display:flex;gap:8px;align-items:center">${extra||""}<span class="tab-n" style="margin:0">${items.length}</span></span></div>
