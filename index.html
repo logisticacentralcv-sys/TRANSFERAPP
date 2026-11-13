@@ -1152,7 +1152,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-1156";
+const APP_VERSION = "20261113-1200";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10012,7 +10012,11 @@ async function crearArmado(){
 }
 // ¿Esta transferencia sale de Fábrica en este recorrido? (origen Fábrica, espera su 2º tramo, o se reasignó desde Fábrica)
 // (Tesorería está físicamente en Fábrica: para el recorrido es el mismo lugar)
-const _esLugarFabrica = n => ["fabrica","tesoreria"].includes(normNotif(n||""));
+// Fábrica, Tesorería y TODAS las áreas (Precios, RRHH, Administración, Compras, Planificación…) están en Fábrica:
+// nunca son una parada aparte del recorrido
+const _esLugarFabrica = n => { const k=normNotif(n||""); return ["fabrica","tesoreria"].includes(k) || k.startsWith("administracion") || esAreaDeFabrica(n); };
+// ¿Ese lugar es la salida o la vuelta del recorrido? (Fábrica o Depósito)
+const _esBaseDe = (n, base) => { const k=normNotif(n||""), b=normNotif(base||""); return !!k && (k===b || (_esDeposito(k) && _esDeposito(b)) || (b==="fabrica" && _esLugarFabrica(n))); };
 const saleDeFabrica = r => esOrigenFabrica(r) || _esLugarFabrica(origenLabel(r)) || r.estado==="En fábrica" || r.estado==="No entregada";
 // ¿En este viaje termina en Fábrica? (va a Fábrica o a Tesorería, o pasa por Fábrica y todavía no llegó)
 const terminaEnFabrica = r => bolsinAFabrica(r) || _esLugarFabrica(r.destino) || (_pasaPorFab(r) && !r.fabricaAt && r.estado!=="En fábrica");
@@ -10100,7 +10104,8 @@ async function guardarPortador(){
 // suma). Logística la puede "fijar" y mover (por ejemplo al final del recorrido).
 function paradasArmado(a, mias){
   const ex=extremosDe(a);
-  const base=paradasDeArmado(a).map((n,i)=>({nombre:n, extra:false, iBase:i}));
+  // las áreas (Precios, RRHH, Administración…) y Tesorería están en Fábrica: aunque hayan quedado fijadas, no son parada
+  const base=paradasDeArmado(a).map((n,i)=>({nombre:n, extra:false, iBase:i})).filter(p=>{ const k=normNotif(p.nombre); return !(esAreaDeFabrica(p.nombre) || k==="tesoreria" || k.startsWith("administracion")); });
   const pos=(n,desde=0)=>{ for(let i=Math.max(0,desde);i<base.length;i++) if(normNotif(base[i].nombre)===normNotif(n)) return i; return -1; };
   const insertar=(nombre,desde)=>{
     let mejor=base.length, costo=Infinity;
@@ -10112,9 +10117,10 @@ function paradasArmado(a, mias){
     }
     base.splice(mejor,0,{nombre, extra:true}); return mejor;
   };
+  // la salida y la vuelta del recorrido (Fábrica/áreas o Depósito) no son paradas
   const asign=mias.map(r=>({r,
-    o: !saleDeFabrica(r) && origenLabel(r) && !esOrigenOtraDireccion(r) ? origenLabel(r) : null,
-    d: !terminaEnFabrica(r) && r.destino && !esDestinoOtraDireccion(r) ? r.destino : null}));
+    o: !saleDeFabrica(r) && origenLabel(r) && !esOrigenOtraDireccion(r) && !_esBaseDe(origenLabel(r), ex.inicio) ? origenLabel(r) : null,
+    d: !terminaEnFabrica(r) && r.destino && !esDestinoOtraDireccion(r) && !_esBaseDe(r.destino, ex.fin) ? r.destino : null}));
   // faltan paradas: primero el origen; el destino tiene que quedar DESPUÉS del origen (si estaba antes, se vuelve a pasar)
   asign.forEach(x=>{
     let io=-1;
@@ -10597,11 +10603,11 @@ function renderArmarDelDia(){
       ${admin && r.estado==="En tránsito"?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirCambiarPortador('${escH(r.id)}')" title="Corregir quién la lleva">🔁</button>`:""}
       ${quitable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quitarDeArmado('${escH(r.id)}')" title="Quitar del recorrido">✕</button>`:(enCurso&&saleDeFabrica(r)&&!admin?`<span class="ar-lock" title="Ya salió de Fábrica">🔒</span>`:"")}
     </div>`; };
-  const enFab=mias.filter(saleDeFabrica);
+  const enFab=mias.filter(r=>saleDeFabrica(r) || _esBaseDe(origenLabel(r), extremosDe(a).inicio));
   // Al volver: lo que TERMINA en Fábrica/Tesorería (ej. bolsines al buzón) y lo que solo PASA por Fábrica y sale después
-  const vuelve=mias.filter(terminaEnFabrica);
-  const quedaEnBase=vuelve.filter(r=>_esLugarFabrica(r.destino) || bolsinAFabrica(r));
-  const pasaYSigue=vuelve.filter(r=>!_esLugarFabrica(r.destino) && !bolsinAFabrica(r));
+  const vuelve=mias.filter(r=>terminaEnFabrica(r) || _esBaseDe(r.destino, extremosDe(a).fin));
+  const quedaEnBase=vuelve.filter(r=>_esLugarFabrica(r.destino) || bolsinAFabrica(r) || _esBaseDe(r.destino, extremosDe(a).fin));
+  const pasaYSigue=vuelve.filter(r=>!quedaEnBase.includes(r));
   const deja=s=>mias.filter(r=>!terminaEnFabrica(r) && normNotif(r.destino)===normNotif(s));
   const retira=s=>mias.filter(r=>!saleDeFabrica(r) && normNotif(origenLabel(r))===normNotif(s));
   const enParada=n=>paradas.some(p=>normNotif(p.nombre)===normNotif(n));
