@@ -1148,7 +1148,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-0702";
+const APP_VERSION = "20261113-0706";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1171,7 +1171,7 @@ async function chequearVersion(){
     document.body.appendChild(b);
   }catch(e){ /* sin conexión: se reintenta la próxima vez */ }
 }
-document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible"){ chequearVersion(); registrarDispositivo(); } });
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible"){ chequearVersion(); registrarDispositivo(); if(S.user && S.view==="app") asegurarSesionCuenta().catch(()=>{}); } });
 setTimeout(chequearVersion, 4000);
 
 // ── Cada dispositivo avisa qué versión corre (Admin lo ve en Configuración) ──
@@ -2746,6 +2746,9 @@ async function buscarEnCatalogo(q, limite=15){
       if(!r.length && /[a-z]/i.test(t)) r=await _consultaCatalogo(t, limite, true);   // por si en el catálogo está con tilde
       return r;
     })(), corte]);
+    if(!rows.length){   // ¿sin resultados porque la sesión se cortó? se reabre y se busca una vez más
+      try{ const { data } = await sb.auth.getSession(); if(!data?.session && await asegurarSesionCuenta()) rows=await _consultaCatalogo(t, limite, false); }catch(e){}
+    }
     const exacto=r=>normNotif(r.codigoInterno||"")===normNotif(t) || String(r.codigoBarras||"")===t;
     rows.sort((a,b)=>(exacto(b)?1:0)-(exacto(a)?1:0));
     return {rows, sinAcceso: !rows.length && await sesionSinAccesoCatalogo()};
@@ -4597,6 +4600,7 @@ function rpAbrirEdicion(i){
 // (sin acceso), la búsqueda vuelve vacía: en vez de "sin resultados", se avisa qué hacer.
 let _sinAccesoCache=null;
 async function sesionSinAccesoCatalogo(){
+  if(_sinAccesoCache===true && await asegurarSesionCuenta()){ _sinAccesoCache=null; return false; }
   if(_sinAccesoCache!==null) return _sinAccesoCache;
   try{ const { data } = await sb.auth.getSession(); _sinAccesoCache = !data?.session; }catch(e){ _sinAccesoCache=false; }
   return _sinAccesoCache;
@@ -9552,6 +9556,34 @@ function puedeTomarAhora(r){
 // ═══════════════════════════════════════════════════════════════════
 // ═══ Al escanear un QR se pide el DNI del repartidor. Con eso: queda identificado y, si la
 //     sesión con la base se había cortado (por eso a veces decía "no hay recorridos"), se reabre sola. ═══
+// Si la sesión con la base se cortó (se venció o el celular la borró), se reabre sola.
+// Solo para cuentas sin contraseña visible (sucursales y repartidores): usan la que quedó guardada.
+let _reabriendoSesion=null;
+async function asegurarSesionCuenta(){
+  const u=S.user; if(!u) return false;
+  try{
+    const { data } = await sb.auth.getSession();
+    if(data?.session){
+      if((data.session.expires_at||0)*1000-Date.now()>60000) return true;
+      const r=await sb.auth.refreshSession(); if(!r.error && r.data?.session) return true;
+    }
+  }catch(e){}
+  if(_reabriendoSesion) return _reabriendoSesion;            // que no se pisen dos intentos a la vez
+  _reabriendoSesion=(async()=>{
+    try{
+      if(u.rol==="repartidor" && S.miIdentidadRep?.dni) return await asegurarSesionRepartidor(_dniLimpio(S.miIdentidadRep.dni));
+      if(u.rol!=="sucursal") return false;
+      if(!(S.usuarios||[]).length) await sheetsLoadUsuarios().catch(()=>{});
+      const cuenta=S.usuarios.filter(x=>x.tipo==="SUCURSAL" && (u.cuenta ? _mismaCuenta(x.usuario,u.cuenta) : (normNotif(x.area||"")===normNotif(u.area) || _mismaCuenta(x.usuario,u.area))));
+      const fila=cuenta.find(x=>x.authUserId && x.password)||cuenta.find(x=>x.password); if(!fila) return false;
+      const r=await intentarLoginAuth(fila.usuario, fila.password);
+      if(r.ok){ _sinAccesoCache=null; return true; }
+      return false;
+    }catch(e){ console.warn("Reabrir sesión:",e); return false; }
+    finally{ setTimeout(()=>{ _reabriendoSesion=null; },0); }
+  })();
+  return _reabriendoSesion;
+}
 async function asegurarSesionRepartidor(dni){
   try{
     const { data } = await sb.auth.getSession();
@@ -15290,7 +15322,7 @@ async function doLogin(){
 
   // Determinar usuario según tipo
   if(tipo === "SUCURSAL"){
-    S.user = {rol:"sucursal", area:resultado.area, nombre:resultado.nombre, dni:resultado.dni||""};
+    S.user = {rol:"sucursal", area:resultado.area, nombre:resultado.nombre, dni:resultado.dni||"", cuenta:usuario};
   } else if(tipo === "LOGISTICA"){
     S.user = {rol:"logistica", area:"Logística", nombre:resultado.nombre, dni:resultado.dni||""};
   } else if(tipo === "ENCARGADO_FRESCO" || tipo === "ENCARGADA_FRESCO"){
@@ -16123,7 +16155,8 @@ if(_sesionRestaurada){
   registrarDispositivo(true);
   render();
   if(USE_SHEETS) sheetsLoadUsuarios();
-  sheetsLoadDatos().then(()=>{ render(); });
+  // primero se asegura la sesión (si se había cortado, se reabre sola) y recién ahí se cargan los datos
+  asegurarSesionCuenta().catch(()=>{}).finally(()=>{ sheetsLoadDatos().then(()=>{ render(); }); });
   startAutoRefresh();
   }
 } else {
