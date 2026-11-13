@@ -1148,7 +1148,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-0658";
+const APP_VERSION = "20261113-0702";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7901,6 +7901,7 @@ async function confirmarEntregaRep(){
 // todavía no haya pasado por el origen. Logística después la puede sacar o cambiar.
 async function asignarRecorridoAuto(r){
   if(!r || r.armadoId || ["Entregada","Cancelada","Rechazada"].includes(r.estado)) return null;
+  const esBolsin = r.tipoPedido==="bolsin";
   try{ await cargarDatosQR(); }catch(e){}
   await cargarArmados();
   const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o);   // Tesorería está en Fábrica
@@ -7908,6 +7909,7 @@ async function asignarRecorridoAuto(r){
   for(const a of abiertos){
     const par=paradasDeArmado(a).map(p=>normNotif(p));
     const aFab = _esLugarFabrica(dst) || bolsinAFabrica(r);
+    if(esBolsin && noLlevaBolsines(a)) continue;                       // Verdulería nunca lleva bolsines
     if(aFab && normNotif(extremosDe(a).fin)!=="fabrica") continue;   // si vuelve a Fábrica, solo un recorrido que termine en Fábrica (no Verdulería/Depósito)
     const iD = aFab ? par.length : par.indexOf(normNotif(dst));   // ir a Fábrica/Tesorería = al final del recorrido
     if(iD<0 || (desdeFab && iD>=par.length)) continue;
@@ -9608,6 +9610,22 @@ async function entrarRepartidorConDni(){
 const _hayQRPendiente = () => { try{ const q=JSON.parse(sessionStorage.getItem("tl_qr")||"null"); return !!(q&&q.s); }catch(e){ return false; } };
 // Bolsín que vuelve a Fábrica (va al buzón) aunque diga Tesorería, Administración o Fábrica
 const bolsinAFabrica = r => !!r && r.tipoPedido==="bolsin" && !esSucursalReal(r.destino);
+// Verdulería NUNCA lleva bolsines (aunque ese día figure que vuelve a Fábrica)
+const noLlevaBolsines = a => !a || _esVerduleria(a.recorrido) || normNotif(extremosDe(a).fin)!=="fabrica";
+// Bolsines que quedaron asignados a Verdulería (o a un recorrido que no vuelve a Fábrica) y todavía no se retiraron:
+// se sacan de ahí y se vuelven a asignar a uno que corresponda
+async function corregirBolsinesMalAsignados(){
+  const malos=S.requests.filter(r=>r.tipoPedido==="bolsin" && r.armadoId && !["En tránsito","Entregada","En el buzón","Cancelada","Rechazada"].includes(r.estado)
+    && (()=>{ const a=armadoDe(r.armadoId); return a && _armadoAbierto(a) && noLlevaBolsines(a); })());
+  for(const r of malos){
+    const ch={armadoId:null, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+    if(error) continue;
+    S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+    await asignarRecorridoAuto(S.requests.find(x=>x.id===r.id));
+  }
+  if(malos.length){ toast(`🎒 ${malos.length} bolsín${malos.length!==1?"es estaban":" estaba"} en Verdulería: se reasignaron`); render(); }
+}
 function aplicarQRPendiente(){
   let q=null; try{ q=JSON.parse(sessionStorage.getItem("tl_qr")||"null"); }catch(e){}
   try{ sessionStorage.removeItem("tl_qr"); }catch(e){}
@@ -9950,7 +9968,7 @@ async function cargarArmados(){
 }
 async function abrirArmarDelDia(){
   S.subTabRec="armar";
-  await Promise.all([cargarArmados(), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
+  await Promise.all([cargarArmados().then(()=>corregirBolsinesMalAsignados()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
   if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
   if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
   render();
@@ -9986,6 +10004,7 @@ const esAdminRec = () => S.user?.rol==="admin";
 
 async function asignarAArmado(reqId){
   const a=armadoDe(S.armadoSel), r=S.requests.find(x=>x.id===reqId); if(!a||!r) return;
+  if(r.tipoPedido==="bolsin" && noLlevaBolsines(a)){ toast(`🎒 Los bolsines no van con ${_esVerduleria(a.recorrido)?"Verdulería":"un recorrido que no vuelve a Fábrica"}`,"warn"); return; }
   if(!_armadoAbierto(a) && !esAdminRec()) return;
   if(a.estado==="EN_CURSO" && !esAdminRec()){
     if(saleDeFabrica(r)){ toast(`🔒 ${a.recorrido} ya salió de Fábrica: no se le puede sumar algo que sale de Fábrica`,"warn"); return; }
@@ -10770,7 +10789,8 @@ function estoyEnLista(){
   const devTomar=S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===n);
   const devFabrica=e.fabrica ? S.devoluciones.filter(d=>d.estado==="En camino" && portadorDevolucion(d) && devolucionVisibleParaRepartidor(d)) : [];
   // En fábrica: solo lo del recorrido elegido (por su recorrido, o si no tiene, por las paradas del recorrido)
-  let retirarFinal=retirar.filter(r=>r.tipoPedido==="bolsin" || !(enArmadoAbierto(r) && r.armadoId!==e.armado?.id)), otrosRec=0;   // los bolsines los lleva cualquiera que pase   // lo de otros recorridos armados no
+  let retirarFinal=retirar.filter(r=>r.tipoPedido==="bolsin" || !(enArmadoAbierto(r) && r.armadoId!==e.armado?.id)), otrosRec=0;   // los bolsines los lleva cualquiera que pase…
+  if(e.armado && noLlevaBolsines(e.armado)) retirarFinal=retirarFinal.filter(r=>r.tipoPedido!=="bolsin");   // …menos Verdulería   // lo de otros recorridos armados no
   const rec = e.fabrica ? (e.viaje ? e.viaje.recorrido : e.recSel) : "";
   if(e.fabrica && e.armado){
     // lo que otro no entregó y Logística le asignó a este recorrido: se retira en Fábrica
