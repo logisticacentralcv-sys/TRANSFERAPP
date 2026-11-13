@@ -1152,7 +1152,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-1153";
+const APP_VERSION = "20261113-1156";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -9874,8 +9874,9 @@ async function confirmarEntregaFirma(){
   if(!dni){ d.err="Que la persona que recibe escriba su DNI."; render(); return; }
   if(dni===_dniLimpio(yo.dni)){ d.err="Tiene que firmar alguien de la sucursal, no vos."; render(); return; }
   const chk=await validarDNIConRespaldo(dni); if(!chk.ok){ d.err=chk.msg; render(); return; }
-  const esDeAhi=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && [u.usuario,u.area].some(v=>v && normNotif(v)===normNotif(destino)));
-  if(!esDeAhi){ d.err=`Ese DNI es de ${chk.nombre}, no de ${destino}.`; render(); return; }
+  // En la sucursal firma CUALQUIER persona registrada (el personal rota entre sucursales), menos un repartidor
+  const esRepartidor=S.usuarios.some(u=>_dniLimpio(u.dni)===dni && u.activo!=="no" && u.tipo==="REPARTIDOR");
+  if(esRepartidor){ d.err=`Ese DNI es de ${chk.nombre}, que es repartidor: tiene que firmar alguien de la sucursal.`; render(); return; }
   d.loading=true; renderNow();
   const ts=now(); let ok=0;
   for(const r of rs){
