@@ -1152,7 +1152,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-1146";
+const APP_VERSION = "20261113-1151";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10297,11 +10297,30 @@ async function guardarArmadoCampos(id, ch){
 }
 function rutaMover(id,i,d){ const p=[...paradasDeArmado(armadoDe(id))], j=i+d; if(j<0||j>=p.length) return; [p[i],p[j]]=[p[j],p[i]]; guardarArmadoCampos(id,{paradas:p}); }
 function rutaQuitar(id,i){ const p=[...paradasDeArmado(armadoDe(id))]; p.splice(i,1); guardarArmadoCampos(id,{paradas:p}); }
+// Una parada nueva (sucursal o dirección buscada) se ubica sola donde menos tiempo suma al recorrido.
+// Si no hay tiempos cargados para ese lugar, va al final. Después se puede mover con ↑ ↓.
+function mejorLugarParaParada(a, p, nombre){
+  const ex=extremosDe(a); let mejor=-1, costo=Infinity;
+  for(let i=0;i<=p.length;i++){
+    const ant=i===0?_ptoMatriz(ex.inicio):p[i-1], sig=i===p.length?_ptoMatriz(ex.fin):p[i];
+    const a1=minutosEntre(ant,nombre), a2=minutosEntre(nombre,sig), a0=minutosEntre(ant,sig);
+    if(a1===null||a2===null) continue;
+    const c=a1+a2-(a0||0); if(c<costo){ costo=c; mejor=i; }
+  }
+  return {i:mejor, suma:mejor<0?null:Math.round(costo)};
+}
 function rutaAgregar(id, nombre){
   nombre=String(nombre||"").trim(); if(!nombre) return;
-  const p=[...paradasDeArmado(armadoDe(id))];
+  const a=armadoDe(id), p=[...paradasDeArmado(a)];
   if(p.some(x=>normNotif(x)===normNotif(nombre)) && !confirm(`${nombre} ya está en el recorrido. ¿Agregarla otra vez (vuelve a pasar)?`)) return;
-  p.push(nombre); guardarArmadoCampos(id,{paradas:p});
+  const m=mejorLugarParaParada(a, p, nombre);
+  if(m.i<0){ p.push(nombre); toast(`📍 ${nombre} quedó al final (no hay tiempos de viaje cargados para ubicarla mejor)`); }
+  else{
+    p.splice(m.i,0,nombre);
+    const ex=extremosDe(a), antes=m.i===0?ex.inicio:p[m.i-1], despues=m.i===p.length-1?ex.fin:p[m.i+1];
+    toast(`📍 ${nombre} quedó entre ${antes} y ${despues}${m.suma!=null?` (suma ${Math.max(0,m.suma)} min)`:""}. Podés moverla con ↑ ↓`);
+  }
+  guardarArmadoCampos(id,{paradas:p});
 }
 function setExtremo(id, campo, valor){ guardarArmadoCampos(id,{[campo]:valor}); }
 // Para no empezar de cero: copiar paradas, salida y vuelta del último recorrido con ese nombre
