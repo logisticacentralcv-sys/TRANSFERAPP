@@ -1152,7 +1152,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-1151";
+const APP_VERSION = "20261113-1153";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2087,35 +2087,63 @@ function tiempoDescarga(recorrido, sucursal){
 // hay llegadas REALES escaneadas, recalcula la estimación de las
 // siguientes a partir de esa hora real (no de la salida original). La
 // última "parada" siempre es la vuelta a Fábrica.
-function calcularParadasConEta(v, hojaDeRuta){
-  const secuencia = [...hojaDeRuta.map(p=>p.sucursal), "__FABRICA_VUELTA__"];
-  let horaConocida = v.horaSalida ? new Date(v.horaSalida) : null; // última hora REAL conocida (salida, o última llegada real)
-  let anteriorNombre = "FABRICA";
-  const resultado = [];
-
-  for(const nombreParada of secuencia){
-    const esVuelta = nombreParada === "__FABRICA_VUELTA__";
-    const nombreReal = esVuelta ? "FABRICA" : nombreParada;
-    const tramo = minutosEntre(anteriorNombre, nombreReal);
-    const eta = (horaConocida && tramo!=null) ? new Date(horaConocida.getTime()+tramo*60000) : null;
-
-    const horaReal = esVuelta
-      ? (v.horaLlegada ? new Date(v.horaLlegada) : null)
-      : (()=>{ const r=(S.flotaRegistrosHoy||[]).find(r=>r.id_viaje===v.id && normNotif(r.sucursal)===normNotif(nombreParada) && String(r.evento||"").toUpperCase()==="LLEGADA"); return r?new Date(r.ts):null; })();
-
-    resultado.push({sucursal: esVuelta?"Fábrica (vuelta)":nombreParada, eta, horaReal, esVuelta});
-
-    // Base para la siguiente: si ya hay llegada real, partir de ahí +
-    // descarga real; si no, seguir la cadena estimada.
-    const baseHora = horaReal || eta;
-    if(baseHora && !esVuelta){
-      horaConocida = new Date(baseHora.getTime() + tiempoDescarga(v.recorrido, nombreParada)*60000);
+// El viaje de hoy → su recorrido armado del día (orden real de paradas, salida/vuelta, descarga).
+// Solo si el viaje no tiene recorrido armado se usa la hoja de ruta vieja por nombre.
+function hojaDelViaje(v){
+  if(S.armados===undefined){ S.armados=null; cargarArmados().then(()=>render()).catch(()=>{}); }
+  const a=(S.armados||[]).find(x=>x.idViaje===v.id) || null;
+  if(a) return {a, paradas:paradasArmado(a, S.requests.filter(r=>r.armadoId===a.id))};
+  const hoja=(S.flotaTiemposViaje||[]).filter(p=>normNotif(p.recorrido)===normNotif(v.recorrido)).sort((x,y)=>x.orden_parada-y.orden_parada);
+  return {a:null, paradas:hoja.map(p=>({nombre:p.sucursal}))};
+}
+const codigoViaje = v => { const a=(S.armados||[]).find(x=>x.idViaje===v.id); return a?codigoArmado(a):v.recorrido; };
+function calcularParadasConEta(v, info){
+  if(Array.isArray(info)) info={a:null, paradas:info.map(p=>({nombre:p.sucursal}))};   // compatibilidad
+  const a=info.a, ex=a?extremosDe(a):{inicio:"Fábrica", fin:"Fábrica"}, manana=a?esSalidaManana(a):true;
+  const regs=(S.flotaRegistrosHoy||[]).filter(r=>r.id_viaje===v.id).sort((x,y)=>String(x.ts).localeCompare(String(y.ts)));
+  const usadas=new Set(), res=[];
+  let horaConocida=v.horaSalida?new Date(v.horaSalida):null, ant=_ptoMatriz(ex.inicio);
+  const seq=[...info.paradas.map(p=>({nombre:p.nombre, repetida:!!p.repetida})), {nombre:_ptoMatriz(ex.fin), vuelta:true}];
+  for(const p of seq){
+    const tramo=minutosEntre(ant,p.nombre);
+    const eta=(horaConocida && tramo!=null) ? new Date(horaConocida.getTime()+tramo*60000) : null;
+    let horaReal=null;
+    if(p.vuelta){
+      const r=regs.find(r=>/^LLEGADA (FABRICA|DEPOSITO|DEPÓSITO)/.test(String(r.evento||"").toUpperCase()));
+      horaReal = r ? new Date(r.ts) : (v.horaLlegada ? new Date(v.horaLlegada) : null);
     } else {
-      horaConocida = baseHora;
+      const r=regs.find(r=>!usadas.has(r) && String(r.evento||"").toUpperCase()==="LLEGADA" && normNotif(r.sucursal)===normNotif(p.nombre));
+      if(r){ usadas.add(r); horaReal=new Date(r.ts); }
     }
-    anteriorNombre = nombreReal;
+    res.push({sucursal:p.vuelta?`${ex.fin} (vuelta)`:p.nombre, eta, horaReal, esVuelta:!!p.vuelta, repetida:!!p.repetida});
+    const base=horaReal||eta;
+    if(base && !p.vuelta){
+      const d = p.repetida ? minDescargaSinPedido() : (a ? descargaParada(a.recorrido,p.nombre,manana,a).min : tiempoDescarga(v.recorrido,p.nombre));
+      horaConocida=new Date(base.getTime()+d*60000);
+    } else horaConocida=base;
+    ant=p.nombre;
   }
-  return resultado;
+  return res;
+}
+// ¿Cuándo llega a una sucursal? Con los recorridos de hoy tal como se armaron
+function buscarEstadoSucursal(sucursalQuery){
+  const q=normNotif(sucursalQuery); if(!q) return null;
+  const resultados=[];
+  for(const v of (S.flotaViajesHoy||[])){
+    const vv={...v, horaSalida:v.hora_salida||v.horaSalida, horaLlegada:v.hora_llegada||v.horaLlegada};
+    const info=hojaDelViaje(vv); if(!info.paradas.some(p=>normNotif(p.nombre)===q)) continue;
+    const rep=[v.nombre_rep1,v.nombre_rep2].filter(Boolean).join(" / ");
+    const etas=calcularParadasConEta(vv, info).filter(x=>!x.esVuelta && normNotif(x.sucursal)===q);
+    const pendiente=etas.find(x=>!x.horaReal), hecha=[...etas].reverse().find(x=>x.horaReal);
+    if(pendiente && vv.horaSalida){
+      if(!pendiente.eta) resultados.push({recorrido:codigoViaje(v), yaLlego:false, sinDato:true, repartidor:rep});
+      else resultados.push({recorrido:codigoViaje(v), yaLlego:false, eta:pendiente.eta, repartidor:rep, vuelve:!!hecha});
+    } else if(hecha){
+      resultados.push({recorrido:codigoViaje(v), yaLlego:true, hora:hecha.horaReal.toISOString(), repartidor:rep});
+    }
+  }
+  if(!resultados.length) return {ok:false, msg:"Ningún recorrido de hoy pasa por esa sucursal todavía."};
+  return {ok:true, resultados};
 }
 function formatoDiferencia(eta, horaReal){
   if(!eta || !horaReal) return "";
@@ -2132,58 +2160,6 @@ function formatoDiferencia(eta, horaReal){
 //  entre paradas [buscado en la matriz general] + tiempo de descarga
 //  en cada una, acumulado hasta la sucursal buscada).
 // ══════════════════════════════════════════════════════════
-function buscarEstadoSucursal(sucursalQuery){
-  const q = normNotif(sucursalQuery);
-  if(!q) return null;
-
-  // ¿Qué recorridos de hoy tienen esta sucursal en su hoja de ruta?
-  const paradasDeEsaSucursal = (S.flotaTiemposViaje||[]).filter(p=>normNotif(p.sucursal)===q);
-  if(!paradasDeEsaSucursal.length){
-    return {ok:false, msg:"Todavía no hay una hoja de ruta cargada para esa sucursal (falta cargar el orden de paradas del recorrido)."};
-  }
-
-  const resultados = [];
-  for(const parada of paradasDeEsaSucursal){
-    const viaje = (S.flotaViajesHoy||[]).find(v=>normNotif(v.recorrido)===normNotif(parada.recorrido));
-    if(!viaje) continue; // ese recorrido no salió hoy
-
-    // ¿Ya escaneraron la llegada a esta sucursal en este viaje?
-    const yaLlego = (S.flotaRegistrosHoy||[]).find(r=>r.id_viaje===viaje.id && normNotif(r.sucursal)===q && String(r.evento||"").toUpperCase()==="LLEGADA");
-    if(yaLlego){
-      resultados.push({recorrido:parada.recorrido, yaLlego:true, hora:yaLlego.ts, repartidor:[viaje.nombre_rep1,viaje.nombre_rep2].filter(Boolean).join(" / ")});
-      continue;
-    }
-    if(!viaje.hora_salida){ continue; } // todavía no salió de fábrica
-
-    // Calcular ETA: sumar, tramo por tramo (buscando cada uno en la
-    // matriz general), el tiempo de viaje + descarga de cada parada
-    // anterior, hasta llegar a la buscada (inclusive).
-    const hojaDeRuta = (S.flotaTiemposViaje||[])
-      .filter(p=>normNotif(p.recorrido)===normNotif(parada.recorrido))
-      .sort((a,b)=>a.orden_parada-b.orden_parada);
-    let minutosAcumulados = 0;
-    let anterior = "Fábrica";
-    let faltaDato = false;
-    for(const p of hojaDeRuta){
-      const tramo = minutosEntre(anterior, p.sucursal);
-      if(tramo===null){ faltaDato = true; break; }
-      minutosAcumulados += tramo;
-      anterior = p.sucursal;
-      if(normNotif(p.sucursal)===q) break; // llegamos a la parada buscada — no sumar su descarga, es la ETA de LLEGADA
-      const est = (S.flotaTiemposEstimados||[]).find(t=>normNotif(t.recorrido)===normNotif(parada.recorrido) && normNotif(t.sucursal)===normNotif(p.sucursal));
-      minutosAcumulados += est ? (Number(est.tiempo_est_seg)||0)/60 : 0;
-    }
-    if(faltaDato){
-      resultados.push({recorrido:parada.recorrido, yaLlego:false, sinDato:true, repartidor:[viaje.nombre_rep1,viaje.nombre_rep2].filter(Boolean).join(" / ")});
-      continue;
-    }
-    const horaEta = new Date(new Date(viaje.hora_salida).getTime() + minutosAcumulados*60000);
-    resultados.push({recorrido:parada.recorrido, yaLlego:false, eta:horaEta, repartidor:[viaje.nombre_rep1,viaje.nombre_rep2].filter(Boolean).join(" / ")});
-  }
-
-  if(!resultados.length) return {ok:false, msg:"Ningún recorrido con destino a esa sucursal salió hoy todavía."};
-  return {ok:true, resultados};
-}
 
 // Widget compacto para pantallas principales (sucursal, planificación, logística)
 function renderWidgetFlotaHoy(){
@@ -2200,10 +2176,9 @@ function renderWidgetFlotaHoy(){
         const color = activo ? "var(--amber)" : "#1fa86a";
         // Hoja de ruta planificada (armada en Flota) para este recorrido —
         // si todavía no la cargaron, cae al resumen simple de antes.
-        const hojaDeRuta = (S.flotaTiemposViaje||[])
-          .filter(p=>normNotif(p.recorrido)===normNotif(v.recorrido))
-          .sort((a,b)=>a.orden_parada-b.orden_parada);
-        const paradasConEta = !hojaDeRuta.length ? [] : calcularParadasConEta(v, hojaDeRuta);
+        // El recorrido del día como se armó (orden, salida/vuelta, paradas que se repiten)
+        const info = hojaDelViaje(v);
+        const paradasConEta = !info.paradas.length ? [] : calcularParadasConEta(v, info);
         // Índice de la última parada ya hecha (con llegada real), para
         // saber dónde poner el camioncito (va hacia la próxima).
         const idxUltimaHecha = paradasConEta.reduce((acc,p,i)=>p.horaReal?i:acc, -1);
@@ -2244,7 +2219,7 @@ function renderWidgetFlotaHoy(){
           ? (v.ultimaParada ? `Última parada: ${escH(v.ultimaParada.sucursal)} (${horaCorta(v.ultimaParada.ts)})` : `Salió ${horaCorta(v.horaSalida)} — en camino`)
           : `Finalizado ${horaCorta(v.horaLlegada)}`;
         return `<div style="background:var(--s2);border-radius:10px;padding:14px 16px;border-left:4px solid ${color};min-width:250px">
-          <div style="font-weight:800;font-size:16px">${escH(v.recorrido)} ${activo?"🟡":"✅"}</div>
+          <div style="font-weight:800;font-size:16px">${escH(codigoViaje(v))} ${activo?"🟡":"✅"}</div>
           <div style="font-size:13px;color:var(--muted);font-weight:600;margin-top:2px">👤 ${escH(v.repartidor||"—")}</div>
           <div style="font-size:13px;margin-top:4px;color:var(--text)">${estadoTxt}</div>
           ${listaParadas}
