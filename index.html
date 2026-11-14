@@ -1128,6 +1128,11 @@ tr[onclick]:active td{background:var(--s3)}
 .etq-chip{cursor:pointer;color:var(--teal);border-color:#2de0c455;font-family:var(--mono);font-weight:700}
 .etq-chip:hover{background:#2de0c414}
 
+
+.ar-it.en-fab{border-color:#f5a623;background:#f5a62310}
+.ar-enfab{font-size:12px;font-weight:700;color:#fbbf24;margin-bottom:2px}
+.ar-aviso-fab{background:#f5a62314;border:1px solid #f5a62355;color:#fde68a;border-radius:10px;padding:8px 12px;font-size:13px;margin:4px 0 8px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1152,7 +1157,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261114-0729";
+const APP_VERSION = "20261114-0736";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7889,12 +7894,38 @@ async function confirmarEntregaRep(){
 // Sale de Fábrica → el primer recorrido PREPARADO (todavía no salió) que pasa por el destino.
 // Sale de una sucursal → un recorrido que pase por el origen ANTES que por el destino y que
 // todavía no haya pasado por el origen. Logística después la puede sacar o cambiar.
+// ═══ Transferencias que llegaron a Fábrica y esperan su recorrido de salida ═══
+// "En fábrica" y sin un recorrido abierto asignado (el que la trajo ya no cuenta)
+const esperaSalidaDeFabrica = r => r && r.estado==="En fábrica" && r.tipoPedido!=="devolucion" && !(r.armadoId && _armadoAbierto(armadoDe(r.armadoId)) && armadoDe(r.armadoId).estado==="PREPARADO");
+// Al llegar a Fábrica: se suelta del recorrido que la trajo y se busca uno que salga de Fábrica hacia su destino
+async function alLlegarAFabrica(id){
+  const r=S.requests.find(x=>x.id===id); if(!r) return;
+  if(r.armadoId){
+    const ch={armadoId:null, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",id);
+    if(!error) S.requests=S.requests.map(x=>x.id===id?{...x,...ch}:x);
+  }
+  const a=await asignarRecorridoAuto(S.requests.find(x=>x.id===id));
+  if(a) toast(`🚛 La ${id} sale de Fábrica con ${codigoArmado(a)}`);
+  render();
+}
+// Barrido (al abrir Recorridos o crear uno): las que esperan en Fábrica se asignan solas si hay un recorrido que vaya
+async function asignarPendientesEnFabrica(){
+  // solo cuenta como asignada si tiene un recorrido PREPARADO (todavía no salió); si quedó atada al que la trajo, se suelta
+  const pend=S.requests.filter(r=>r.estado==="En fábrica" && r.tipoPedido!=="devolucion" && !(r.armadoId && armadoDe(r.armadoId)?.estado==="PREPARADO"));
+  let n=0;
+  for(const r of pend){
+    if(r.armadoId){ const ch={armadoId:null}; const { error } = await sb.from("solicitudes").update({armado_id:null}).eq("id",r.id); if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x); }
+    if(await asignarRecorridoAuto(S.requests.find(x=>x.id===r.id))) n++;
+  }
+  if(n){ toast(`🏭 ${n} que esperaba${n!==1?"n":""} en Fábrica se asignaron solas a su recorrido de salida`); render(); }
+}
 async function asignarRecorridoAuto(r){
-  if(!r || r.armadoId || ["Entregada","Cancelada","Rechazada"].includes(r.estado)) return null;
+  if(!r || (r.armadoId && _armadoAbierto(armadoDe(r.armadoId))) || ["Entregada","Cancelada","Rechazada"].includes(r.estado)) return null;
   const esBolsin = r.tipoPedido==="bolsin";
   try{ await cargarDatosQR(); }catch(e){}
   await cargarArmados();
-  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o) || _esDeposito(o);   // Tesorería está en Fábrica; el Depósito se agrega como parada
+  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o) || _esDeposito(o) || r.estado==="En fábrica";   // lo que llegó a Fábrica sale desde Fábrica   // Tesorería está en Fábrica; el Depósito se agrega como parada
   const abiertos=(S.armados||[]).filter(_armadoAbierto).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
   for(const a of abiertos){
     const par=paradasDeArmado(a).map(p=>normNotif(p));
@@ -7972,7 +8003,7 @@ async function dejarEnFabricaLoQueTengo(info, auto){
         ch={estado:"Entregada", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, nombreQuienRecibio:"Fábrica", updatedAt:ts};
         if(auto) falta="No la dejó en Fábrica por la app: se dio por entregada al cerrarse el recorrido";
       } else if(_pasaPorFab(r) && !r.fabricaAt){
-        ch={estado:"En fábrica", fabricaAt:ts, updatedAt:ts};
+        ch={estado:"En fábrica", fabricaAt:ts, armadoId:null, updatedAt:ts};   // se suelta del recorrido que la trajo
         if(auto) falta="No la dejó en Fábrica por la app: se dio por dejada al cerrarse el recorrido";
       } else {
         ch={estado:"En fábrica", pasaPorFabrica:true, fabricaAt:ts, armadoId:null, updatedAt:ts,
@@ -7982,6 +8013,7 @@ async function dejarEnFabricaLoQueTengo(info, auto){
       const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id).eq("estado","En tránsito");
       if(error) continue;
       total++; S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+      if(ch.estado==="En fábrica") asignarRecorridoAuto(S.requests.find(x=>x.id===r.id)).catch(()=>{});   // su recorrido de salida, si hay uno
       if(falta) faltas.push({dni:quien, id:r.id, detalle:falta});
     }
     const { data:dv } = await sb.from("devoluciones").select("*").eq("estado","En camino").in("dni_quien_levanto",dnis);
@@ -8323,7 +8355,7 @@ function renderLogTabla(){
             <td><div class="lt-desc" title="${escH(r.descripcion||"")}">${escH(r.descripcion)}</div><div class="lt-sub mono">${escH(String(r.cantidad))} ${escH(r.unidad)}</div></td>
             <td class="muted-cell lt-nw">${fd(r.fechaRequerida)}</td>
             <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
-            <td>${estadoBadges(r)}</td>
+            <td>${estadoBadges(r)}${esperaSalidaDeFabrica(r)?`<div class="ar-enfab" style="margin-top:3px" title="Llegó a Fábrica: falta asignarle el recorrido de salida">🏭 Falta recorrido de salida</div>`:""}</td>
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
             <td class="muted-cell">${["En tránsito","En fábrica"].includes(r.estado) && r.nombreQuienLevanto?escH(r.nombreQuienLevanto):"—"}</td>
             <td style="white-space:nowrap" onclick="event.stopPropagation()">
@@ -9991,7 +10023,7 @@ async function cargarArmados(){
 }
 async function abrirArmarDelDia(){
   S.subTabRec="armar";
-  await Promise.all([cargarArmados().then(()=>corregirBolsinesMalAsignados()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
+  await Promise.all([cargarArmados().then(()=>corregirBolsinesMalAsignados()).then(()=>asignarPendientesEnFabrica()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
   if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
   if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
   render();
@@ -10016,6 +10048,7 @@ async function crearArmado(){
   if(error){ console.warn(error); toast(/codigo|paradas|inicio/.test(error.message||"")?"⚠️ Falta correr recorridos_04_unicos_por_dia.sql en Supabase":/recorridos_armados/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo crear","warn"); return; }
   S.armados=[toCamelRow(fila),...(S.armados||[])]; S.armadoSel=id; S.nuevoArmadoRec="";
   toast(`✅ ${codigo} armado — sumale paradas y transferencias`); render();
+  setTimeout(()=>asignarPendientesEnFabrica().catch(()=>{}),0);
 }
 // ¿Esta transferencia sale de Fábrica en este recorrido? (origen Fábrica, espera su 2º tramo, o se reasignó desde Fábrica)
 // (Tesorería está físicamente en Fábrica: para el recorrido es el mismo lugar)
@@ -10588,11 +10621,12 @@ function renderArmarDelDia(){
   let libres=S.requests.filter(r=>ESTADOS_ARMABLES.includes(r.estado) && !enArmadoAbierto(r) && r.tipoPedido!=="devolucion");
   if(q) libres=libres.filter(r=>[r.id,r.sucursal,r.area,r.destino,r.descripcion,r.recorrido].some(v=>normNotif(v||"").includes(q)));
   const sugerida=r=> a && (normNotif(r.recorrido)===normNotif(a.recorrido) || parN.has(normNotif(r.destino)) || parN.has(normNotif(origenLabel(r))));
-  libres.sort((x,y)=>(sugerida(y)?1:0)-(sugerida(x)?1:0));
+  libres.sort((x,y)=>((esperaSalidaDeFabrica(y)?2:0)+(sugerida(y)?1:0))-((esperaSalidaDeFabrica(x)?2:0)+(sugerida(x)?1:0)));   // primero lo que llegó a Fábrica
   const bloqueada=r=> enCurso && !admin && saleDeFabrica(r);
   const gest=r=>puede("solicitudes")?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openGestionar('${escH(r.id)}')" title="Gestionar">⚙️</button>`:"";
-  const filaLibre=r=>`<div class="ar-it ${sugerida(r)?"sug":""}" draggable="${editable&&!bloqueada(r)?"true":"false"}" ondragstart="event.dataTransfer.setData('text/plain','${escH(r.id)}');this.classList.add('arrastrando')" ondragend="this.classList.remove('arrastrando')" onclick="openDetalle('${escH(r.id)}')">
+  const filaLibre=r=>`<div class="ar-it ${sugerida(r)?"sug":""} ${esperaSalidaDeFabrica(r)?"en-fab":""}" draggable="${editable&&!bloqueada(r)?"true":"false"}" ondragstart="event.dataTransfer.setData('text/plain','${escH(r.id)}');this.classList.add('arrastrando')" ondragend="this.classList.remove('arrastrando')" onclick="openDetalle('${escH(r.id)}')">
       <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> <strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino||"")}</div>
+        ${esperaSalidaDeFabrica(r)?`<div class="ar-enfab">🏭 Llegó a Fábrica · falta el recorrido de salida a ${escH(r.destino||"")}</div>`:""}
         <div class="ar-sub">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.recorrido?` · ${escH(r.recorrido)}`:""} · ${r.estado==="No entregada"?`<span style="color:#fca5a5;font-weight:700">No entregada${r.nombreQuienLevanto?` por ${escH(r.nombreQuienLevanto)}`:""} · sale de Fábrica</span>`:escH(r.estado)}</div></div>
       ${gest(r)}
       ${editable?(bloqueada(r)?`<span class="ar-lock" title="El recorrido ya salió de Fábrica">🔒</span>`:`<button class="btn btn-success btn-sm" onclick="event.stopPropagation();asignarAArmado('${escH(r.id)}')" title="Sumar a ${escH(a.recorrido)}">➕</button>`):""}
@@ -10649,6 +10683,7 @@ function renderArmarDelDia(){
     <div class="card ar-col">
       <div class="ar-col-tit"><h3>📋 Transferencias sin recorrido <span class="tab-n">${libres.length}</span></h3>
         <input class="inp" style="max-width:260px" placeholder="🔎 Buscar N°, sucursal, destino…" value="${escH(S.armadoBusq||"")}" oninput="S.armadoBusq=this.value;render()"/></div>
+      ${libres.filter(esperaSalidaDeFabrica).length?`<div class="ar-aviso-fab">🏭 <strong>${libres.filter(esperaSalidaDeFabrica).length}</strong> llegaron a Fábrica y esperan su recorrido de salida (están arriba de todo).</div>`:""}
       ${a?`<p class="ar-ayuda">Arrastrá una transferencia al recorrido o tocá ➕. Arriba van las que coinciden con <strong>${escH(a.recorrido)}</strong>. Tocá una para ver el detalle, o ⚙️ para gestionarla.</p>`:`<p class="ar-ayuda">Elegí o creá un recorrido a la derecha para sumarle transferencias.</p>`}
       <div class="ar-lista">${libres.length?paginar("armLibres",libres,q+"|"+(a?.id||"")).map(filaLibre).join("")+botonVerMas("armLibres",libres.length):`<div class="pk-vacio">No hay transferencias pendientes sin recorrido. ✅</div>`}</div>
     </div>
@@ -13260,7 +13295,8 @@ async function ejecutarDejarEnFabrica(id, dni, nombre){
   S.modal = null;
   toast(`🏭 ${nombre} dejó la ${id} en fábrica`);
   render();
-  sheetsUpdate(id, changes);
+  await sheetsUpdate(id, changes);
+  alLlegarAFabrica(id);   // se suelta del recorrido que la trajo y busca el de salida
 }
 function openDejarEnFabrica(id){
   if(S.miIdentidadRep){
