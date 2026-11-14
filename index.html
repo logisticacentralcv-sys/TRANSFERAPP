@@ -1152,7 +1152,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261114-0654";
+const APP_VERSION = "20261114-0729";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10875,7 +10875,8 @@ function estoyEnLista(){
   });
   const dejar=vis.filter(r=>{
     if(r.estado!=="En tránsito") return false;
-    if(_pasaPorFab(r) && !r.fabricaAt) return e.fabrica;             // pasa por fábrica y todavía no llegó
+    // pasa por fábrica y todavía no llegó: se deja en Fábrica… o, si fue directo, en su destino final
+    if(_pasaPorFab(r) && !r.fabricaAt) return e.fabrica || normNotif(r.destino)===n;
     return normNotif(r.destino)===n;
   });
   const devTomar=S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===n);
@@ -11781,6 +11782,7 @@ function renderDetalle(){
     ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
     ${r.recorrido&&recorridoVisible(r)?badge(r.recorrido,"var(--teal)"):""}
     ${chipEtiqueta(r)}
+    ${_pasaPorFab(r) && !r.fabricaAt && ["Entregada","Entregada (sin confirmar)"].includes(r.estado)?badge("Directo, sin pasar por Fábrica","var(--amber)"):""}
   </div>
   ${esLogistica && !["Entregada","Rechazada","Cancelada"].includes(r.estado)?`
   <button class="btn btn-primary btn-md btn-full" style="margin-bottom:16px" onclick="openGestionar('${escH(r.id)}')">
