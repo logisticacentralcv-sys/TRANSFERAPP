@@ -1152,7 +1152,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261113-1200";
+const APP_VERSION = "20261114-0654";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5641,6 +5641,7 @@ function renderPlanificacion(){
   return `
   <div style="animation:fadeUp .3s ease">
     <div id="flota-slot">${renderWidgetFlotaHoy()}</div>
+    ${esDeposito()?renderEntregarAlRepartidorBanner():""}
     ${pageHead(escH(u.area||"Planificación"),"",`
         <button class="btn btn-success btn-md" onclick="openModal('nuevaSol')">+ Nueva solicitud</button>
         ${areaN==="rrhh"?`<button class="btn btn-teal btn-md" onclick="openEnvioMasivoRRHH()">📨 Enviar a varias sucursales</button>`:""}
@@ -7746,24 +7747,28 @@ function requiereEntregaConDni(r){
   if(!r) return false;
   const o=origenLabel(r);
   if(r.tipoPedido==="bolsin") return false;   // los bolsines los toma el repartidor directo, sin que nadie le pida el DNI
-  if(_esTesoreriaLugar(o) || _esDeposito(o)) return false;
+  if(_esDeposito(o)) return true;              // lo que sale del Depósito lo entrega el Depósito, con el DNI del repartidor
+  if(_esTesoreriaLugar(o)) return false;
   if(esOrigenEnFabrica(r)) return true;
   if(esOrigenOtraDireccion(r) && !["En fábrica","No entregada"].includes(r.estado)) return false;   // otra dirección: la retira el repartidor directo (ahí no hay nadie con la app)
   return esSucursalReal(o) || esOrigenEnFabrica(r) || r.estado==="En fábrica" || r.estado==="No entregada";
 }
 const ESTADOS_ENTREGABLES_FAB = ["Lista para retirar","En fábrica","No entregada"];
-const paraEntregarEnFabrica = () => S.requests.filter(r=>ESTADOS_ENTREGABLES_FAB.includes(r.estado) && requiereEntregaConDni(r) && !esSucursalReal(origenLabel(r)) && r.tipoPedido!=="devolucion");
+const paraEntregarEnFabrica = () => S.requests.filter(r=>ESTADOS_ENTREGABLES_FAB.includes(r.estado) && requiereEntregaConDni(r) && !esSucursalReal(origenLabel(r)) && !_esDeposito(origenLabel(r)) && r.tipoPedido!=="devolucion");
+const paraEntregarEnDeposito = () => S.requests.filter(r=>r.estado==="Lista para retirar" && r.tipoPedido!=="bolsin" && _esDeposito(origenLabel(r)));
 const devolucionesParaEntregar = suc => S.devoluciones.filter(d=>d.estado==="Pendiente" && normNotif(d.sucursal)===normNotif(suc));
 const puedeEntregarEnFabrica = () => (S.user?.rol==="recepcionista" && !normNotif(S.user.area||"").includes("fresco")) || S.user?.perfil==="encargadoFresco" || S.user?.rol==="admin";
 function avisoEntregaSuc(r){
   const o=origenLabel(r);
+  if(_esDeposito(o)) return `<div class="rep-entrega-suc">🏬 Te lo entrega el Depósito: te va a pedir tu DNI</div>`;
   return esSucursalReal(o) ? `<div class="rep-entrega-suc">🏪 Te lo entrega ${escH(o)}: te va a pedir tu DNI</div>`
                            : `<div class="rep-entrega-suc">🏭 Te lo entrega Recepción: te va a pedir tu DNI</div>`;
 }
 // Aviso arriba de todo para quien entrega
 function renderEntregarAlRepartidorBanner(){
   let modo=null, n=0;
-  if(S.user?.rol==="sucursal" && esSucursalReal(S.user.area)){
+  if(esDeposito()){ modo="deposito"; n=paraEntregarEnDeposito().length; }
+  else if(S.user?.rol==="sucursal" && esSucursalReal(S.user.area)){
     if(!S.devolucionesLoaded && !S._cargandoDevSuc){ S._cargandoDevSuc=true; cargarDevoluciones().then(()=>{ S._cargandoDevSuc=false; render(); }).catch(()=>{ S._cargandoDevSuc=false; }); }   // por si todavía no estaban
     modo="sucursal"; n=paraEntregarEnSucursal(S.user.area).length+devolucionesParaEntregar(S.user.area).length;
   }
@@ -7781,6 +7786,7 @@ function abrirEntregarAlRepartidor(modo){
 }
 function _candidatosEntrega(d){
   const deOtroRecorrido = r => enArmadoAbierto(r) && (!d.arm || r.armadoId!==d.arm.id);
+  if(d.modo==="deposito") return {trans:paraEntregarEnDeposito().filter(r=>!deOtroRecorrido(r)), devs:[]};
   return d.modo==="fabrica"
     ? {trans:paraEntregarEnFabrica(), devs:[]}
     : {trans:paraEntregarEnSucursal(S.user.area).filter(r=>!deOtroRecorrido(r)), devs:devolucionesParaEntregar(S.user.area)};   // en la sucursal: nada de otros recorridos
@@ -7799,6 +7805,7 @@ async function entregaRepSeguir(){
   if(!arm && !viajeAct){
     d.loading=false;
     d.err = d.modo==="fabrica" ? `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR de Fábrica y elija su recorrido; después le entregás.`
+          : d.modo==="deposito" ? `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR del Depósito y elija su recorrido; después le entregás.`
                                : `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR de la sucursal y elija en qué recorrido está; después le entregás.`;
     render(); return;
   }
@@ -7869,10 +7876,10 @@ async function confirmarEntregaRep(){
   if(!ids.length && !devIds.length){ d.err="Marcá lo que le entregás."; render(); return; }
   d.loading=true; renderNow();
   const quien=identidadSesion()?.nombre||"";
-  const entrego = d.modo==="fabrica" ? `Recepción Fábrica${quien?` (${quien})`:""}` : S.user.area;
+  const entrego = d.modo==="fabrica" ? `Recepción Fábrica${quien?` (${quien})`:""}` : d.modo==="deposito" ? `Depósito${quien?` (${quien})`:""}` : S.user.area;
   const {ok, okDev} = await entregarARepartidor(ids, devIds, d.rep, d.arm, entrego);
   const n=ok.length+okDev.length;
-  if(n) crearNotificacion(`REP:${d.dni}`, `📦 ${d.modo==="fabrica"?"Recepción":S.user.area} te entregó ${n===1?"1 cosa":`${n} cosas`}: ya figuran a tu nombre`, ok[0]||null);
+  if(n) crearNotificacion(`REP:${d.dni}`, `📦 ${d.modo==="fabrica"?"Recepción":d.modo==="deposito"?"El Depósito":S.user.area} te entregó ${n===1?"1 cosa":`${n} cosas`}: ya figuran a tu nombre`, ok[0]||null);
   S.modal=null; S.entregaRep=null;
   toast(n===ids.length+devIds.length ? `✅ Entregado a ${d.rep.nombre}` : `⚠️ Se entregaron ${n} de ${ids.length+devIds.length} (las demás ya no estaban listas)`, n===ids.length+devIds.length?undefined:"warn");
   render();
@@ -7887,7 +7894,7 @@ async function asignarRecorridoAuto(r){
   const esBolsin = r.tipoPedido==="bolsin";
   try{ await cargarDatosQR(); }catch(e){}
   await cargarArmados();
-  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o);   // Tesorería está en Fábrica
+  const o=origenLabel(r), dst=r.destino, desdeFab=esOrigenEnFabrica(r) || _esTesoreriaLugar(o) || _esDeposito(o);   // Tesorería está en Fábrica; el Depósito se agrega como parada
   const abiertos=(S.armados||[]).filter(_armadoAbierto).sort((x,y)=>String(x.createdAt||"").localeCompare(String(y.createdAt||"")));
   for(const a of abiertos){
     const par=paradasDeArmado(a).map(p=>normNotif(p));
@@ -10017,7 +10024,8 @@ async function crearArmado(){
 const _esLugarFabrica = n => { const k=normNotif(n||""); return ["fabrica","tesoreria"].includes(k) || k.startsWith("administracion") || esAreaDeFabrica(n); };
 // ¿Ese lugar es la salida o la vuelta del recorrido? (Fábrica o Depósito)
 const _esBaseDe = (n, base) => { const k=normNotif(n||""), b=normNotif(base||""); return !!k && (k===b || (_esDeposito(k) && _esDeposito(b)) || (b==="fabrica" && _esLugarFabrica(n))); };
-const saleDeFabrica = r => esOrigenFabrica(r) || _esLugarFabrica(origenLabel(r)) || r.estado==="En fábrica" || r.estado==="No entregada";
+// (el Depósito NO es Fábrica: lo que sale de ahí tiene su propia parada, salvo que el recorrido salga del Depósito)
+const saleDeFabrica = r => (esOrigenFabrica(r) && !_esDeposito(origenLabel(r))) || _esLugarFabrica(origenLabel(r)) || r.estado==="En fábrica" || r.estado==="No entregada";
 // ¿En este viaje termina en Fábrica? (va a Fábrica o a Tesorería, o pasa por Fábrica y todavía no llegó)
 const terminaEnFabrica = r => bolsinAFabrica(r) || _esLugarFabrica(r.destino) || (_pasaPorFab(r) && !r.fabricaAt && r.estado!=="En fábrica");
 const esAdminRec = () => S.user?.rol==="admin";
