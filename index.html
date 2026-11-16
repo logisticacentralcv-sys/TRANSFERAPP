@@ -1133,6 +1133,31 @@ tr[onclick]:active td{background:var(--s3)}
 .ar-enfab{font-size:12px;font-weight:700;color:#fbbf24;margin-bottom:2px}
 .ar-aviso-fab{background:#f5a62314;border:1px solid #f5a62355;color:#fde68a;border-radius:10px;padding:8px 12px;font-size:13px;margin:4px 0 8px}
 
+
+.qr-ver{margin-left:auto;padding:2px 8px;font-size:12px}
+.vi{display:flex;flex-direction:column;gap:2px}
+.vi-fila{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid var(--border);font-size:13.5px}
+.vi-fila span{color:var(--muted);flex:none}.vi-fila strong{text-align:right;font-weight:600}
+.vi-maps{display:inline-block;margin-left:6px;color:var(--teal);font-size:12.5px;white-space:nowrap}
+.scan-btn{font-size:15px}
+.scan-wrap{position:relative;width:100%;aspect-ratio:3/4;background:#000;border-radius:12px;overflow:hidden}
+.scan-wrap video{width:100%;height:100%;object-fit:cover}
+.scan-marco{position:absolute;inset:18% 14%;border:3px solid var(--teal);border-radius:14px}
+.scan-txt{text-align:center;color:var(--muted);font-size:13.5px;margin:10px 0 0}
+.guia{padding:12px 14px;margin-bottom:12px;border-color:#2de0c455}
+.guia-cab{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px}.guia-cab span{font-size:12px;color:var(--muted)}
+.guia-aviso{background:var(--s2);border-radius:10px;padding:8px 10px;font-size:13px;margin-bottom:10px;line-height:1.45}
+.guia-aviso.amb{background:#f5a62314;border:1px solid #f5a62355;color:#fde68a}.guia-aviso.ok{background:#2ecc7a14;color:#86efac}
+.guia-aviso span{color:var(--muted);font-size:12px}
+.guia-pasos{display:flex;flex-direction:column;gap:8px}
+.guia-paso{display:flex;gap:10px;align-items:flex-start;font-size:13px;color:var(--muted)}
+.guia-paso i{width:20px;height:20px;border-radius:50%;border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-style:normal;font-size:11px;flex:none}
+.guia-paso b{display:block;font-weight:600;color:var(--text)}.guia-paso small{font-size:12px;color:var(--muted)}
+.guia-paso.hecho i{background:#2ecc7a;border-color:#2ecc7a;color:#062}.guia-paso.hecho b{color:var(--muted);text-decoration:line-through}
+.guia-paso.sig i{background:var(--teal);border-color:var(--teal);color:#032}.guia-paso.sig b{color:var(--teal)}
+.guia-prox strong{display:block;font-size:16px}.guia-prox small{color:var(--muted);font-size:12.5px}
+.guia-sig{margin-top:12px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1157,7 +1182,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261116-0637";
+const APP_VERSION = "20261116-1223";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2108,8 +2133,9 @@ function calcularParadasConEta(v, info){
   const regs=(S.flotaRegistrosHoy||[]).filter(r=>r.id_viaje===v.id).sort((x,y)=>String(x.ts).localeCompare(String(y.ts)));
   const usadas=new Set(), res=[];
   let horaConocida=v.horaSalida?new Date(v.horaSalida):null, ant=_ptoMatriz(ex.inicio);
-  const seq=[...info.paradas.map(p=>({nombre:p.nombre, repetida:!!p.repetida})), {nombre:_ptoMatriz(ex.fin), vuelta:true}];
+  const seq=[...info.paradas.map(p=>({nombre:p.libre?`📍 ${p.obs||"Otra dirección"}`:p.nombre, repetida:!!p.repetida, libre:!!p.libre})), {nombre:_ptoMatriz(ex.fin), vuelta:true}];
   for(const p of seq){
+    if(p.libre){ res.push({sucursal:p.nombre, eta:null, horaReal:null}); continue; }   // dirección sin buscar: sin hora estimada
     const tramo=minutosEntre(ant,p.nombre);
     const eta=(horaConocida && tramo!=null) ? new Date(horaConocida.getTime()+tramo*60000) : null;
     let horaReal=null;
@@ -5561,7 +5587,7 @@ function renderApp(){
     : S.vista==="clasificar"     ? renderClasificar()
     : S.vista==="revProduccion"  ? renderRevisionProduccion()
     : u.rol==="logistica"      ? renderLogistica()
-    : u.rol==="repartidor"     ? renderRepartidor()
+    : u.rol==="repartidor"     ? renderRepartidorConGuia()
     : u.rol==="planificacion"  ? renderPlanificacion()
     : u.rol==="recepcionista"  ? renderRecepcionista()
     : u.rol==="tesoreria"      ? renderTesoreria()
@@ -9950,7 +9976,7 @@ function cardQR(r, accion){
 
     : `<button class="btn btn-success btn-md" onclick="abrirEntregaFirma('${escH(r.id)}')">✅ Entregar</button>`;
   return `<div class="qr-card">
-    <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>
+    <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>${botonVer(r)}
       ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}${r.prioridad==="Urgente"?`<span class="sk-chip red">Urgente</span>`:""}</div>
     <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
     <div class="qr-card-desc">${escH(r.descripcion||"")}${r.cantidad?` · ${escH(String(r.cantidad))} ${escH(r.unidad||"")}`:""}</div>
@@ -10172,11 +10198,16 @@ function paradasArmado(a, mias){
   };
   // la salida y la vuelta del recorrido (Fábrica/áreas o Depósito) no son paradas
   const fabParada=fabricaEsParada(a), fabInicio=_esBaseDe("Fábrica", ex.inicio);
+  // "Otra dirección": si se buscó (tiene tiempos) es una parada normal; si no, va al final con lo escrito en Observaciones
+  const conTiempos=n=>(S.flotaMatrizTiempos||[]).some(m=>normNotif(m.origen)===normNotif(n));
+  const otraO=r=>esOrigenOtraDireccion(r) && !conTiempos(origenLabel(r)), otraD=r=>esDestinoOtraDireccion(r) && !conTiempos(r.destino);
   const asign=mias.map(r=>({r,
     o: (fabParada && !fabInicio && saleDeFabrica(r)) ? "Fábrica"
-       : (!saleDeFabrica(r) && origenLabel(r) && !esOrigenOtraDireccion(r) && !_esBaseDe(origenLabel(r), ex.inicio) ? origenLabel(r) : null),
+       : (!saleDeFabrica(r) && origenLabel(r) && !otraO(r) && !_esBaseDe(origenLabel(r), ex.inicio) ? origenLabel(r) : null),
     d: (fabParada && terminaEnFabrica(r)) ? "Fábrica"
-       : (!terminaEnFabrica(r) && r.destino && !esDestinoOtraDireccion(r) && !_esBaseDe(r.destino, ex.fin) ? r.destino : null)}));
+       : (!terminaEnFabrica(r) && r.destino && !otraD(r) && !_esBaseDe(r.destino, ex.fin) ? r.destino : null),
+    lo: otraO(r) ? (direccionDe(r,"origen")||"Otra dirección") : null,
+    ld: otraD(r) && !terminaEnFabrica(r) ? (direccionDe(r,"destino")||"Otra dirección") : null}));
   // faltan paradas: primero el origen; el destino tiene que quedar DESPUÉS del origen (si estaba antes, se vuelve a pasar)
   asign.forEach(x=>{
     let io=-1;
@@ -10189,7 +10220,12 @@ function paradasArmado(a, mias){
     if(x.o){ io=pos(x.o); if(io>=0) base[io].rt.push(x.r); }
     if(x.d){ const id=pos(x.d,io+1); if(id>=0) base[id].dj.push(x.r); }
   });
-  const vistos={}; base.forEach(p=>{ const k=normNotif(p.nombre); p.repetida=!!vistos[k]; vistos[k]=true; });
+  // las que no se buscaron: al final del recorrido (antes de la vuelta), una parada por dirección
+  asign.forEach(x=>{ [["lo","rt"],["ld","dj"]].forEach(([k,lista])=>{ if(!x[k]) return;
+    let p=base.find(b=>b.libre && normNotif(b.obs)===normNotif(x[k]));
+    if(!p){ p={nombre:"Otra dirección", libre:true, obs:x[k], extra:true, dj:[], rt:[]}; base.push(p); }
+    p[lista].push(x.r); }); });
+  const vistos={}; base.forEach(p=>{ if(p.libre){ p.repetida=false; return; } const k=normNotif(p.nombre); p.repetida=!!vistos[k]; vistos[k]=true; });
   return base;
 }
 // Fijar una parada agregada sola (ej. la vuelta a una sucursal) para poder moverla
@@ -10204,11 +10240,168 @@ function recorridoDelRepartidor(){
   if(S._miViajeDe!==yo){ S._miViajeDe=yo; miViajeActivo().then(v=>{ S.miViajeRep=v; render(); }).catch(()=>{}); }
   return (S.armados||[]).find(x=>x.estado==="EN_CURSO" && (_dniLimpio(x.dniRep)===yo || (S.miViajeRep && x.idViaje===S.miViajeRep.id))) || null;
 }
+// ═══════════════════════════════════════════════════════════════════
+//  REPARTIDOR: ver qué lleva, lector de QR dentro de la app y guía del recorrido
+// ═══════════════════════════════════════════════════════════════════
+// Dirección de una transferencia "a otra dirección" (la buscada, o lo que escribieron en Observaciones)
+function direccionDe(r, lado){
+  const n = lado==="origen" ? origenLabel(r) : r.destino;
+  const d=(S.flotaDirecciones||[]).find(x=>normNotif(x.nombre)===normNotif(n));
+  return d ? d.direccion : (String(r.observaciones||"").trim() || "");
+}
+const linkMaps = dir => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(dir)}`;
+// ── Ver una transferencia (lo que levanta o lleva) ──
+function verItem(id){ S.verItem=id; S.modal="verItem"; render(); }
+function renderVerItemModal(){
+  const r=S.requests.find(x=>x.id===S.verItem); if(!r) return "";
+  const dDest = esDestinoOtraDireccion(r) ? direccionDe(r,"destino") : "", dOrig = esOrigenOtraDireccion(r) ? direccionDe(r,"origen") : "";
+  const fila=(k,v)=>v?`<div class="vi-fila"><span>${k}</span><strong>${v}</strong></div>`:"";
+  return `<div class="vi">
+    ${fila("N°",`<span class="mono" style="color:var(--blue)">${escH(r.id)}</span>`)}
+    ${fila("Qué es",escH(r.descripcion||""))}
+    ${fila("Cantidad",`${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}`)}
+    ${fila("Sale de",escH(origenLabel(r)))}
+    ${dOrig?fila("Dirección de retiro",`${escH(dOrig)} <a class="vi-maps" href="${linkMaps(dOrig)}" target="_blank" rel="noopener">Abrir en Maps</a>`):""}
+    ${fila("Va a",escH(r.destino||""))}
+    ${dDest?fila("Dirección de entrega",`${escH(dDest)} <a class="vi-maps" href="${linkMaps(dDest)}" target="_blank" rel="noopener">Abrir en Maps</a>`):""}
+    ${r.tipoPedido!=="bolsin"?fila("Etiqueta",`🏷️ ${escH(etiquetaPreparacion(r))}`):""}
+    ${fila("Observaciones",escH(r.observaciones||""))}
+    ${fila("Pidió",escH(solicitanteLabel(r)))}
+  </div>
+  <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cerrar</button></div>`;
+}
+const botonVer = r => `<button class="btn btn-ghost btn-sm qr-ver" onclick="event.stopPropagation();verItem('${escH(r.id)}')">👁 Ver</button>`;
+
+// ── Lector de QR dentro de la app (sin abrir el navegador cada vez) ──
+let _scan=null;
+function abrirEscaner(){ S.modal="scanQR"; S.scanErr=""; render(); setTimeout(iniciarEscaner,80); }
+function renderScanModal(){
+  return `<div class="scan-wrap"><video id="scan-video" playsinline muted></video><div class="scan-marco"></div></div>
+    <p class="scan-txt">Apuntá al cartel QR · se lee solo</p>
+    ${S.scanErr?`<div class="err-msg" style="display:block;margin:6px 0">${escH(S.scanErr)}</div>`:""}
+    <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="cerrarEscaner()">Cancelar</button></div>`;
+}
+async function _cargarJsQR(){
+  if(window.jsQR) return true;
+  return new Promise(res=>{ const s=document.createElement("script"); s.src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"; s.onload=()=>res(!!window.jsQR); s.onerror=()=>res(false); document.head.appendChild(s); });
+}
+async function iniciarEscaner(){
+  const v=$("scan-video"); if(!v) return;
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}, audio:false});
+    _scan={stream, activo:true}; v.srcObject=stream; await v.play();
+    let det=null; try{ if("BarcodeDetector" in window) det=new BarcodeDetector({formats:["qr_code"]}); }catch(e){}
+    if(!det && !(await _cargarJsQR())) throw new Error("No se pudo cargar el lector");
+    const cv=document.createElement("canvas"), cx=cv.getContext("2d",{willReadFrequently:true});
+    const paso=async()=>{
+      if(!_scan||!_scan.activo) return;
+      try{
+        let txt=null;
+        if(det){ const r=await det.detect(v); if(r&&r.length) txt=r[0].rawValue; }
+        else if(v.videoWidth){ cv.width=v.videoWidth; cv.height=v.videoHeight; cx.drawImage(v,0,0); const im=cx.getImageData(0,0,cv.width,cv.height); const r=window.jsQR(im.data,im.width,im.height); if(r) txt=r.data; }
+        if(txt && procesarTextoQR(txt)) return;
+      }catch(e){}
+      setTimeout(paso,180);
+    };
+    paso();
+  }catch(err){
+    S.scanErr = /Permission|NotAllowed/i.test(err.name||err.message) ? "Permití el uso de la cámara para escanear (se pide una sola vez)." : "No se pudo abrir la cámara. Podés escanear con la cámara del celular.";
+    render();
+  }
+}
+function cerrarEscaner(){ if(_scan){ _scan.activo=false; try{ _scan.stream.getTracks().forEach(t=>t.stop()); }catch(e){} _scan=null; } S.modal=null; render(); }
+// Lee el texto del cartel (la misma dirección de siempre: …?s=Alsina) y entra al lugar sin abrir otra pestaña
+function procesarTextoQR(txt){
+  let s="", v="";
+  try{ const u=new URL(txt); s=(u.searchParams.get("s")||"").trim(); v=(u.searchParams.get("v")||"").trim(); }catch(e){}
+  if(!s){ S.scanErr="Ese código no es un cartel de TransferLog."; render(); return false; }
+  cerrarEscaner();
+  const q={s, v, at:Date.now()};
+  if(S.miIdentidadRep?.dni){   // ya está identificado en la app: no se le vuelve a pedir el DNI
+    asegurarSesionCuenta().catch(()=>{}).finally(()=>{ S.estoyEn=null; _aplicarQR(q); });
+  } else { S.qrDni={q, dni:"", err:"", loading:false}; S.modal="qrDni"; render(); }
+  return true;
+}
+const botonEscanear = (txt="📷 Escanear QR") => `<button class="btn btn-teal btn-md btn-full scan-btn" onclick="abrirEscaner()">${txt}</button>`;
+
+// ── Guía del recorrido: qué sigue, con avisos ──
+async function cargarLlegadasMiViaje(){
+  const a=recorridoDelRepartidor(); if(!a||!a.idViaje) return;
+  try{ const { data } = await sb.from("flota_registros_qr").select("sucursal,evento,ts").eq("id_viaje",a.idViaje).order("ts",{ascending:true}); S.miLlegadas={viaje:a.idViaje, regs:data||[]}; render(); }catch(e){}
+}
+function pasosDelRecorrido(){
+  const a=recorridoDelRepartidor(); if(!a) return null;
+  if(!S.miLlegadas || S.miLlegadas.viaje!==a.idViaje){ S.miLlegadas={viaje:a.idViaje, regs:[]}; cargarLlegadasMiViaje(); }
+  const regs=(S.miLlegadas.regs||[]).filter(x=>String(x.evento||"").toUpperCase()==="LLEGADA");
+  const paradas=paradasArmado(a, S.requests.filter(r=>r.armadoId===a.id));
+  const usados=new Set();
+  const pasos=paradas.map(p=>{
+    const r=regs.find(x=>!usados.has(x) && normNotif(x.sucursal)===normNotif(p.libre?"":p.nombre));
+    if(r) usados.add(r);
+    return {...p, hecho:!!r};
+  });
+  return {a, pasos, sig:pasos.find(p=>!p.hecho)||null};
+}
+function avisoParada(p, a){
+  if(!p) return "";
+  const n=normNotif(p.nombre);
+  if(p.libre) return `<div class="guia-aviso amb">📍 Dirección fuera del recorrido habitual: <strong>${escH(p.obs||"")}</strong>${p.obs?` <a class="vi-maps" href="${linkMaps(p.obs)}" target="_blank" rel="noopener">Abrir en Maps</a>`:""}<br><span>No tiene QR: lo hacés directo.</span></div>`;
+  if(_esDeposito(n) && !_esBaseDe("Depósito", extremosDe(a).inicio)) return `<div class="guia-aviso amb">🏬 Pasá por el Depósito${(p.rt||[]).length?`: retirás ${(p.rt||[]).length}`:""}.</div>`;
+  if(n==="fabrica") return `<div class="guia-aviso">🏭 Pasás por Fábrica y seguís (no termina acá).</div>`;
+  if(p.repetida) return `<div class="guia-aviso">🔁 Volvés a pasar por ${escH(p.nombre)}.</div>`;
+  if(esOtraDireccion(p.nombre)){ const d=(S.flotaDirecciones||[]).find(x=>normNotif(x.nombre)===n); return `<div class="guia-aviso amb">📍 Dirección fuera del recorrido habitual${d?`: <strong>${escH(d.direccion)}</strong> <a class="vi-maps" href="${linkMaps(d.direccion)}" target="_blank" rel="noopener">Abrir en Maps</a>`:""}<br><span>No tiene QR: lo hacés directo.</span></div>`; }
+  return "";
+}
+const _resumenParada = p => [(p.dj||[]).length?`dejás ${(p.dj||[]).length}`:"", (p.rt||[]).length?`retirás ${(p.rt||[]).length}`:""].filter(Boolean).join(" · ") || "sin nada para dejar ni retirar";
+function guiaRecorridoHtml(){
+  const g=pasosDelRecorrido(); if(!g) return "";
+  const {a,pasos,sig}=g, ex=extremosDe(a);
+  return `<div class="card guia">
+    <div class="guia-cab"><strong>${escH(codigoArmado(a))}</strong><span>Tu recorrido</span></div>
+    ${sig?avisoParada(sig,a):`<div class="guia-aviso ok">✅ Hiciste todas las paradas: volvé a ${escH(ex.fin)} y escaneá el QR para terminar.</div>`}
+    <div class="guia-pasos">
+      <div class="guia-paso hecho"><i>✓</i><span>${escH(ex.inicio)} · salida</span></div>
+      ${pasos.map(p=>`<div class="guia-paso ${p.hecho?"hecho":p===sig?"sig":""}"><i>${p.hecho?"✓":p===sig?"→":p.repetida?"↻":p.libre||esOtraDireccion(p.nombre)?"📍":""}</i>
+        <span><b>${escH(p.libre?(p.obs||"Otra dirección"):p.nombre)}</b>${p.repetida?" (otra vez)":""}<small>${_resumenParada(p)}</small></span></div>`).join("")}
+      <div class="guia-paso"><i></i><span>Vuelta a ${escH(ex.fin)}</span></div>
+    </div>
+  </div>`;
+}
+// Al pie de cada QR: qué sigue
+function guiaSiguienteHtml(){
+  const g=pasosDelRecorrido(); if(!g) return "";
+  const lugar=normNotif(S.estoyEn?.oficial||S.estoyEn?.sucursal||"");
+  const sig=g.pasos.find(p=>!p.hecho && normNotif(p.nombre)!==lugar) || null;
+  if(!sig) return `<div class="card guia guia-sig"><div class="guia-aviso ok">✅ Después de acá: volvé a ${escH(extremosDe(g.a).fin)}.</div></div>`;
+  return `<div class="card guia guia-sig"><div class="guia-cab"><span>Siguiente</span></div>
+    <div class="guia-prox"><strong>${escH(sig.libre?(sig.obs||"Otra dirección"):sig.nombre)}</strong><small>${_resumenParada(sig)}</small></div>
+    ${avisoParada(sig,g.a)}</div>`;
+}
+// ── Al cargar una transferencia a "Otra dirección": buscarla en el momento (Google Maps, igual que Logística) ──
+async function buscarDireccionNuevaSol(){
+  const nombre=($("ns-dir-nombre")?.value||"").trim(), direccion=($("ns-dir-calle")?.value||"").trim(), msg=$("ns-dir-msg");
+  if(!nombre||!direccion){ if(msg) msg.innerHTML=`<span style="color:#fca5a5">Escribí un nombre corto y la dirección.</span>`; return; }
+  if(msg) msg.innerHTML=`<span class="spinner"></span> Buscando la dirección y calculando los tiempos…`;
+  try{
+    const res=await fetch("/api/agregar-punto-matriz",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nombre,direccion})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok || j.error) throw new Error(j.error||"No se encontró");
+    S.nsDireccion={nombre, direccion};
+    const obs=$("f-obs"); if(obs && !obs.value.trim()) obs.value=direccion;
+    if(msg) msg.innerHTML=`✅ Encontrada: se carga como <strong>${escH(nombre)}</strong> y se puede ubicar en el recorrido.`;
+  }catch(e){ S.nsDireccion=null; if(msg) msg.innerHTML=`<span style="color:#fca5a5">No se pudo encontrar esa dirección. Revisala, o cargala igual con la dirección en Observaciones.</span>`; }
+}
+function renderRepartidorConGuia(){
+  const html=renderRepartidor();
+  if(S.estoyEn || !recorridoDelRepartidor()) return html;
+  return `<div style="margin-bottom:10px">${botonEscanear()}</div>${guiaRecorridoHtml()}${html}`;
+}
 function renderRepartidorSinRecorrido(){
   const yo=_dniLimpio(S.miIdentidadRep?.dni);
   const encima=S.requests.filter(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===yo).length;
   return `<div style="animation:fadeUp .3s ease"><div class="card rep-escanea" style="margin-top:20px">
     <div style="font-size:40px">📍</div><strong style="font-size:17px">Escaneá el QR para empezar</strong>
+    <div style="width:100%;max-width:320px;margin:4px 0">${botonEscanear()}</div>
     <span>Para arrancar, escaneá el <strong>QR de Fábrica</strong> y elegí tu recorrido. Si ya saliste, escaneá el QR de la sucursal donde estás y elegí en qué recorrido vas.</span>
     ${encima?`<span style="color:#fbbf24">Tenés ${encima} cosa${encima!==1?"s":""} encima sin recorrido: escaneá un QR y elegí tu recorrido.</span>`:""}
   </div></div>`;
@@ -10265,6 +10458,7 @@ function estimarArmado(a, paradas, salida){
   const ex=extremosDe(a);
   let viaje=0, descarga=0, t=0, ant=_ptoMatriz(ex.inicio), falta=null, conFlota=0; const etas=[];
   paradas.forEach(p=>{
+    if(p.libre){ etas.push({nombre:p.nombre, hora:null, min:null, descarga:0, fuente:"sin buscar"}); return; }   // dirección sin buscar: sin tiempos
     const tr=minutosEntre(ant,p.nombre); if(tr===null){ if(!falta) falta=[ant,p.nombre]; } else { viaje+=tr; t+=tr; }
     const dsc=p.repetida?{min:minDescargaSinPedido(), fuente:"vuelve a pasar"}:descargaParada(a.recorrido,p.nombre,manana,a); if(dsc.fuente==="cargado en Flota") conFlota++;
     etas.push({nombre:p.nombre, hora:hora(t), min:t, descarga:dsc.min, fuente:dsc.fuente, bultos:dsc.bultos??null});
@@ -10690,7 +10884,7 @@ function renderArmarDelDia(){
     const posBase=paradas.slice(0,i).filter(x=>!x.extra).length;
     const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${escH(a.id)}',${iBase})">✕</button></span>` : "";
     const fijar = editable && p.extra ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();fijarParada('${escH(a.id)}','${escH(p.nombre)}',${posBase})" title="Fijarla para poder moverla">📌</button>` : "";
-    return bloque(p.nombre+"#"+i, escH(p.nombre), i+1, det,
+    return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
       `${ctrl}${fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá">🔁 vuelve a pasar</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
       `${ll?"ok":""} ${p.extra?"extra":""}`);
   }).join("");
@@ -10977,7 +11171,7 @@ function renderEstoyEn(){
 
     </div>
     ${S.miIdentidadRep?`<div class="rep-toolbar"><button class="rep-yo" onclick="cambiarIdentidadRepartidor()" title="Tocá para cambiar de persona">👤 <strong>${escH(S.miIdentidadRep.nombre)}</strong><span class="rep-edit">✎</span></button></div>`:""}`;
-  const pagina=html=>`<div style="animation:fadeUp .3s ease" class="estoy-page">${cab}${html}</div>`;
+  const pagina=html=>`<div style="animation:fadeUp .3s ease" class="estoy-page">${cab}${html}${e.estado==="ok"&&S.user?.rol==="repartidor"?guiaSiguienteHtml()+`<div style="margin-top:12px">${botonEscanear("📷 Escanear otro QR")}</div>`:""}</div>`;
   if(e.estado==="cargando") return pagina(`<div class="pk-vacio"><span class="spinner"></span> ${e.fabrica?"Buscando tu recorrido…":`Confirmando que estás en ${escH(lugar)}…`}</div>`);
   if(e.estado==="bloqueado"){
     const msg={"sin-gps":"Necesitamos tu ubicación para registrar la llegada. Activá el GPS y permití que el navegador la use, y tocá Reintentar.",
@@ -11166,7 +11360,7 @@ function cardRepartidorHtml(r){
         return `
         <div class="del-card">
           <div class="del-stripe" style="background:${categoria.color}"></div>
-          <div class="del-body" onclick="${S.modoSeleccionRep && puedeSeleccionar ? `toggleRepSeleccion('${escH(r.id)}', !S.repSeleccion.has('${escH(r.id)}'))` : `openDetalle('${escH(r.id)}')`}" style="cursor:pointer">
+          <div class="del-body" onclick="${S.modoSeleccionRep && puedeSeleccionar ? `toggleRepSeleccion('${escH(r.id)}', !S.repSeleccion.has('${escH(r.id)}'))` : `verItem('${escH(r.id)}')`}" style="cursor:pointer">
 
             <!-- Etiqueta de categoría + meta -->
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -11476,6 +11670,8 @@ function renderModals(){
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
   if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="verItem")       return wrapModal("m","📦 Qué es y a dónde va",renderVerItemModal(),460);
+  if(S.modal==="scanQR")        return wrapModal("m","📷 Escanear QR",renderScanModal(),440);
   if(S.modal==="cerrarSol")     return wrapModal("m","🗂️ Cerrar solicitud",renderCerrarSolModal(),460);
   if(S.modal==="qrDni")         return wrapModal("m","🚚 ¿Quién sos?",renderQrDniModal(),420);
   if(S.modal==="dirNueva")      return wrapModal("m","📍 Otra dirección",renderDirNuevaModal(),500);
@@ -11603,6 +11799,13 @@ function renderFormNueva(){
   <div id="otra-dir-aviso" style="display:none;background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
     📍 <strong>Otra dirección:</strong> es obligatorio aclarar la dirección exacta en Observaciones.
     En este caso no se requerirá código de entrega ya que el destinatario no tiene la app.
+    <div style="margin-top:10px;font-weight:600">Si querés, buscala ahora (así se ubica sola en el recorrido):</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+      <input id="ns-dir-nombre" class="inp" style="flex:1;min-width:140px" placeholder="Nombre corto (ej: Service balanzas)"/>
+      <input id="ns-dir-calle" class="inp" style="flex:2;min-width:180px" placeholder="Dirección (ej: Av. Colón 1234, Mar del Plata)"/>
+      <button type="button" class="btn btn-teal btn-sm" onclick="buscarDireccionNuevaSol()">📍 Buscar</button>
+    </div>
+    <div id="ns-dir-msg" style="font-size:12.5px;margin-top:6px"></div>
   </div>
   <div class="field">
     <label>Observaciones<span id="obs-req-mark" style="display:none" class="req"> *</span></label>
@@ -15945,7 +16148,7 @@ async function submitNueva(){
 
   // Leer valores del DOM directamente — no del estado S.form
   // Así evitamos que oninput cause re-renders mientras se escribe
-  const destino     = ($("f-dest")?.value||"").trim();
+  let destino       = ($("f-dest")?.value||"").trim();
   const descripcion = ($("f-desc")?.value||"").trim();
   const cantidad    = ($("f-cant")?.value||"").trim();
   const unidad      = $("f-unit")?.value || "Unidades";
@@ -15968,7 +16171,9 @@ async function submitNueva(){
   if(Object.keys(e).length){ S.formErr=e; render(); return; }
 
   // Capturar el origen y el archivo AHORA — el DOM se destruye cuando se abre el modal DNI
-  const origenElegido = ($("f-origen")?.value||"").trim();
+  let origenElegido = ($("f-origen")?.value||"").trim();
+  // si buscaron la dirección, se carga con ese nombre (así tiene tiempos y se ubica en el recorrido)
+  if(S.nsDireccion){ if(destino==="Otra dirección") destino=S.nsDireccion.nombre; else if(origenElegido==="Otra dirección") origenElegido=S.nsDireccion.nombre; S.nsDireccion=null; }
   const archivoElegido = $("f-adjunto")?.files?.[0] || null;
   const esPlanSubmit  = S.user.rol==="planificacion";
   const esLogSubmit   = S.user.rol==="logistica";
