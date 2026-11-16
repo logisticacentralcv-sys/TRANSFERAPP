@@ -1157,7 +1157,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261114-0736";
+const APP_VERSION = "20261116-0637";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7931,7 +7931,7 @@ async function asignarRecorridoAuto(r){
     const par=paradasDeArmado(a).map(p=>normNotif(p));
     const aFab = _esLugarFabrica(dst) || bolsinAFabrica(r);
     if(esBolsin && noLlevaBolsines(a)) continue;                       // Verdulería nunca lleva bolsines
-    if(aFab && normNotif(extremosDe(a).fin)!=="fabrica") continue;   // si vuelve a Fábrica, solo un recorrido que termine en Fábrica (no Verdulería/Depósito)
+    if(aFab && normNotif(extremosDe(a).fin)!=="fabrica" && !fabricaEsParada(a)) continue;   // si vuelve a Fábrica, solo un recorrido que termine en Fábrica (no Verdulería/Depósito)
     const iD = aFab ? par.length : par.indexOf(normNotif(dst));   // ir a Fábrica/Tesorería = al final del recorrido
     if(iD<0 || (desdeFab && iD>=par.length)) continue;
     if(desdeFab){ if(a.estado!=="PREPARADO") continue; }
@@ -7994,6 +7994,7 @@ async function dejarEnFabricaLoQueTengo(info, auto){
     const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").or(dnis.map(d=>`dni_repartidor.eq.${d},dni_entrega.eq.${d}`).join(","));
     const suyas=toCamelRows(data||[]).filter(r=>{ const p=portadorSolicitud(r); return p && dnis.includes(p.dni); });
     for(const r of suyas){
+      if(info.soloFabrica && !terminaEnFabrica(r)) continue;   // parada en el medio: lo demás sigue viaje
       const quien=(portadorSolicitud(r)||{}).dni||dnis[0];
       let ch, falta=null;
       if(bolsinAFabrica(r)){
@@ -8035,10 +8036,11 @@ const _volviendo = v => v && v.hora_salida && (Date.now()-new Date(v.hora_salida
 async function qrDejarTodoFabrica(){
   const e=S.estoyEn, yo=S.miIdentidadRep; if(!e||!e.viaje||!yo||e.loading) return;
   const lista=misCosasEnMano();
-  const faltas=lista.trans.filter(r=>!_esLugarFabrica(r.destino) && !(_pasaPorFab(r)&&!r.fabricaAt)).length;
+  if(e.paradaFabrica) lista.trans=lista.trans.filter(r=>terminaEnFabrica(r));   // parada en el medio: solo lo que va a Fábrica
+  const faltas=lista.trans.filter(r=>!_esLugarFabrica(r.destino) && !(_pasaPorFab(r)&&!r.fabricaAt) && !bolsinAFabrica(r)).length;
   if(!confirm(`Dejás en Fábrica ${lista.trans.length+lista.devs.length} cosa${lista.trans.length+lista.devs.length!==1?"s":""}.${faltas?`\n\n⚠️ ${faltas} no las entregaste en su destino: quedan registradas como falta a tu nombre.`:""}`)) return;
   e.loading=true; renderNow();
-  const r=await dejarEnFabricaLoQueTengo({dnis:[yo.dni], nombre:yo.nombre, recorrido:e.viaje.recorrido, armadoId:e.armado?.id, idViaje:e.viaje.id}, false);
+  const r=await dejarEnFabricaLoQueTengo({dnis:[yo.dni], nombre:yo.nombre, recorrido:e.viaje.recorrido, armadoId:e.armado?.id, idViaje:e.viaje.id, soloFabrica:!!e.paradaFabrica}, false);
   e.loading=false;
   toast(r.faltas?`⚠️ Dejaste ${r.total} en Fábrica · ${r.faltas} quedaron como falta`:`✅ Dejaste ${r.total} en Fábrica`, r.faltas?"warn":undefined);
   render();
@@ -8387,10 +8389,14 @@ function fechaLocalDeTimestamp(iso){
 //  datos que ya están cargados acá (matriz de tiempos, hoja de ruta).
 // ══════════════════════════════════════════════════════════
 function puntosDisponiblesRecorrido(){
-  return [...new Set((S.flotaMatrizTiempos||[]).map(m=>m.origen))]
-    .filter(p=>!["FABRICA","TESORERIA","TESORERÍA"].includes(p.toUpperCase()))
-    .sort();
+  // Fábrica también se puede agregar como parada (ej. Verdulería pasa por Fábrica y vuelve al Depósito)
+  const hayFab=(S.flotaMatrizTiempos||[]).some(m=>normNotif(m.origen)==="fabrica");
+  return [...(hayFab?["Fábrica"]:[]), ...[...new Set((S.flotaMatrizTiempos||[]).map(m=>m.origen))]
+    .filter(p=>!["FABRICA","TESORERIA","TESORERÍA"].includes(normNotif(p).toUpperCase()))
+    .sort()];
 }
+// ¿El recorrido pasa por Fábrica en el medio? (tiene Fábrica como parada y NO vuelve a Fábrica)
+const fabricaEsParada = a => !!a && !_esBaseDe("Fábrica", extremosDe(a).fin) && paradasDeArmado(a).some(n=>normNotif(n)==="fabrica");
 function nombresRecorridosConHoja(){
   return [...new Set((S.flotaTiemposViaje||[]).map(t=>t.recorrido))];
 }
@@ -9774,8 +9780,14 @@ async function iniciarEstoyEn(){
     if(e.fabrica){
       e.estado = e.viaje ? "ok" : "iniciar";
       if(!e.viaje && !e.recSel) e.recSel=_recorridosQR[0]||"";
+      // Fábrica en el medio del recorrido (vuelve a otro lado, ej. Verdulería → Depósito): es una parada más
+      e.paradaFabrica = !!(e.viaje && e.armado && !e.base && !_esBaseDe("Fábrica", extremosDe(e.armado).fin));
+      if(e.paradaFabrica){
+        const pres=await verificarEstoyAca("FABRICA");
+        if(pres.ok) e.llegada=await qrRegistrarLlegada(e.viaje, "Fábrica", pres.obs);
+      }
       // A la vuelta: se registra la hora de llegada a Fábrica (o al Depósito) apenas escanea, una vez por viaje
-      if(e.viaje && _volviendo(e.viaje)){
+      else if(e.viaje && _volviendo(e.viaje)){
         const pres=await verificarEstoyAca(e.base||"FABRICA");
         if(pres.ok) e.llegadaBase=await qrRegistrarLlegadaBase(e.viaje, e.base, pres.obs);
       }
@@ -10159,9 +10171,12 @@ function paradasArmado(a, mias){
     base.splice(mejor,0,{nombre, extra:true}); return mejor;
   };
   // la salida y la vuelta del recorrido (Fábrica/áreas o Depósito) no son paradas
+  const fabParada=fabricaEsParada(a), fabInicio=_esBaseDe("Fábrica", ex.inicio);
   const asign=mias.map(r=>({r,
-    o: !saleDeFabrica(r) && origenLabel(r) && !esOrigenOtraDireccion(r) && !_esBaseDe(origenLabel(r), ex.inicio) ? origenLabel(r) : null,
-    d: !terminaEnFabrica(r) && r.destino && !esDestinoOtraDireccion(r) && !_esBaseDe(r.destino, ex.fin) ? r.destino : null}));
+    o: (fabParada && !fabInicio && saleDeFabrica(r)) ? "Fábrica"
+       : (!saleDeFabrica(r) && origenLabel(r) && !esOrigenOtraDireccion(r) && !_esBaseDe(origenLabel(r), ex.inicio) ? origenLabel(r) : null),
+    d: (fabParada && terminaEnFabrica(r)) ? "Fábrica"
+       : (!terminaEnFabrica(r) && r.destino && !esDestinoOtraDireccion(r) && !_esBaseDe(r.destino, ex.fin) ? r.destino : null)}));
   // faltan paradas: primero el origen; el destino tiene que quedar DESPUÉS del origen (si estaba antes, se vuelve a pasar)
   asign.forEach(x=>{
     let io=-1;
@@ -10645,9 +10660,10 @@ function renderArmarDelDia(){
       ${admin && r.estado==="En tránsito"?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();abrirCambiarPortador('${escH(r.id)}')" title="Corregir quién la lleva">🔁</button>`:""}
       ${quitable?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();quitarDeArmado('${escH(r.id)}')" title="Quitar del recorrido">✕</button>`:(enCurso&&saleDeFabrica(r)&&!admin?`<span class="ar-lock" title="Ya salió de Fábrica">🔒</span>`:"")}
     </div>`; };
-  const enFab=mias.filter(r=>saleDeFabrica(r) || _esBaseDe(origenLabel(r), extremosDe(a).inicio));
+  const _enRt=r=>paradas.some(p=>(p.rt||[]).includes(r)), _enDj=r=>paradas.some(p=>(p.dj||[]).includes(r));
+  const enFab=mias.filter(r=>(saleDeFabrica(r) || _esBaseDe(origenLabel(r), extremosDe(a).inicio)) && !_enRt(r));
   // Al volver: lo que TERMINA en Fábrica/Tesorería (ej. bolsines al buzón) y lo que solo PASA por Fábrica y sale después
-  const vuelve=mias.filter(r=>terminaEnFabrica(r) || _esBaseDe(r.destino, extremosDe(a).fin));
+  const vuelve=mias.filter(r=>(terminaEnFabrica(r) || _esBaseDe(r.destino, extremosDe(a).fin)) && !_enDj(r));
   const quedaEnBase=vuelve.filter(r=>_esLugarFabrica(r.destino) || bolsinAFabrica(r) || _esBaseDe(r.destino, extremosDe(a).fin));
   const pasaYSigue=vuelve.filter(r=>!quedaEnBase.includes(r));
   const deja=s=>mias.filter(r=>!terminaEnFabrica(r) && normNotif(r.destino)===normNotif(s));
@@ -11009,7 +11025,8 @@ function renderEstoyEn(){
     <div class="qr-banner ok">🏁 <strong>${escH(e.armado?codigoArmado(e.armado):v.recorrido)}</strong> · saliste a las ${hm(v.hora_salida)}${e.llegadaBase?` · ✅ llegada a ${escH(e.base||"Fábrica")} registrada a las <strong>${hm(e.llegadaBase.ts)}</strong>`:""}</div>
     ${seccion(`📦 Para llevar en ${escH(v.recorrido)}`,L.retirar,L.retirar.map(r=>cardQR(r,"tomar")).join(""),tomarTodo(L.retirar))}
     ${!L.retirar.length?`<div class="pk-vacio">No queda nada en Fábrica para ${escH(v.recorrido)}. ✅</div>`:""}
-    ${_volviendo(v)?(()=>{ const m=misCosasEnMano(), tot=m.trans.length+m.devs.length; if(!tot) return "";
+    ${e.paradaFabrica?`<div class="qr-banner warn">📍 Fábrica es una parada de tu recorrido: después seguís y lo terminás en ${escH(extremosDe(e.armado).fin)}.</div>`:""}
+    ${(_volviendo(v)||e.paradaFabrica)?(()=>{ const m=misCosasEnMano(); if(e.paradaFabrica) m.trans=m.trans.filter(r=>terminaEnFabrica(r)); const tot=m.trans.length+m.devs.length; if(!tot) return "";
       return `<div class="estoy-sec"><div class="estoy-tit"><span>📥 Dejá en Fábrica lo que traés</span><span class="tab-n" style="margin:0">${tot}</span></div>
         <div class="qr-grid">${m.trans.map(r=>`<div class="qr-card"><div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span></div>
           <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div><div class="qr-card-desc">${escH(r.descripcion||"")}</div>
@@ -11022,6 +11039,7 @@ function renderEstoyEn(){
       ? `<a class="btn btn-ghost btn-md btn-full" href="https://dashboard-wheat-pi-94.vercel.app/qr.html?s=Fabrica&directo=1">🥦 Registrar avance de Verdulería →</a>`
       : (Date.now()-new Date(v.hora_salida).getTime() < 30*60000)
         ? `<p class="qr-nota">Cuando vuelvas del recorrido, escaneá este mismo QR para terminarlo.</p>`   // recién salió: que no lo cierre sin querer
+        : e.paradaFabrica ? ""
         : `<button class="btn btn-danger btn-md btn-full" onclick="qrFinalizarViaje()" ${e.loading?"disabled":""}>🏁 Terminé el recorrido · Llegué a fábrica</button>`}</div>`);
   }
 
