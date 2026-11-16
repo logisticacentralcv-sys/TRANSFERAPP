@@ -1182,7 +1182,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261116-1223";
+const APP_VERSION = "20261116-1237";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8437,7 +8437,7 @@ async function agregarDireccionNueva(){
   }
   const btn = $("ar-btn-agregar-direccion");
   if(btn){ btn.disabled = true; btn.innerHTML = `<span class="spinner"></span> Calculando (puede tardar unos segundos)...`; }
-  if(msgEl) msgEl.innerHTML = "";
+  if(msgEl) msgEl.innerHTML = ""; S.dirMsg="";
   try{
     const resp = await fetch("/api/agregar-punto-matriz", {
       method:"POST", headers:{"Content-Type":"application/json"},
@@ -8446,12 +8446,14 @@ async function agregarDireccionNueva(){
     const texto = await resp.text();
     let j; try{ j = JSON.parse(texto); }catch(e){ throw new Error("Respuesta inesperada del servidor"); }
     if(!resp.ok || j.error) throw new Error(j.error||"error desconocido");
-    toast(`✅ "${nombre}" ${editando?"actualizado":"agregado"} — ${j.filas} tramos calculados`);
+    toast(j.reutilizado?`✅ "${j.punto}" ya estaba cargado: se usa ese`:`✅ "${nombre}" ${editando?"actualizado":"agregado"} — ${j.filas} tramos calculados`);
+    S.dirMsg = j.encontrada ? `<div style="color:#86efac;font-size:12.5px;margin-top:8px">✅ Encontrada: ${escH(j.encontrada)}</div>` : "";
     S.armarRecorridoForm.editandoDireccion = null;
     S.armarRecorridoForm.editandoDireccionValor = "";
     await cargarEstadoFlotaHoy(); // refresca la matriz para que ya aparezca disponible
   }catch(e){
-    if(msgEl) msgEl.innerHTML = `<div class="err-msg" style="display:block;margin-top:8px">${escH(e.message)}</div>`;
+    S.dirMsg = `<div class="err-msg" style="display:block;margin-top:8px">${escH(e.message)}</div>`;   // queda guardado: no se borra al redibujar
+    if(msgEl) msgEl.innerHTML = S.dirMsg;
   }
   if(btn){ btn.disabled = false; btn.innerHTML = "📍 Calcular y agregar"; }
   render();
@@ -9262,7 +9264,7 @@ function renderArmarRecorrido(){
           <p class="pt-sub" style="margin:10px 0 8px">${editando?`✏️ Editando "${escH(editando)}"`:"Calcula el tiempo hacia y desde todos los puntos que ya existen (tarda unos segundos)."}</p>
           <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Nombre (ej: Marconi)" value="${escH(editando||"")}" ${editando?"disabled":""}/>
           <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Marconi 1234, Mar del Plata)" value="${escH(f.editandoDireccionValor||"")}"/>
-          <div id="ar-nueva-direccion-msg"></div>
+          <div id="ar-nueva-direccion-msg">${S.dirMsg||""}</div>
           <div style="display:flex;gap:8px;margin-top:8px">
             ${editando?`<button class="btn btn-ghost btn-sm" onclick="cancelarEdicionDireccion()">Cancelar</button>`:""}
             <button class="btn btn-teal btn-sm" onclick="agregarDireccionNueva()" id="ar-btn-agregar-direccion">📍 ${editando?"Recalcular y guardar":"Calcular y agregar"}</button>
@@ -10386,10 +10388,16 @@ async function buscarDireccionNuevaSol(){
     const res=await fetch("/api/agregar-punto-matriz",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nombre,direccion})});
     const j=await res.json().catch(()=>({}));
     if(!res.ok || j.error) throw new Error(j.error||"No se encontró");
-    S.nsDireccion={nombre, direccion};
-    const obs=$("f-obs"); if(obs && !obs.value.trim()) obs.value=direccion;
-    if(msg) msg.innerHTML=`✅ Encontrada: se carga como <strong>${escH(nombre)}</strong> y se puede ubicar en el recorrido.`;
-  }catch(e){ S.nsDireccion=null; if(msg) msg.innerHTML=`<span style="color:#fca5a5">No se pudo encontrar esa dirección. Revisala, o cargala igual con la dirección en Observaciones.</span>`; }
+    const nom=j.punto||nombre, encontrada=j.encontrada||direccion;
+    S.nsDireccion={nombre:nom, direccion:encontrada};
+    const obs=$("f-obs"); if(obs && !obs.value.trim()) obs.value=encontrada;
+    if(msg) msg.innerHTML=`✅ Encontrada: <strong>${escH(encontrada)}</strong><br><span style="color:var(--muted)">Se carga como «${escH(nom)}». Si no es esa, corregí la dirección y buscá de nuevo.</span>`;
+  }catch(e){
+    S.nsDireccion=null;
+    // el motivo concreto si es de la dirección; si es un error técnico, solo Logística/Admin lo ven completo
+    const claro=/Google no encontró|Ya existe|No se pudo ubicar/.test(e.message||"");
+    if(msg) msg.innerHTML=`<span style="color:#fca5a5">${escH(claro||_esStaff()?e.message:"No se pudo buscar ahora.")} Si no, cargala igual con la dirección en Observaciones.</span>`;
+  }
 }
 function renderRepartidorConGuia(){
   const html=renderRepartidor();
@@ -10574,15 +10582,15 @@ function onAgregarParadaArmado(id){
 // Otra dirección: se busca, se calculan los tiempos (igual que las direcciones de Flota) y se agrega como parada
 function abrirDireccionNueva(armadoId, transfId, sugerida){
   S.armarRecorridoForm={...(S.armarRecorridoForm||{}), editandoDireccion:null, editandoDireccionValor:sugerida||""};
-  S.dirNueva={armadoId, transfId, sugerida:sugerida||""}; S.modal="dirNueva"; render();
+  S.dirNueva={armadoId, transfId, sugerida:sugerida||""}; S.dirMsg=""; S.modal="dirNueva"; render();
   setTimeout(()=>$("ar-nueva-direccion-nombre")?.focus(),120);
 }
 function renderDirNuevaModal(){
   const d=S.dirNueva||{};
   return `<p style="font-size:13.5px;color:var(--muted);margin:0 0 10px">Escribí un nombre corto y la dirección completa. Se calculan los tiempos de viaje desde y hacia todos los puntos (tarda unos segundos) y queda como parada de <strong>${escH(codigoArmado(armadoDe(d.armadoId)))}</strong>.</p>
     <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Nombre corto (ej: Proveedor Colón)"/>
-    <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Av. Colón 1234, Mar del Plata)" value="${escH(d.sugerida||"")}"/>
-    <div id="ar-nueva-direccion-msg"></div>
+    <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Av. Colón 1234, Mar del Plata)" value="${escH(d.sugerida||"")}" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();agregarDireccionYParada()}"/>
+    <div id="ar-nueva-direccion-msg">${S.dirMsg||""}</div>
     <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-teal btn-md" id="ar-btn-agregar-direccion" onclick="agregarDireccionYParada()">📍 Buscar y agregar</button></div>`;
 }
@@ -11801,8 +11809,8 @@ function renderFormNueva(){
     En este caso no se requerirá código de entrega ya que el destinatario no tiene la app.
     <div style="margin-top:10px;font-weight:600">Si querés, buscala ahora (así se ubica sola en el recorrido):</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-      <input id="ns-dir-nombre" class="inp" style="flex:1;min-width:140px" placeholder="Nombre corto (ej: Service balanzas)"/>
-      <input id="ns-dir-calle" class="inp" style="flex:2;min-width:180px" placeholder="Dirección (ej: Av. Colón 1234, Mar del Plata)"/>
+      <input id="ns-dir-nombre" class="inp" style="flex:1;min-width:140px" placeholder="Nombre corto (ej: Service balanzas)" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation()}"/>
+      <input id="ns-dir-calle" class="inp" style="flex:2;min-width:180px" placeholder="Dirección (ej: Av. Colón 1234, Mar del Plata)" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();buscarDireccionNuevaSol()}"/>
       <button type="button" class="btn btn-teal btn-sm" onclick="buscarDireccionNuevaSol()">📍 Buscar</button>
     </div>
     <div id="ns-dir-msg" style="font-size:12.5px;margin-top:6px"></div>

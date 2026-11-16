@@ -43,9 +43,15 @@ module.exports = async (req, res) => {
     const { data: direccionesExistentes, error: errLeer } = await supabase.from("flota_direcciones").select("nombre,direccion");
     if (errLeer) throw errLeer;
 
-    const yaExiste = (direccionesExistentes || []).some((d) => d.nombre.toLowerCase() === nombre.toLowerCase());
-    if (yaExiste && !reemplazar) {
-      res.status(400).json({ error: `Ya existe un punto llamado "${nombre}". Si querés cambiarle la dirección, usá "Editar".` });
+    const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+    const existente = (direccionesExistentes || []).find((d) => norm(d.nombre) === norm(nombre));
+    if (existente && !reemplazar) {
+      // Mismo lugar ya cargado (ej. otra transferencia a la misma dirección): se reutiliza, no es un error
+      if (norm(existente.direccion) === norm(direccion)) {
+        res.status(200).json({ ok: true, reutilizado: true, punto: existente.nombre, encontrada: existente.direccion });
+        return;
+      }
+      res.status(400).json({ error: `Ya existe un lugar llamado "${existente.nombre}" con otra dirección (${existente.direccion}). Usá otro nombre corto.` });
       return;
     }
 
@@ -62,41 +68,46 @@ module.exports = async (req, res) => {
 
     // Geocodificar la dirección nueva
     const direccionUrl = encodeURIComponent(direccion);
-    const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${direccionUrl}&key=${GOOGLE_KEY}`);
+    // Solo en Argentina, priorizando Mar del Plata y alrededores (así no aparece una calle igual de otro país)
+    const zona = "&region=ar&components=country:AR&bounds=-38.20,-57.80|-37.80,-57.40&language=es";
+    const geoRes = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?address=${direccionUrl}${zona}&key=${GOOGLE_KEY}`);
     const geoData = await geoRes.json();
     if (geoData.status !== "OK" || !geoData.results.length) {
-      res.status(400).json({ error: `No se pudo ubicar esa dirección (${geoData.status}). Probá agregar más detalle (calle, número, localidad).` });
+      res.status(400).json({ error: geoData.status === "ZERO_RESULTS"
+        ? "Google no encontró esa dirección. Probá con calle, número y localidad (ej: Av. Colón 1234, Mar del Plata)."
+        : `No se pudo ubicar esa dirección (${geoData.status}).` });
       return;
     }
+    const encontrada = geoData.results[0].formatted_address || direccion;
     const loc = geoData.results[0].geometry.location; // {lat, lng}
     const nuevoOrigen = `${loc.lat},${loc.lng}`;
 
-    // Distance Matrix usando las DIRECCIONES REALES de los puntos existentes
-    // (no sus nombres) — esto es lo que antes fallaba.
-    const destinosStr = puntosExistentes.map((p) => encodeURIComponent(p.direccion)).join("|");
-
-    const [idaRes, vueltaRes] = await Promise.all([
-      fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${nuevoOrigen}&destinations=${destinosStr}&mode=driving&key=${GOOGLE_KEY}`),
-      fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${destinosStr}&destinations=${nuevoOrigen}&mode=driving&key=${GOOGLE_KEY}`),
-    ]);
-    const [idaData, vueltaData] = await Promise.all([idaRes.json(), vueltaRes.json()]);
-
-    if (idaData.status !== "OK" || vueltaData.status !== "OK") {
-      res.status(500).json({ error: "Error de Google Distance Matrix: " + idaData.status + " / " + vueltaData.status });
-      return;
-    }
-
+    // Distance Matrix con las DIRECCIONES REALES de los puntos existentes, DE A 25
+    // (Google acepta hasta 25 lugares por consulta; con más, fallaba siempre)
     const filasNuevas = [];
-    const idaElementos = idaData.rows[0].elements;
-    puntosExistentes.forEach((p, i) => {
-      if (idaElementos[i].status === "OK") {
-        filasNuevas.push({ origen: nombre, destino: p.nombre, minutos: Math.round((idaElementos[i].duration.value / 60) * 10) / 10 });
+    for (let k = 0; k < puntosExistentes.length; k += 25) {
+      const lote = puntosExistentes.slice(k, k + 25);
+      const destinosStr = lote.map((p) => encodeURIComponent(p.direccion)).join("|");
+      const [idaRes, vueltaRes] = await Promise.all([
+        fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${nuevoOrigen}&destinations=${destinosStr}&mode=driving&key=${GOOGLE_KEY}`),
+        fetch(`https://maps.googleapis.com/maps/api/distancematrix/json?origins=${destinosStr}&destinations=${nuevoOrigen}&mode=driving&key=${GOOGLE_KEY}`),
+      ]);
+      const [idaData, vueltaData] = await Promise.all([idaRes.json(), vueltaRes.json()]);
+      if (idaData.status !== "OK" || vueltaData.status !== "OK") {
+        res.status(500).json({ error: "Error de Google Distance Matrix: " + idaData.status + " / " + vueltaData.status });
+        return;
       }
-      const elVuelta = vueltaData.rows[i].elements[0];
-      if (elVuelta && elVuelta.status === "OK") {
-        filasNuevas.push({ origen: p.nombre, destino: nombre, minutos: Math.round((elVuelta.duration.value / 60) * 10) / 10 });
-      }
-    });
+      const idaElementos = idaData.rows[0].elements;
+      lote.forEach((p, i) => {
+        if (idaElementos[i] && idaElementos[i].status === "OK") {
+          filasNuevas.push({ origen: nombre, destino: p.nombre, minutos: Math.round((idaElementos[i].duration.value / 60) * 10) / 10 });
+        }
+        const elVuelta = vueltaData.rows[i] && vueltaData.rows[i].elements[0];
+        if (elVuelta && elVuelta.status === "OK") {
+          filasNuevas.push({ origen: p.nombre, destino: nombre, minutos: Math.round((elVuelta.duration.value / 60) * 10) / 10 });
+        }
+      });
+    }
 
     if (!filasNuevas.length) {
       res.status(500).json({ error: "No se pudo calcular ningún tramo — revisá la dirección." });
@@ -111,7 +122,7 @@ module.exports = async (req, res) => {
     });
     if (errDireccion) throw errDireccion;
 
-    res.status(200).json({ ok: true, filas: filasNuevas.length, punto: nombre });
+    res.status(200).json({ ok: true, filas: filasNuevas.length, punto: nombre, encontrada });
   } catch (e) {
     console.error("agregar-punto-matriz error:", e);
     res.status(500).json({ error: e.message || String(e) });
