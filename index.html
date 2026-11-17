@@ -1190,7 +1190,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261117-0919";
+const APP_VERSION = "20261117-1008";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2130,7 +2130,7 @@ function tiempoDescarga(recorrido, sucursal){
 function hojaDelViaje(v){
   if(S.armados===undefined){ S.armados=null; cargarArmados().then(()=>render()).catch(()=>{}); }
   const a=(S.armados||[]).find(x=>x.idViaje===v.id) || null;
-  if(a) return {a, paradas:paradasArmado(a, S.requests.filter(r=>r.armadoId===a.id))};
+  if(a) return {a, paradas:paradasArmado(a, transfDelArmado(a))};
   const hoja=(S.flotaTiemposViaje||[]).filter(p=>normNotif(p.recorrido)===normNotif(v.recorrido)).sort((x,y)=>x.orden_parada-y.orden_parada);
   return {a:null, paradas:hoja.map(p=>({nombre:p.sucursal}))};
 }
@@ -10192,7 +10192,7 @@ async function asignarAArmado(reqId){
   }
   // ¿Sumarla obliga a volver a pasar por alguna sucursal? (va "para atrás" respecto del orden del recorrido) → avisar antes
   if(!S._sinAvisoVuelta){
-    const mias=S.requests.filter(x=>x.armadoId===a.id && x.id!==reqId);
+    const mias=transfDelArmado(a).filter(x=>x.id!==reqId);
     const rep=ps=>ps.filter(p=>p.repetida).map(p=>p.nombre);
     const antes=rep(paradasArmado(a,mias)), despues=rep(paradasArmado(a,[...mias,r]));
     const nuevas=despues.filter((n,i)=>despues.slice(0,i+1).filter(x=>x===n).length > antes.filter(x=>x===n).length);
@@ -10437,7 +10437,7 @@ function pasosDelRecorrido(){
   const a=recorridoDelRepartidor(); if(!a) return null;
   if(!S.miLlegadas || S.miLlegadas.viaje!==a.idViaje){ S.miLlegadas={viaje:a.idViaje, regs:[]}; cargarLlegadasMiViaje(); }
   const regs=(S.miLlegadas.regs||[]).filter(x=>String(x.evento||"").toUpperCase()==="LLEGADA");
-  const paradas=paradasArmado(a, S.requests.filter(r=>r.armadoId===a.id));
+  const paradas=paradasArmado(a, transfDelArmado(a));
   const usados=new Set();
   const pasos=paradas.map(p=>{
     const r=regs.find(x=>!usados.has(x) && normNotif(x.sucursal)===normNotif(p.libre?"":p.nombre));
@@ -10638,6 +10638,29 @@ async function guardarArmadoCampos(id, ch){
   return true;
 }
 function rutaMover(id,i,d){ const p=[...paradasDeArmado(armadoDe(id))], j=i+d; if(j<0||j>=p.length) return; [p[i],p[j]]=[p[j],p[i]]; guardarArmadoCampos(id,{paradas:p}); }
+// Lo terminado (entregado, cancelado, en el buzón…) ya no cuenta en el recorrido
+const ESTADOS_FUERA_RECORRIDO=["Entregada","Entregada (sin confirmar)","Cancelada","Rechazada","En el buzón"];
+const pendienteEnRecorrido = r => !ESTADOS_FUERA_RECORRIDO.includes(r.estado);
+const transfDelArmado = a => a ? S.requests.filter(r=>r.armadoId===a.id && pendienteEnRecorrido(r)) : [];
+// Sacar una parada (también en curso, si todavía no llegó): lo que había para dejar/retirar ahí se saca del recorrido,
+// salvo lo que el repartidor ya lleva encima para esa parada (eso no se puede sacar)
+async function quitarParadaArmado(id, i){
+  const a=armadoDe(id); if(!a) return;
+  const p=paradasArmado(a, transfDelArmado(a))[i]; if(!p) return;
+  const items=[...(p.dj||[]),...(p.rt||[])];
+  const encima=(p.dj||[]).filter(r=>r.estado==="En tránsito");
+  const sacables=items.filter(r=>!encima.includes(r));
+  const nom=p.libre?(p.obs||"Otra dirección"):p.nombre;
+  if(sacables.length && !confirm(`En ${nom} hay ${sacables.length} transferencia${sacables.length!==1?"s":""} de este recorrido (${sacables.map(r=>r.id).join(", ")}).\n\n¿Sacar la parada y también ${sacables.length!==1?"esas transferencias":"esa transferencia"} del recorrido? (Quedan sin recorrido, para asignarlas a otro.)`)) return;
+  for(const r of sacables){
+    const ch={armadoId:null, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+    if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+  }
+  if(encima.length){ toast(`🚚 ${a.nombreRep||"El repartidor"} ya lleva ${encima.map(r=>r.id).join(", ")} para ${nom}: esa parada queda`,"warn"); render(); return; }
+  if(p.iBase!=null){ const ps=[...paradasDeArmado(a)]; ps.splice(p.iBase,1); await guardarArmadoCampos(id,{paradas:ps}); }
+  toast(`✕ ${nom} sacada del recorrido`); render();
+}
 function rutaQuitar(id,i){ const p=[...paradasDeArmado(armadoDe(id))]; p.splice(i,1); guardarArmadoCampos(id,{paradas:p}); }
 // Una parada nueva (sucursal o dirección buscada) se ubica sola donde menos tiempo suma al recorrido.
 // Si no hay tiempos cargados para ese lugar, va al final. Después se puede mover con ↑ ↓.
@@ -10933,7 +10956,7 @@ function renderArmarDelDia(){
   const q=normNotif(S.armadoBusq||"");
   const enCurso=a&&a.estado==="EN_CURSO";
   const editable=a && (_armadoAbierto(a) || admin);
-  const mias=a?S.requests.filter(r=>r.armadoId===a.id):[];
+  const mias=transfDelArmado(a);   // lo terminado (entregado, cancelado…) ya no cuenta
   const paradas=a?paradasArmado(a,mias):[];
   const parN=new Set(paradas.map(p=>normNotif(p.nombre)));
   // ── Izquierda: lo que todavía no está en un recorrido abierto
@@ -10993,11 +11016,13 @@ function renderArmarDelDia(){
     const iBase=p.iBase!=null?p.iBase:-1;
     const posBase=paradas.slice(0,i).filter(x=>!x.extra).length;
     const A=escH(a.id), N=escH(p.nombre);
-    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="rutaAlPrincipio('${A}',${iBase})" ${iBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${A}',${iBase})">✕</button></span>` : "";
+    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="rutaAlPrincipio('${A}',${iBase})" ${iBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
     // las agregadas solas (no las direcciones sin buscar) se mueven directo; al moverlas quedan fijas
-    const fijar = editable && p.extra && !p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="moverExtra('${A}','${N}',${posBase},'inicio')" ${posBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},-1)" ${posBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},1)">↓</button><button class="btn btn-ghost btn-sm" onclick="fijarParada('${A}','${N}',${posBase})" title="Fijarla para poder moverla">📌</button></span>` : "";
+    const fijar = editable && p.extra && !p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="moverExtra('${A}','${N}',${posBase},'inicio')" ${posBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},-1)" ${posBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},1)">↓</button><button class="btn btn-ghost btn-sm" onclick="fijarParada('${A}','${N}',${posBase})" title="Fijarla para poder moverla">📌</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>`
+      : editable && p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
+    const yaPaso=!!ll;   // donde ya llegó no se mueve ni se saca
     return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
-      `${ctrl}${fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et&&!p.libre?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
+      `${yaPaso?"":ctrl}${yaPaso?"":fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et&&!p.libre?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
       `${ll?"ok":""} ${p.extra?"extra":""}`);
   }).join("");
   return `
