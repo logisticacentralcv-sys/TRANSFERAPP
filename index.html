@@ -1193,7 +1193,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261117-1206";
+const APP_VERSION = "20261117-1222";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8165,8 +8165,9 @@ async function qrDejarTodoFabrica(){
   if(!confirm(`Dejás en Fábrica ${lista.trans.length+lista.devs.length} cosa${lista.trans.length+lista.devs.length!==1?"s":""}.${faltas?`\n\n⚠️ ${faltas} no las entregaste en su destino: quedan registradas como falta a tu nombre.`:""}`)) return;
   e.loading=true; renderNow();
   const r=await dejarEnFabricaLoQueTengo({dnis:[yo.dni], nombre:yo.nombre, recorrido:e.viaje.recorrido, armadoId:e.armado?.id, idViaje:e.viaje.id, soloFabrica:!!e.paradaFabrica}, false);
-  e.loading=false;
   toast(r.faltas?`⚠️ Dejaste ${r.total} en Fábrica · ${r.faltas} quedaron como falta`:`✅ Dejaste ${r.total} en Fábrica`, r.faltas?"warn":undefined);
+  if(!e.paradaFabrica) await _terminarSiNoQuedaNada(e);   // ya no le queda nada: el recorrido se termina solo
+  e.loading=false;
   render();
 }
 // Lo que tengo encima ahora (sin bolsines, que van al buzón)
@@ -9917,7 +9918,10 @@ async function iniciarEstoyEn(){
       // A la vuelta: se registra la hora de llegada a Fábrica (o al Depósito) apenas escanea, una vez por viaje
       else if(e.viaje && _volviendo(e.viaje)){
         const pres=await verificarEstoyAca(e.base||"FABRICA");
-        if(pres.ok) e.llegadaBase=await qrRegistrarLlegadaBase(e.viaje, e.base, pres.obs);
+        if(pres.ok){
+          e.llegadaBase=await qrRegistrarLlegadaBase(e.viaje, e.base, pres.obs);
+          await _terminarSiNoQuedaNada(e);   // volvió sin nada encima: se termina solo y ve los preparados
+        }
       }
     } else {
       const pres=await verificarEstoyAca(e.oficial||e.sucursal);
@@ -9982,6 +9986,33 @@ async function qrIniciarViaje(){
   }catch(err){ console.warn("Iniciar viaje:",err); e.loading=false; e.err=err.message||"No se pudo registrar la salida."; }
   render();
 }
+async function _terminarViaje(e, auto){
+  const v=e.viaje; if(!v) return null;
+  // al terminar solo, la ubicación ya se verificó al escanear (no se vuelve a pedir el GPS)
+  const pres = auto ? {obs:""} : await verificarEstoyAca(e.base||"FABRICA"), ahora=new Date().toISOString();
+  // se conserva la hora en que llegó (si ya la registró al escanear); si no, es ahora
+  const { error } = await sb.from("flota_viajes").update({hora_llegada:e.llegadaBase?.ts||v.hora_llegada||ahora, estado:"FINALIZADO"}).eq("id",v.id);
+  if(error) throw error;
+  await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:e.base?String(e.base).toUpperCase():"FABRICA", evento:"REGRESO FABRICA", gps_obs:(auto?"Terminado solo al volver (sin nada encima). ":"")+(pres.obs||""), recorrido:v.recorrido});
+  // se cierra el recorrido del viaje (también si va de acompañante)
+  await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id_viaje",v.id).eq("estado","EN_CURSO");
+  return await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni], nombre:S.miIdentidadRep?.nombre, recorrido:v.recorrido, armadoId:e.armado?.id, idViaje:v.id}, false);
+}
+// Volvió y no tiene nada encima: el recorrido se termina solo y se muestran los preparados para salir de nuevo
+async function _terminarSiNoQuedaNada(e){
+  if(!e || !e.viaje || e.paradaFabrica) return false;
+  // ¿le queda algo encima? (transferencias, bolsines para el buzón o devoluciones; sin romperse si algo se está cargando)
+  const yo=_dniLimpio(S.miIdentidadRep?.dni);
+  const encima=(S.requests||[]).some(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===yo)
+            || (S.devoluciones||[]).some(d=>d.estado==="En camino" && _dniLimpio(d.dniQuienLevanto)===yo);
+  if(encima) return false;
+  const cod=e.armado?codigoArmado(e.armado):e.viaje.recorrido;
+  try{ await _terminarViaje(e, true); }catch(err){ console.warn("Terminar solo:",err); return false; }
+  e.cerradoAnterior=cod; e.viaje=null; e.armado=null; e.llegadaBase=null; e.estado="iniciar";
+  await cargarArmados().catch(()=>{});
+  toast(`🏁 ${cod} terminado`);
+  return true;
+}
 async function qrFinalizarViaje(){
   const e=S.estoyEn, v=e&&e.viaje; if(!v || e.loading) return;
   const L=estoyEnLista();
@@ -9991,14 +10022,8 @@ async function qrFinalizarViaje(){
   if(!L.dejar.length && !confirm(`¿Terminar el recorrido ${v.recorrido} (${v.id})?`)) return;
   e.loading=true; renderNow();
   try{
-    const pres=await verificarEstoyAca(S.estoyEn?.base||"FABRICA"), ahora=new Date().toISOString();
-    // se conserva la hora en que llegó (si ya la registró al escanear); si no, es ahora
-    const { error } = await sb.from("flota_viajes").update({hora_llegada:e.llegadaBase?.ts||v.hora_llegada||ahora, estado:"FINALIZADO"}).eq("id",v.id);
-    if(error) throw error;
-    await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:"FABRICA", evento:"REGRESO FABRICA", gps_obs:pres.obs, recorrido:v.recorrido});
-    if(e.armado) await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id",e.armado.id);
-    const dj = await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni], nombre:S.miIdentidadRep?.nombre, recorrido:v.recorrido, armadoId:e.armado?.id, idViaje:v.id}, false);
-    if(dj.faltas) toast(`⚠️ ${dj.faltas} quedaron como falta (no las entregaste en su destino): se avisó a Logística`,"warn");
+    const dj = await _terminarViaje(e, false);
+    if(dj && dj.faltas) toast(`⚠️ ${dj.faltas} quedaron como falta (no las entregaste en su destino): se avisó a Logística`,"warn");
     toast(`🏁 Recorrido ${v.recorrido} terminado`);
     S.estoyEn=null;
   }catch(err){ console.warn("Finalizar viaje:",err); e.loading=false; toast("⚠️ No se pudo terminar el recorrido — probá de nuevo","warn"); }
@@ -11354,6 +11379,7 @@ function renderEstoyEn(){
   if(e.fabrica && e.estado==="iniciar"){
     const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO" && normNotif(extremosDe(x).inicio)===normNotif(e.base||"Fábrica"));
     return pagina(`
+    ${e.cerradoAnterior?`<div class="qr-banner ok">✅ Tu recorrido anterior (${escH(e.cerradoAnterior)}) quedó terminado.</div>`:""}
     <div class="card qr-iniciar">
       <div class="qr-iniciar-tit">🚛 Elegí tu recorrido</div>
       ${!prep.length?`<p style="color:#fbbf24;font-size:15px;line-height:1.5">No hay recorridos preparados todavía. Pedile a Logística que arme el tuyo y volvé a escanear.</p>
