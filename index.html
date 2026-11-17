@@ -1182,7 +1182,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261117-0713";
+const APP_VERSION = "20261117-0833";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10196,9 +10196,10 @@ function paradasArmado(a, mias){
   // las áreas (Precios, RRHH, Administración…) y Tesorería están en Fábrica: aunque hayan quedado fijadas, no son parada
   const base=paradasDeArmado(a).map((n,i)=>({nombre:n, extra:false, iBase:i})).filter(p=>{ const k=normNotif(p.nombre); return !(esAreaDeFabrica(p.nombre) || k==="tesoreria" || k.startsWith("administracion")); });
   const pos=(n,desde=0)=>{ for(let i=Math.max(0,desde);i<base.length;i++) if(normNotif(base[i].nombre)===normNotif(n)) return i; return -1; };
-  const insertar=(nombre,desde)=>{
-    let mejor=base.length, costo=Infinity;
-    for(let i=Math.max(0,desde);i<=base.length;i++){
+  const insertar=(nombre,desde,hasta=base.length)=>{
+    const tope=Math.min(hasta,base.length);
+    let mejor=tope, costo=Infinity;
+    for(let i=Math.max(0,desde);i<=tope;i++){
       const ant=i===0?_ptoMatriz(ex.inicio):base[i-1].nombre, sig=i===base.length?_ptoMatriz(ex.fin):base[i].nombre;
       const a1=minutosEntre(ant,nombre), a2=minutosEntre(nombre,sig), a0=minutosEntre(ant,sig);
       if(a1===null||a2===null) continue;
@@ -10218,7 +10219,14 @@ function paradasArmado(a, mias){
        : (!terminaEnFabrica(r) && r.destino && !otraD(r) && !_esBaseDe(r.destino, ex.fin) ? r.destino : null),
     lo: otraO(r) ? (direccionDe(r,"origen")||"Otra dirección") : null,
     ld: otraD(r) && !terminaEnFabrica(r) ? (direccionDe(r,"destino")||"Otra dirección") : null}));
-  // faltan paradas: primero el origen; el destino tiene que quedar DESPUÉS del origen (si estaba antes, se vuelve a pasar)
+  // faltan paradas: primero los orígenes, y cada uno ANTES de los destinos de lo que se retira ahí
+  // (así, por ejemplo, el Depósito con cosas para varias sucursales queda antes que ellas y no se repite el recorrido)
+  [...new Set(asign.filter(x=>x.o && pos(x.o)<0).map(x=>normNotif(x.o)))].forEach(k=>{
+    const xs=asign.filter(x=>x.o && normNotif(x.o)===k); if(pos(xs[0].o)>=0) return;
+    const lims=xs.map(x=>x.d?pos(x.d):-1).filter(i=>i>=0);
+    insertar(xs[0].o, 0, lims.length?Math.min(...lims):base.length);
+  });
+  // el destino tiene que quedar DESPUÉS del origen (si estaba antes, se vuelve a pasar)
   asign.forEach(x=>{
     let io=-1;
     if(x.o){ io=pos(x.o); if(io<0) io=insertar(x.o,0); }
@@ -10239,6 +10247,13 @@ function paradasArmado(a, mias){
   return base;
 }
 // Fijar una parada agregada sola (ej. la vuelta a una sucursal) para poder moverla
+// Mover una parada agregada sola: queda fija en el lugar elegido
+function moverExtra(id, nombre, posBase, dir){
+  const p=[...paradasDeArmado(armadoDe(id))];
+  const i = dir==="inicio" ? 0 : Math.max(0, Math.min(p.length, dir<0 ? posBase-1 : posBase+1));
+  p.splice(i,0,nombre); guardarArmadoCampos(id,{paradas:p});
+}
+function rutaAlPrincipio(id,i){ const p=[...paradasDeArmado(armadoDe(id))]; if(i<=0||i>=p.length) return; const [x]=p.splice(i,1); p.unshift(x); guardarArmadoCampos(id,{paradas:p}); }
 function fijarParada(id, nombre, posBase){
   const p=[...paradasDeArmado(armadoDe(id))]; p.splice(Math.max(0,Math.min(posBase,p.length)),0,nombre);
   guardarArmadoCampos(id,{paradas:p});
@@ -10898,10 +10913,12 @@ function renderArmarDelDia(){
     const det=desc+(dj.length?`<div class="ar-mini">📤 Deja</div>${dj.map(filaMia).join("")}`:"")+(rt.length?`<div class="ar-mini">📥 Retira</div>${rt.map(filaMia).join("")}`:"");
     const iBase=p.iBase!=null?p.iBase:-1;
     const posBase=paradas.slice(0,i).filter(x=>!x.extra).length;
-    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${escH(a.id)}',${iBase})">✕</button></span>` : "";
-    const fijar = editable && p.extra ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();fijarParada('${escH(a.id)}','${escH(p.nombre)}',${posBase})" title="Fijarla para poder moverla">📌</button>` : "";
+    const A=escH(a.id), N=escH(p.nombre);
+    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="rutaAlPrincipio('${A}',${iBase})" ${iBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${A}',${iBase})">✕</button></span>` : "";
+    // las agregadas solas (no las direcciones sin buscar) se mueven directo; al moverlas quedan fijas
+    const fijar = editable && p.extra && !p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="moverExtra('${A}','${N}',${posBase},'inicio')" ${posBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},-1)" ${posBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},1)">↓</button><button class="btn btn-ghost btn-sm" onclick="fijarParada('${A}','${N}',${posBase})" title="Fijarla para poder moverla">📌</button></span>` : "";
     return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
-      `${ctrl}${fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
+      `${ctrl}${fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et&&!p.libre?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
       `${ll?"ok":""} ${p.extra?"extra":""}`);
   }).join("");
   return `
