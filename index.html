@@ -1166,6 +1166,9 @@ tr[onclick]:active td{background:var(--s3)}
 .fr-cod{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.fr-cod .inp{width:130px;margin:0}
 .fr-ok{color:#86efac;font-size:13px;font-weight:600}
 
+
+.lote-fechas{font-size:12.5px;color:var(--muted);margin-top:3px}.lote-fechas strong{color:#86efac;font-weight:600}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1190,7 +1193,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261117-1008";
+const APP_VERSION = "20261117-1206";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -6361,6 +6364,7 @@ function renderTesoreria(){
     </div>`;
   }
   if(S.tabTes==="metricas") return renderTesoreriaMetricas();
+  const tt=(!S.tabTes||S.tabTes==="operacion")?"recibidos":S.tabTes;   // pestaña elegida (arriba, como en Logística)
   const pedidosBolsin = S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId && r.destino!=="Tesorería");
   const pendientes    = pedidosBolsin.filter(r=>r.estado==="Pendiente Tesorería");
   const aprobadosParaListo = pedidosBolsin.filter(r=>r.estado==="Aprobada");
@@ -6388,14 +6392,21 @@ function renderTesoreria(){
     if(!lotesMap[r.loteId]) lotesMap[r.loteId] = [];
     lotesMap[r.loteId].push(r);
   });
+  const _entregada=f=>f.estado==="Entregada"||f.estado==="Entregada (sin confirmar)";
   const lotes = Object.entries(lotesMap)
-    .map(([loteId,filas])=>({
-      loteId, filas,
-      total: filas.length,
-      entregadas: filas.filter(f=>f.estado==="Entregada"||f.estado==="Entregada (sin confirmar)").length,
-      pendientesListo: filas.filter(f=>f.estado==="Aprobada").length,
-    }))
-    .sort((a,b)=> b.loteId.localeCompare(a.loteId));
+    .map(([loteId,filas])=>{
+      const ent=filas.filter(_entregada), fechasEnt=ent.map(f=>f.deliveredAt||f.confirmadaSucursalAt||f.updatedAt).filter(Boolean).sort();
+      return {
+        loteId, filas,
+        total: filas.length,
+        entregadas: ent.length,
+        pendientesListo: filas.filter(f=>f.estado==="Aprobada").length,
+        creado: filas.map(f=>f.createdAt).filter(Boolean).sort()[0]||"",
+        ultimaEntrega: fechasEnt[fechasEnt.length-1]||"",
+      };
+    })
+    // de la entrega más reciente a la menos (si todavía no se entregó, por cuándo se creó)
+    .sort((a,b)=> String(b.ultimaEntrega||b.creado).localeCompare(String(a.ultimaEntrega||a.creado)) * (S.lotesOrdenAsc?-1:1));
 
   return `
   <div style="animation:fadeUp .3s ease">
@@ -6425,6 +6436,7 @@ function renderTesoreria(){
       ${statCard("📥","RECIBIDOS HOY",deHoy.reduce((s,r)=>s+bolsinesDe(r),0)+`<span class="stat-sub"> bolsines · ${deHoy.reduce((s,r)=>s+cierresDe(r),0)} cierres</span>`,"var(--teal)")}
     </div>
 
+    ${tt==="pedidos"?`
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🎒 Pedidos de sucursales para aprobar</h3>
       ${pendientes.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos pendientes.</p>`:`
@@ -6448,7 +6460,8 @@ function renderTesoreria(){
         </table>
       </div>`}
     </div>
-
+`:""}
+    ${tt==="pedidos"?`
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">✅ Aprobados por logística — marcar como listos</h3>
       ${aprobadosParaListo.length===0?`<p style="color:var(--muted);font-size:13px">No hay pedidos esperando que los prepares.</p>`:`
@@ -6469,7 +6482,8 @@ function renderTesoreria(){
         </table>
       </div>`}
     </div>
-
+`:""}
+    ${tt==="recibidos"?`
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📥 Bolsines recibidos de sucursales</h3>
       ${(()=>{
@@ -6531,9 +6545,13 @@ function renderTesoreria(){
         </table>
       </div>`}
     </div>
-
+`:""}
+    ${tt==="lotes"?`
     <div class="card" style="margin-top:20px">
-      <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">📦 Lotes de bolsines</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+        <h3 style="font-size:15px;font-weight:700;margin:0">📦 Lotes de bolsines</h3>
+        <button class="btn btn-ghost btn-sm" onclick="S.lotesOrdenAsc=!S.lotesOrdenAsc;render()">${S.lotesOrdenAsc?"⬆ Más antiguos primero":"⬇ Más recientes primero"}</button>
+      </div>
       ${lotes.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no creaste ningún lote.</p>`:`
       <div style="display:flex;flex-direction:column;gap:10px">
         ${lotes.map(l=>`
@@ -6542,6 +6560,7 @@ function renderTesoreria(){
               <div style="cursor:pointer" onclick="toggleLoteExpandido('${escH(l.loteId)}')">
                 <strong>${S.loteExpandido===l.loteId?"▾":"▸"} ${escH(l.loteId)}</strong>
                 <span style="color:var(--muted);font-size:13px"> · ${l.total} sucursales · ${l.entregadas}/${l.total} entregadas</span>
+                <div class="lote-fechas">Creado ${l.creado?fdt(l.creado):"—"} · ${l.entregadas===l.total&&l.ultimaEntrega?`<strong>Entregado ${fdt(l.ultimaEntrega)}</strong>`:l.ultimaEntrega?`Última entrega ${fdt(l.ultimaEntrega)}`:"Sin entregas todavía"}</div>
               </div>
               ${l.pendientesListo>0?`
               <button class="btn btn-success btn-sm" onclick="openLoteListo('${escH(l.loteId)}')">
@@ -6551,13 +6570,14 @@ function renderTesoreria(){
             ${S.loteExpandido===l.loteId?`
             <div class="table-wrap" style="margin-top:10px">
               <table>
-                <thead><tr><th>Sucursal</th><th>Cant.</th><th>Estado</th><th>Recorrido</th><th>Quién lo levantó</th><th>Quién lo entregó / recibió</th><th></th></tr></thead>
+                <thead><tr><th>Sucursal</th><th>Cant.</th><th>Estado</th><th>Entregado</th><th>Recorrido</th><th>Quién lo levantó</th><th>Quién lo entregó / recibió</th><th></th></tr></thead>
                 <tbody>
                   ${l.filas.sort((a,b)=>(a.destino||"").localeCompare(b.destino||"")).map(f=>`
                   <tr onclick="openDetalle('${escH(f.id)}')" style="cursor:pointer">
                     <td>${escH(f.destino)}</td>
                     <td>${escH(String(f.cantidad))}</td>
                     <td>${badge(f.estado,S_COLOR[f.estado]||"var(--muted)")}</td>
+                    <td class="muted-cell">${_entregada(f)&&(f.deliveredAt||f.confirmadaSucursalAt)?fdt(f.deliveredAt||f.confirmadaSucursalAt):"—"}</td>
                     <td class="muted-cell">${escH(f.recorrido||"—")}</td>
                     <td class="muted-cell">${escH(f.nombreQuienLevanto||"—")}</td>
                     <td class="muted-cell">${escH(f.nombreQuienRecibio||f.nombreQuienEntrego||"—")}</td>
@@ -6569,7 +6589,8 @@ function renderTesoreria(){
           </div>`).join("")}
       </div>`}
     </div>
-
+`:""}
+    ${tt==="historial"?`
     <div class="card" style="margin-top:20px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:12px">🗂️ Historial de pedidos de excepción</h3>
       ${historialPedidos.length===0?`<p style="color:var(--muted);font-size:13px">Todavía no hay pedidos resueltos.</p>`:`
@@ -6589,7 +6610,7 @@ function renderTesoreria(){
           </tbody>
         </table>
       </div>`}
-    </div>
+    </div>`:""}
   </div>`;
 }
 
@@ -14681,10 +14702,18 @@ function renderReporteBolsinModal(){
 //  diferencias. Todo sale de los bolsines ya cargados (sin consultas extra).
 // ═══════════════════════════════════════════════════════════════════
 function tabsTes(){
-  const t=S.tabTes||"operacion";
+  const t=(!S.tabTes||S.tabTes==="operacion")?"recibidos":S.tabTes;
+  const pedidos=S.requests.filter(r=>r.tipoPedido==="bolsin" && !r.loteId && r.destino!=="Tesorería" && ["Pendiente Tesorería","Aprobada"].includes(r.estado)).length;
+  const buzon=(typeof bolsinesTesBase==="function"?bolsinesTesBase():[]).filter(r=>estadoBolsinTes(r)==="En el buzón").length;
+  const lotesAct=new Set(S.requests.filter(r=>r.tipoPedido==="bolsin" && r.loteId && !["Entregada","Entregada (sin confirmar)","Cancelada"].includes(r.estado)).map(r=>r.loteId)).size;
+  const n=(v,col)=>v?`<span class="tab-n" ${col?`style="background:${col};color:#111"`:""}>${v}</span>`:"";
+  const b=(id,txt,extra="")=>`<button class="tab ${t===id?"active":""}" onclick="S.tabTes='${id}';render();window.scrollTo({top:0})">${txt}${extra}</button>`;
   return `<div class="toolbar" style="margin-bottom:16px"><div class="tabs">
-    <button class="tab ${t==="operacion"?"active":""}" onclick="S.tabTes='operacion';render()">📥 Operación</button>
-    <button class="tab ${t==="metricas"?"active":""}" onclick="S.tabTes='metricas';render()">📊 Métricas</button>
+    ${b("recibidos","📥 Recibidos",n(buzon,"#f5a623"))}
+    ${b("lotes","📦 Lotes",n(lotesAct))}
+    ${b("pedidos","🎒 Pedidos",n(pedidos,"#f5a623"))}
+    ${b("historial","🗂️ Historial")}
+    ${b("metricas","📊 Métricas")}
   </div></div>`;
 }
 const _restarDias=(iso,n)=>{ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); };
