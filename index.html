@@ -1182,7 +1182,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261116-1237";
+const APP_VERSION = "20261117-0713";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10111,6 +10111,14 @@ async function asignarAArmado(reqId){
     if(saleDeFabrica(r)){ toast(`🔒 ${a.recorrido} ya salió de Fábrica: no se le puede sumar algo que sale de Fábrica`,"warn"); return; }
     if(!confirm(`El recorrido ${a.recorrido} ya salió con ${a.nombreRep||"el repartidor"}. ¿Sumarle esta transferencia? La va a ver en su próxima parada.`)) return;
   }
+  // ¿Sumarla obliga a volver a pasar por alguna sucursal? (va "para atrás" respecto del orden del recorrido) → avisar antes
+  if(!S._sinAvisoVuelta){
+    const mias=S.requests.filter(x=>x.armadoId===a.id && x.id!==reqId);
+    const rep=ps=>ps.filter(p=>p.repetida).map(p=>p.nombre);
+    const antes=rep(paradasArmado(a,mias)), despues=rep(paradasArmado(a,[...mias,r]));
+    const nuevas=despues.filter((n,i)=>despues.slice(0,i+1).filter(x=>x===n).length > antes.filter(x=>x===n).length);
+    if(nuevas.length && !confirm(`La ${r.id} va de ${origenLabel(r)} a ${r.destino}, pero en ${codigoArmado(a)} pasás por ${r.destino} antes que por ${origenLabel(r)}.\n\nSi la sumás, el recorrido vuelve a pasar por: ${nuevas.join(", ")}.\n\n¿Sumarla igual? (Si no, la podés asignar a otro recorrido.)`)) return;
+  }
   const ch={armadoId:a.id, recorrido:a.recorrido, updatedAt:now()};
   const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",reqId);
   if(error){ toast(/armado_id/.test(error.message||"")?"⚠️ Falta correr recorridos_01_armados.sql en Supabase":"⚠️ No se pudo asignar","warn"); return; }
@@ -10893,7 +10901,7 @@ function renderArmarDelDia(){
     const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${escH(a.id)}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" onclick="rutaQuitar('${escH(a.id)}',${iBase})">✕</button></span>` : "";
     const fijar = editable && p.extra ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();fijarParada('${escH(a.id)}','${escH(p.nombre)}',${posBase})" title="Fijarla para poder moverla">📌</button>` : "";
     return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
-      `${ctrl}${fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá">🔁 vuelve a pasar</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
+      `${ctrl}${fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
       `${ll?"ok":""} ${p.extra?"extra":""}`);
   }).join("");
   return `
