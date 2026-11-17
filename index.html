@@ -1158,6 +1158,14 @@ tr[onclick]:active td{background:var(--s3)}
 .guia-prox strong{display:block;font-size:16px}.guia-prox small{color:var(--muted);font-size:12.5px}
 .guia-sig{margin-top:12px}
 
+
+.fr-fila{display:grid;grid-template-columns:minmax(160px,1fr) 190px minmax(200px,1.3fr);gap:10px;align-items:center;padding:8px 0;border-top:1px solid var(--border)}
+@media(max-width:760px){ .fr-fila{grid-template-columns:1fr} }
+.fr-nom strong{display:block;font-size:13.5px}.fr-nom span{font-size:12px;color:var(--faint)}
+.fr-sel{margin:0}
+.fr-cod{display:flex;gap:6px;align-items:center;flex-wrap:wrap}.fr-cod .inp{width:130px;margin:0}
+.fr-ok{color:#86efac;font-size:13px;font-weight:600}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1182,7 +1190,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261117-0833";
+const APP_VERSION = "20261117-0919";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5484,7 +5492,7 @@ function renderLogin(){
       </div>
       ${_hayQRPendiente()?`<div class="card" style="margin-bottom:12px;border-color:var(--teal)">
         <div style="font-weight:700;margin-bottom:8px">🚚 ¿Sos repartidor? Entrá con tu DNI</div>
-        <div style="display:flex;gap:8px"><input id="login-dni-rep" class="inp" type="number" inputmode="numeric" placeholder="Tu DNI" onkeydown="if(event.key==='Enter')entrarRepartidorConDni()"/>
+        <div style="display:flex;gap:8px"><input id="login-dni-rep" class="inp" type="password" inputmode="numeric" autocomplete="off" placeholder="Tu DNI o código" onkeydown="if(event.key==='Enter')entrarRepartidorConDni()"/>
           <button class="btn btn-success btn-md" onclick="entrarRepartidorConDni()" ${S.loginLoading?"disabled":""}>${S.loginLoading?`<span class="spinner"></span>`:"Entrar"}</button></div>
         ${S.loginErr?`<div class="err-msg" style="display:block;margin-top:6px">${escH(S.loginErr)}</div>`:""}
       </div>`:""}
@@ -6987,6 +6995,73 @@ function renderDispositivosAdmin(){
   </div>`;
 }
 
+// ═══ Cómo firman los repartidores: con DNI (predeterminado) o con un código (lo elige Admin) ═══
+// Los códigos se guardan cifrados (nadie los puede leer después; si se olvida, Admin carga uno nuevo).
+function firmasRep(){ try{ return JSON.parse(S.config?.firmas_repartidores||"{}")||{}; }catch(e){ return {}; } }
+const modoFirmaRep = dni => (firmasRep()[_dniLimpio(dni)]||{}).modo==="codigo" ? "codigo" : "dni";
+const hayCodigosRep = () => Object.values(firmasRep()).some(x=>x&&x.modo==="codigo");
+async function _hashFirma(v){
+  const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode("transferlog-firma:"+String(v)));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join("");
+}
+// Lo que escribe el repartidor (DNI o código) → quién es
+async function resolverFirmaRepartidor(valor){
+  const v=_dniLimpio(valor); if(!v) return {ok:false, msg:"Escribí tu DNI o tu código."};
+  const reps=S.usuarios.filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no");
+  const f=firmasRep();
+  if(hayCodigosRep()){
+    const h=await _hashFirma(v);
+    const dniCod=Object.keys(f).find(d=>f[d] && f[d].modo==="codigo" && f[d].hash===h);
+    if(dniCod){ const r=reps.find(u=>_dniLimpio(u.dni)===dniCod); if(r) return {ok:true, dni:dniCod, nombre:r.nombre}; }
+  }
+  const chk=await validarDNIConRespaldo(v);
+  if(!chk.ok) return {ok:false, msg: hayCodigosRep() ? "No encontramos ese DNI o código." : chk.msg};
+  const r=reps.find(u=>_dniLimpio(u.dni)===v);
+  if(!r) return {ok:false, msg:`Ese DNI es de ${chk.nombre}, que no es repartidor.`};
+  if(modoFirmaRep(v)==="codigo") return {ok:false, msg:`${r.nombre} firma con su código, no con el DNI.`};
+  return {ok:true, dni:v, nombre:r.nombre};
+}
+async function guardarFirmasRep(obj, aviso){
+  const val=JSON.stringify(obj); S.config={...S.config, firmas_repartidores:val}; render();
+  try{ const { error } = await sb.from("config").upsert({clave:"firmas_repartidores", valor:val}); if(error) throw error; if(aviso) toast(aviso); }
+  catch(e){ toast("⚠️ No se pudo guardar","warn"); }
+}
+function setModoFirmaRep(dni, modo){
+  if(modo==="dni"){ const f=firmasRep(); delete f[dni]; S.firmaEdit=null; guardarFirmasRep(f, "✅ Firma con DNI"); return; }
+  S.firmaEdit={dni, err:""}; render(); setTimeout(()=>$("fr-cod")?.focus(),80);
+}
+async function guardarCodigoRep(dni){
+  const v=_dniLimpio($("fr-cod")?.value||"");
+  const err=m=>{ S.firmaEdit={dni, err:m}; render(); };
+  if(!/^\d{4,6}$/.test(v)) return err("El código tiene que tener de 4 a 6 números.");
+  if(S.usuarios.some(u=>_dniLimpio(u.dni)===v)) return err("Ese número es el DNI de alguien: elegí otro código.");
+  const f=firmasRep(), h=await _hashFirma(v);
+  if(Object.keys(f).some(d=>d!==dni && f[d] && f[d].hash===h)) return err("Ese código ya lo tiene otro repartidor.");
+  f[dni]={modo:"codigo", hash:h, at:new Date().toISOString()};
+  S.firmaEdit=null; guardarFirmasRep(f, "✅ Código guardado: avisale al repartidor");
+}
+function renderCardFirmasRep(){
+  const vistos=new Set(), reps=S.usuarios.filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no" && _dniLimpio(u.dni) && !vistos.has(_dniLimpio(u.dni)) && vistos.add(_dniLimpio(u.dni)))
+    .sort((a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||"")));
+  const ed=S.firmaEdit;
+  return `<div class="card" style="padding:16px;margin-top:14px">
+    <div style="font-weight:700;font-size:15px">🔐 Cómo firman los repartidores</div>
+    <p style="font-size:13px;color:var(--muted);margin:4px 0 12px">Por defecto firman con su DNI. Si alguno prefiere, le cargás un código de 4 a 6 números: lo usa en lugar del DNI al escanear el QR y cuando le entregan algo. El código se guarda cifrado; si se lo olvida, le cargás uno nuevo.</p>
+    ${reps.length?reps.map(u=>{ const dni=_dniLimpio(u.dni), modo=modoFirmaRep(dni), editando=ed&&ed.dni===dni;
+      return `<div class="fr-fila">
+        <div class="fr-nom"><strong>${escH(u.nombre||"")}</strong><span>DNI ${escH(dni)}</span></div>
+        <select class="inp fr-sel" onchange="setModoFirmaRep('${dni}',this.value)">
+          <option value="dni" ${modo==="dni"&&!editando?"selected":""}>DNI (predeterminado)</option>
+          <option value="codigo" ${modo==="codigo"||editando?"selected":""}>Código</option></select>
+        <div class="fr-cod">${editando
+          ? `<input id="fr-cod" class="inp" type="password" inputmode="numeric" maxlength="6" placeholder="Código nuevo" onkeydown="if(event.key==='Enter')guardarCodigoRep('${dni}')"/>
+             <button class="btn btn-success btn-sm" onclick="guardarCodigoRep('${dni}')">Guardar</button>
+             <button class="btn btn-ghost btn-sm" onclick="S.firmaEdit=null;render()">Cancelar</button>
+             ${ed.err?`<div class="err-msg" style="display:block;width:100%">${escH(ed.err)}</div>`:""}`
+          : modo==="codigo" ? `<span class="fr-ok">✓ código cargado</span><button class="btn btn-ghost btn-sm" onclick="S.firmaEdit={dni:'${dni}',err:''};render()">Cambiar código</button>` : ""}</div>
+      </div>`; }).join(""):`<p style="color:var(--muted)">No hay repartidores cargados.</p>`}
+  </div>`;
+}
 function renderAdminConfig(){
   const activo=bolsinesActivo();
   const {ultima,filas,viejos,sinDatos}=dispResumen();
@@ -7042,7 +7117,8 @@ function renderAdminConfig(){
         </label>`).join("")}
       </div>
     </div>
-  </div>`;
+  </div>
+  ${renderCardFirmasRep()}`;
 }
 
 function renderAdminSolicitudes(){
@@ -7824,11 +7900,12 @@ function _candidatosEntrega(d){
 }
 async function entregaRepSeguir(){
   const d=S.entregaRep; if(!d||d.loading) return;
-  const dni=_dniLimpio(d.dni); if(!dni){ d.err="Que el repartidor escriba su DNI."; render(); return; }
+  const valor=_dniLimpio(d.dni); if(!valor){ d.err="Que el repartidor escriba su DNI o su código."; render(); return; }
   d.loading=true; renderNow();
-  const chk=await validarDNIConRespaldo(dni);
-  const rep=chk.ok && S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
-  if(!chk.ok || !rep){ d.loading=false; d.err=!chk.ok?chk.msg:`Ese DNI es de ${chk.nombre}, que no es repartidor.`; render(); return; }
+  const rr=await resolverFirmaRepartidor(valor);   // DNI o código, según cómo firma cada repartidor
+  if(!rr.ok){ d.loading=false; d.err=rr.msg; render(); return; }
+  const dni=rr.dni, chk={ok:true, nombre:rr.nombre};
+  const rep=S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no") || {nombre:rr.nombre, dni};
   let arm=null, viajeAct=null;
   try{ const { data } = await sb.from("recorridos_armados").select("*").eq("estado","EN_CURSO").eq("dni_rep",dni).limit(1); arm=data&&data[0]?toCamelRow(data[0]):null; }catch(e){}
   try{ const { data } = await sb.from("flota_viajes").select("id,recorrido,dni_rep1,dni_rep2").eq("estado","ACTIVO").or(`dni_rep1.eq.${dni},dni_rep2.eq.${dni}`).limit(1); viajeAct=data&&data[0]||null; }catch(e){}
@@ -7853,8 +7930,8 @@ function renderEntregaRepModal(){
   const d=S.entregaRep;
   if(d.paso===1) return `
   <p style="font-size:14px;margin:0 0 12px">El repartidor escribe su DNI. ${d.modo==="fabrica"?"Te van a aparecer marcadas las de su recorrido.":"Te aparece todo lo que tiene para retirar acá."}</p>
-  <div class="field"><label>DNI del repartidor <span class="req">*</span></label>
-    <input id="er-dni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Que lo escriba el repartidor" value="${escH(d.dni)}"
+  <div class="field"><label>DNI ${hayCodigosRep()?"o código ":""}del repartidor <span class="req">*</span></label>
+    <input id="er-dni" class="inp ${d.err?"err":""}" type="password" inputmode="numeric" autocomplete="off" placeholder="Que lo escriba el repartidor" value="${escH(d.dni)}"
       oninput="S.entregaRep.dni=this.value;S.entregaRep.err=''" onkeydown="if(event.key==='Enter')entregaRepSeguir()"/>
     ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
   <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
@@ -9658,8 +9735,8 @@ async function asegurarSesionRepartidor(dni){
 }
 function renderQrDniModal(){
   const d=S.qrDni||{}, lugar=String(d.q?.s||"").replace(/^fabrica$/i,"Fábrica").replace(/^deposito$/i,"Depósito").replace(/^tesoreria$/i,"Buzón de Tesorería");
-  return `<p style="font-size:15px;margin:0 0 12px">📍 Escaneaste <strong>${escH(lugar)}</strong>. Escribí tu DNI para seguir.</p>
-    <div class="field"><input id="qrdni" class="inp ${d.err?"err":""}" type="number" inputmode="numeric" placeholder="Tu DNI" value="${escH(d.dni||"")}"
+  return `<p style="font-size:15px;margin:0 0 12px">📍 Escaneaste <strong>${escH(lugar)}</strong>. Escribí tu DNI${hayCodigosRep()?" o tu código":""} para seguir.</p>
+    <div class="field"><input id="qrdni" class="inp ${d.err?"err":""}" type="password" inputmode="numeric" autocomplete="off" placeholder="Tu DNI${hayCodigosRep()?" o código":""}" value="${escH(d.dni||"")}"
       oninput="S.qrDni.dni=this.value;S.qrDni.err=''" onkeydown="if(event.key==='Enter')confirmarQrDni()"/>
       ${d.err?`<span class="err-msg">${escH(d.err)}</span>`:""}</div>
     <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="S.modal=null;S.qrDni=null;render()">Cancelar</button>
@@ -9667,11 +9744,11 @@ function renderQrDniModal(){
 }
 async function confirmarQrDni(){
   const d=S.qrDni; if(!d||d.loading) return;
-  const dni=_dniLimpio($("qrdni")?.value||d.dni); if(!dni){ d.err="Escribí tu DNI."; render(); return; }
+  const valor=_dniLimpio($("qrdni")?.value||d.dni); if(!valor){ d.err="Escribí tu DNI o tu código."; render(); return; }
   d.loading=true; d.err=""; renderNow();
-  const chk=await validarDNIConRespaldo(dni);
-  const rep=chk.ok && S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
-  if(!chk.ok || !rep){ d.loading=false; d.err=!chk.ok?chk.msg:`Ese DNI es de ${chk.nombre}, que no es repartidor.`; render(); return; }
+  const rr=await resolverFirmaRepartidor(valor);
+  if(!rr.ok){ d.loading=false; d.err=rr.msg; render(); return; }
+  const dni=rr.dni, rep={nombre:rr.nombre, dni};
   if(!(await asegurarSesionRepartidor(dni))){ d.loading=false; d.err="Tu sesión se cerró y no se pudo reabrir. Tocá Salir y volvé a entrar."; render(); return; }
   S.miIdentidadRep={dni, nombre:rep.nombre};
   try{ localStorage.setItem("tl_rep_identidad", JSON.stringify(S.miIdentidadRep)); }catch(e){}
@@ -9680,11 +9757,13 @@ async function confirmarQrDni(){
 }
 // Sin sesión abierta y con un QR escaneado: el repartidor entra directo con su DNI
 async function entrarRepartidorConDni(){
-  const el=$("login-dni-rep"), dni=_dniLimpio(el?.value||""); if(!dni){ S.loginErr="Escribí tu DNI."; render(); return; }
+  const el=$("login-dni-rep"), valor=_dniLimpio(el?.value||""); if(!valor){ S.loginErr="Escribí tu DNI o tu código."; render(); return; }
   S.loginLoading=true; S.loginErr=""; render();
   try{
     if(!(S.usuarios||[]).length) await sheetsLoadUsuarios();
-    const fila=S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
+    const rr=await resolverFirmaRepartidor(valor);
+    if(!rr.ok) throw new Error(rr.msg);
+    const dni=rr.dni, fila=S.usuarios.find(u=>_dniLimpio(u.dni)===dni && u.tipo==="REPARTIDOR" && u.activo!=="no");
     if(!fila) throw new Error("No encontramos ese DNI entre los repartidores.");
     if(!(await asegurarSesionRepartidor(dni))) throw new Error("No se pudo entrar con el DNI. Entrá con tu usuario.");
     S.user={rol:"repartidor", area:"Reparto", nombre:fila.nombre, dni, recorrido:fila.recorrido||""};
@@ -16112,10 +16191,17 @@ function renderIdentidadRepModal(){
 }
 async function confirmarIdentidadRepartidor(){
   const d = S.identidadRepModal;
-  const dni = String($("idrep-dni")?.value||d.dni||"").replace(/\D/g,"");
+  let dni = String($("idrep-dni")?.value||d.dni||"").replace(/\D/g,"");
   if(!dni){ S.identidadRepModal.err="Ingresá tu DNI."; render(); return; }
-  const check = await validarDNIConRespaldo(dni);
-  if(!check.ok){ S.identidadRepModal.err=check.msg; render(); return; }
+  let check;
+  if(d.para!=="tesoreria" && d.para!=="general"){   // repartidor: DNI o código
+    const rr=await resolverFirmaRepartidor(dni);
+    if(!rr.ok){ S.identidadRepModal.err=rr.msg; render(); return; }
+    dni=rr.dni; check={ok:true, nombre:rr.nombre};
+  } else {
+    check = await validarDNIConRespaldo(dni);
+    if(!check.ok){ S.identidadRepModal.err=check.msg; render(); return; }
+  }
   if(d.para==="tesoreria"){
     S.miIdentidadTesoreria = {dni, nombre:check.nombre};
     try{ localStorage.setItem("tl_tesoreria_identidad", JSON.stringify(S.miIdentidadTesoreria)); }catch(e){}
