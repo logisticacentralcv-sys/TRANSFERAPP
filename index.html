@@ -1193,7 +1193,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261117-1222";
+const APP_VERSION = "20261118-0751";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8034,6 +8034,36 @@ async function alLlegarAFabrica(id){
   render();
 }
 // Barrido (al abrir Recorridos o crear uno): las que esperan en Fábrica se asignan solas si hay un recorrido que vaya
+// Lo que quedó EN TRÁNSITO de recorridos que ya se cerraron (y quien lo tenía no está en un recorrido activo):
+// se descarga como en el cierre automático (bolsines al buzón, lo de Fábrica entregado, lo demás a Fábrica), con falta
+async function barrerEnTransitoColgado(){
+  if(!["logistica","admin"].includes(S.user?.rol)) return 0;
+  try{
+    const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").limit(1000);
+    const filas=toCamelRows(data||[]); if(!filas.length) return 0;
+    const { data:vjs } = await sb.from("flota_viajes").select("id,dni_rep1,dni_rep2").eq("estado","ACTIVO");
+    const activos=new Set((vjs||[]).flatMap(v=>[_dniLimpio(v.dni_rep1),_dniLimpio(v.dni_rep2)]).filter(Boolean));
+    const ids=[...new Set(filas.map(r=>r.armadoId).filter(Boolean))];
+    const estArm={}; if(ids.length){ const { data:ar } = await sb.from("recorridos_armados").select("id,estado,codigo,recorrido,id_viaje").in("id",ids); (ar||[]).forEach(a=>estArm[a.id]=a); }
+    const viejo=Date.now()-6*3600e3;
+    const colgadas=filas.filter(r=>{
+      const dni=(portadorSolicitud(r)||{}).dni||"";
+      if(dni && activos.has(dni)) return false;                                   // lo tiene alguien que está en un recorrido ahora
+      const a=r.armadoId && estArm[r.armadoId];
+      if(a) return !["EN_CURSO","PREPARADO"].includes(a.estado);                  // su recorrido ya se cerró
+      return new Date(r.updatedAt||r.createdAt||0).getTime() < viejo;             // sin recorrido y hace más de 6 h
+    });
+    const porDni={}; colgadas.forEach(r=>{ const d=(portadorSolicitud(r)||{}).dni||"?"; (porDni[d]=porDni[d]||[]).push(r); });
+    let n=0;
+    for(const [dni,rs] of Object.entries(porDni)){
+      const a=rs[0].armadoId && estArm[rs[0].armadoId];
+      const r=await dejarEnFabricaLoQueTengo({dnis:[dni==="?"?"0":dni], nombre:(portadorSolicitud(rs[0])||{}).nombre, recorrido:a?(a.codigo||a.recorrido):"", armadoId:rs[0].armadoId||null, idViaje:a?.id_viaje||null, soloIds:rs.map(x=>x.id)}, true);
+      n+=r.total;
+    }
+    if(n){ toast(`🧹 ${n} que había${n!==1?"n":""} quedado en tránsito de recorridos cerrados se descargaron (con falta)`); render(); }
+    return n;
+  }catch(e){ console.warn("Barrido en tránsito:",e); return 0; }
+}
 async function asignarPendientesEnFabrica(){
   // solo cuenta como asignada si tiene un recorrido PREPARADO (todavía no salió); si quedó atada al que la trajo, se suelta
   const pend=S.requests.filter(r=>r.estado==="En fábrica" && r.tipoPedido!=="devolucion" && !(r.armadoId && armadoDe(r.armadoId)?.estado==="PREPARADO"));
@@ -8116,13 +8146,20 @@ async function dejarEnFabricaLoQueTengo(info, auto){
   let total=0;
   try{
     const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").or(dnis.map(d=>`dni_repartidor.eq.${d},dni_entrega.eq.${d}`).join(","));
-    const suyas=toCamelRows(data||[]).filter(r=>{ const p=portadorSolicitud(r); return p && dnis.includes(p.dni); });
+    let filas=toCamelRows(data||[]);
+    // también lo que está asignado a ese recorrido y sigue en tránsito (aunque el DNI no esté cargado igual)
+    if(info.armadoId && !info.soloFabrica){
+      const { data:dA } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").eq("armado_id",info.armadoId);
+      toCamelRows(dA||[]).forEach(r=>{ if(!filas.some(x=>x.id===r.id)) filas.push(r); });
+    }
+    let suyas=filas.filter(r=>{ const p=portadorSolicitud(r); return (p && dnis.includes(p.dni)) || (info.armadoId && r.armadoId===info.armadoId && !info.soloFabrica); });
+    if(info.soloIds) suyas=suyas.filter(r=>info.soloIds.includes(r.id));
     for(const r of suyas){
       if(info.soloFabrica && !terminaEnFabrica(r)) continue;   // parada en el medio: lo demás sigue viaje
       const quien=(portadorSolicitud(r)||{}).dni||dnis[0];
       let ch, falta=null;
       if(bolsinAFabrica(r)){
-        if(!auto) continue;
+        if(!auto && !info.cerrando) continue;   // al dejar en Fábrica sigue con él; al cerrar el recorrido va al buzón (con falta)
         ch={estado:"En el buzón", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, updatedAt:ts}; falta="No dejó el bolsín en el buzón: se dio por dejado al cerrarse el recorrido";
       } else if(_esLugarFabrica(r.destino)){
         ch={estado:"Entregada", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, nombreQuienRecibio:"Fábrica", updatedAt:ts};
@@ -8142,7 +8179,7 @@ async function dejarEnFabricaLoQueTengo(info, auto){
       if(falta) faltas.push({dni:quien, id:r.id, detalle:falta});
     }
     const { data:dv } = await sb.from("devoluciones").select("*").eq("estado","En camino").in("dni_quien_levanto",dnis);
-    for(const x of toCamelRows(dv||[])){
+    for(const x of toCamelRows(dv||[]).filter(x=>!info.soloIds || info.soloIds.includes(`DEV-${x.id}`))){
       const ch={estado:"En fábrica", nombreRepartidor:x.nombreQuienLevanto||nombre, dejadoFabricaAt:ts, updatedAt:ts};
       const { error } = await sb.from("devoluciones").update(toSnakeRow(ch)).eq("id",x.id).eq("estado","En camino");
       if(error) continue;
@@ -9996,7 +10033,8 @@ async function _terminarViaje(e, auto){
   await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:e.base?String(e.base).toUpperCase():"FABRICA", evento:"REGRESO FABRICA", gps_obs:(auto?"Terminado solo al volver (sin nada encima). ":"")+(pres.obs||""), recorrido:v.recorrido});
   // se cierra el recorrido del viaje (también si va de acompañante)
   await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id_viaje",v.id).eq("estado","EN_CURSO");
-  return await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni], nombre:S.miIdentidadRep?.nombre, recorrido:v.recorrido, armadoId:e.armado?.id, idViaje:v.id}, false);
+  const arm=e.armado || (S.armados||[]).find(x=>x.idViaje===v.id) || null;
+  return await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni, v.dni_rep1, v.dni_rep2], nombre:S.miIdentidadRep?.nombre||v.nombre_rep1, recorrido:v.recorrido, armadoId:arm?.id, idViaje:v.id, cerrando:true}, false);
 }
 // Volvió y no tiene nada encima: el recorrido se termina solo y se muestran los preparados para salir de nuevo
 async function _terminarSiNoQuedaNada(e){
@@ -10188,7 +10226,7 @@ async function cargarArmados(){
 }
 async function abrirArmarDelDia(){
   S.subTabRec="armar";
-  await Promise.all([cargarArmados().then(()=>corregirBolsinesMalAsignados()).then(()=>asignarPendientesEnFabrica()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
+  await Promise.all([cargarArmados().then(()=>barrerEnTransitoColgado()).then(()=>corregirBolsinesMalAsignados()).then(()=>asignarPendientesEnFabrica()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
   if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
   if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
   render();
