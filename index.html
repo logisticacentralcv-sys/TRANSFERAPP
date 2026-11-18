@@ -1193,7 +1193,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261118-0751";
+const APP_VERSION = "20261118-0823";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -4869,6 +4869,14 @@ function renderCardReingreso(devs){
   </div>`;
 }
 
+// ¿Lo que escribieron es el código de esta devolución? Sin importar mayúsculas, guion, "N°"/"#" ni ceros adelante
+function coincideCodigoDevolucion(d, q){
+  const id=String(d&&d.id||""), t=String(q||"").trim(); if(!id||!t) return false;
+  if(normNotif(id)===normNotif(t)) return true;
+  const sinPrefijo=normNotif(t).replace(/^(n°|nro\.?|n|#|dev\.?)\s*/,"");
+  const dq=sinPrefijo.replace(/\D/g,"").replace(/^0+/,""), di=id.replace(/\D/g,"").replace(/^0+/,"");
+  return !!dq && dq===di && /^[a-z]{0,3}[-\s]?\d+$/i.test(sinPrefijo.replace(/\s/g,""));
+}
 function renderDevoluciones(){
   const u = S.user;
   const esGestor = esGestorDevolucion();
@@ -4902,9 +4910,8 @@ function renderDevoluciones(){
     if(S.devolucionFiltroProducto){
       const qp = normNotif(S.devolucionFiltroProducto);
       lista = lista.filter(d=>{
-      const numero = qp.replace(/^(n°|n|#|dev)\s*/,"");
-      if(numero && /^\d+$/.test(numero) && String(d.id)===numero) return true;          // N° exacto
-      return String(d.id)===qp || normNotif(d.creadoPor).includes(qp) || normNotif(d.sucursal).includes(qp) ||
+      if(coincideCodigoDevolucion(d, S.devolucionFiltroProducto)) return true;   // D-00525, d-525, 00525 o 525
+      return normNotif(d.creadoPor).includes(qp) || normNotif(d.sucursal).includes(qp) ||
         productosDeDevolucion(d).some(p=>normNotif(p.descripcion).includes(qp) || normNotif(p.codigoInterno).includes(qp) || normNotif(p.codigoBarras).includes(qp));
     });
     }
