@@ -1169,6 +1169,15 @@ tr[onclick]:active td{background:var(--s3)}
 
 .lote-fechas{font-size:12.5px;color:var(--muted);margin-top:3px}.lote-fechas strong{color:#86efac;font-weight:600}
 
+
+.atn{padding:12px 14px;margin:12px 0}
+.atn-cab{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px}
+.atn-ayuda,.atn-vacio{font-size:12.5px;color:var(--muted);margin:6px 0 8px}
+.atn-it{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--border)}
+.atn-info{min-width:0;font-size:13.5px}.atn-info strong{font-weight:600}.atn-info small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.atn-acc{display:flex;gap:6px;align-items:center;flex:none}
+.atn-no{color:#fca5a5}.atn-rec{font-size:12px;color:#fbbf24;white-space:nowrap}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1193,7 +1202,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261118-0823";
+const APP_VERSION = "20261119-0933";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10595,7 +10604,46 @@ async function buscarDireccionNuevaSol(){
 function renderRepartidorConGuia(){
   const html=renderRepartidor();
   if(S.estoyEn || !recorridoDelRepartidor()) return html;
-  return `<div style="margin-bottom:10px">${botonEscanear()}</div>${guiaRecorridoHtml()}${html}`;
+  return `<div style="margin-bottom:10px">${botonEscanear()}</div>${aTuNombreHtml(true)}${guiaRecorridoHtml()}${html}`;
+}
+// ═══ Repartidor: lo que figura A SU NOMBRE (para que no le asignen cosas que no tiene) ═══
+function cosasATuNombre(){
+  const yo=_dniLimpio(S.miIdentidadRep?.dni); if(!yo) return {trans:[], devs:[]};
+  return {trans:(S.requests||[]).filter(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===yo),
+          devs:(S.devoluciones||[]).filter(d=>d.estado==="En camino" && _dniLimpio(d.dniQuienLevanto)===yo)};
+}
+const _reclamosRep = () => { try{ return JSON.parse(localStorage.getItem("tl_reclamos_rep")||"[]"); }catch(e){ return []; } };
+// "No lo tengo": avisa a Logística y a quien se la entregó, para que lo revisen
+async function noLoTengo(tipo, id){
+  const yo=S.miIdentidadRep; if(!yo) return;
+  const esDev=tipo==="dev";
+  const r = esDev ? (S.devoluciones||[]).find(d=>String(d.id)===String(id)) : S.requests.find(x=>x.id===id); if(!r) return;
+  const origen = esDev ? r.sucursal : origenLabel(r);
+  const desc = esDev ? `la devolución ${id} de ${r.sucursal}` : `la ${id} (${origen} → ${r.destino})`;
+  const entrego = !esDev && r.nombreEntregoOrigen ? r.nombreEntregoOrigen : origen;
+  if(!confirm(`¿Avisar que no tenés ${desc}?\n\nFigura a tu nombre. Se le avisa a Logística${entrego?` y a ${entrego}`:""} para que lo revisen.`)) return;
+  crearNotificacion("LOGISTICA", `⚠️ ${yo.nombre} avisa que NO tiene ${desc}, que figura a su nombre${entrego?` (se la dio ${entrego})`:""}`, esDev?null:id);
+  if(origen && esSucursalReal(origen)) crearNotificacion(origen, `⚠️ ${yo.nombre} avisa que no tiene ${desc}: revisá a quién se la entregaste`, esDev?null:id);
+  try{ const k="tl_reclamos_rep", l=_reclamosRep(); l.push(`${tipo}:${id}`); localStorage.setItem(k, JSON.stringify(l.slice(-200))); }catch(e){}
+  toast("⚠️ Avisado a Logística"); render();
+}
+function aTuNombreHtml(compacto){
+  const {trans,devs}=cosasATuNombre(), n=trans.length+devs.length;
+  if(!n) return compacto ? "" : `<div class="card atn"><div class="atn-cab">📦 A tu nombre</div><p class="atn-vacio">No tenés nada a tu nombre.</p></div>`;
+  const rec=_reclamosRep(), abierto = !compacto || S.atnAbierto;
+  const accion=(tipo,id)=> rec.includes(`${tipo}:${id}`) ? `<span class="atn-rec">⚠️ avisaste</span>` : `<button class="btn btn-ghost btn-sm atn-no" onclick="event.stopPropagation();noLoTengo('${tipo}','${escH(String(id))}')">⚠️ No lo tengo</button>`;
+  const filas = trans.map(r=>`<div class="atn-it">
+      <div class="atn-info"><span class="mono" style="color:var(--blue)">${escH(r.id)}</span> ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""} <strong>${escH(r.descripcion||"")}</strong>
+        <small>${escH(origenLabel(r))} → ${escH(r.destino||"")}${r.nombreEntregoOrigen?` · te la dio ${escH(r.nombreEntregoOrigen)}`:""}</small></div>
+      <div class="atn-acc">${botonVer(r)}${accion("t",r.id)}</div></div>`).join("")
+    + devs.map(d=>`<div class="atn-it">
+      <div class="atn-info"><span class="mono" style="color:var(--purple)">Dev. ${escH(String(d.id))}</span> <strong>Devolución ${escH(d.tipoDevolucion||"")}</strong>
+        <small>${escH(d.sucursal||"")} → Fábrica</small></div>
+      <div class="atn-acc">${accion("dev",d.id)}</div></div>`).join("");
+  return `<div class="card atn">
+    <div class="atn-cab" ${compacto?`onclick="S.atnAbierto=!S.atnAbierto;render()" style="cursor:pointer"`:""}>📦 A tu nombre <span class="tab-n">${n}</span>${compacto?`<span class="ar-flecha" style="margin-left:auto">${abierto?"▲":"▼"}</span>`:""}</div>
+    ${abierto?`<p class="atn-ayuda">Esto figura que lo llevás vos. Si algo no lo tenés, tocá "No lo tengo" y se le avisa a Logística.</p>${filas}`:""}
+  </div>`;
 }
 function renderRepartidorSinRecorrido(){
   const yo=_dniLimpio(S.miIdentidadRep?.dni);
@@ -10605,7 +10653,7 @@ function renderRepartidorSinRecorrido(){
     <div style="width:100%;max-width:320px;margin:4px 0">${botonEscanear()}</div>
     <span>Para arrancar, escaneá el <strong>QR de Fábrica</strong> y elegí tu recorrido. Si ya saliste, escaneá el QR de la sucursal donde estás y elegí en qué recorrido vas.</span>
     ${encima?`<span style="color:#fbbf24">Tenés ${encima} cosa${encima!==1?"s":""} encima sin recorrido: escaneá un QR y elegí tu recorrido.</span>`:""}
-  </div></div>`;
+  </div>${aTuNombreHtml(false)}</div>`;
 }
 // ═══ Etiqueta del paquete en todos lados (misma trazabilidad) ═══
 function verEtiqueta(id){ S.etiquetaInfo={id, ver:true}; S.modal="etiquetaInfo"; render(); }
