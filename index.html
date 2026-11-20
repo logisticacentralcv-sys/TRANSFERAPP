@@ -1178,6 +1178,26 @@ tr[onclick]:active td{background:var(--s3)}
 .atn-acc{display:flex;gap:6px;align-items:center;flex:none}
 .atn-no{color:#fca5a5}.atn-rec{font-size:12px;color:#fbbf24;white-space:nowrap}
 
+
+.rs{display:flex;flex-direction:column;gap:12px;max-width:760px;margin:0 auto}
+.sig-card{padding:14px 16px;border-color:#2de0c466}
+.sig-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer}
+.sig-top small{display:block;font-size:12px;color:var(--muted)}.sig-top strong{display:block;font-size:22px;color:var(--teal);margin:2px 0}
+.sig-top span{font-size:13.5px;color:var(--muted)}
+.sig-ver{font-size:12.5px;color:var(--teal);white-space:nowrap;font-weight:600}
+.sig-card .guia-aviso{margin:10px 0 0}
+.sig-card.sin strong{display:block;font-size:16px}.sig-card.sin span{font-size:13px;color:var(--muted)}
+.rs-sec{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:12px 14px}
+.rs-tit{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:4px}
+.rs-lugar{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 2px}
+.rs-it{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
+.rs-info{min-width:0;font-size:13.5px}.rs-info .mono{color:var(--blue);font-size:12px;margin-right:4px}.rs-info strong{font-weight:600}
+.rs-info small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.rs-acc{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:none;max-width:55%}
+.rs-nota{font-size:11.5px;color:var(--faint)}.rs-vacio{font-size:13px;color:var(--muted);margin:6px 0}
+.dif-mot{display:flex;flex-wrap:wrap;gap:6px}
+@media(max-width:560px){ .rs-it{flex-direction:column;align-items:flex-start} .rs-acc{max-width:100%;justify-content:flex-start} }
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1202,7 +1222,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261120-0850";
+const APP_VERSION = "20261120-1222";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10158,7 +10178,7 @@ function cardQR(r, accion){
 
     : `<button class="btn btn-success btn-md" onclick="abrirEntregaFirma('${escH(r.id)}')">✅ Entregar</button>`;
   return `<div class="qr-card">
-    <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>${botonVer(r)}
+    <div class="qr-card-top"><span class="mono" style="color:var(--blue);font-size:12px">${escH(r.id)}</span>${botonVer(r)}<button class="btn btn-ghost btn-sm qr-ver" style="margin-left:4px" title="Avisar una diferencia" onclick="event.stopPropagation();abrirDiferencia('t','${escH(r.id)}')">📝</button>
       ${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}${r.prioridad==="Urgente"?`<span class="sk-chip red">Urgente</span>`:""}</div>
     <div class="qr-card-ruta">${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong></div>
     <div class="qr-card-desc">${escH(r.descripcion||"")}${r.cantidad?` · ${escH(String(r.cantidad))} ${escH(r.unidad||"")}`:""}</div>
@@ -10629,10 +10649,96 @@ async function buscarDireccionNuevaSol(){
     if(msg) msg.innerHTML=`<span style="color:#fca5a5">${escH(claro||_esStaff()?e.message:"No se pudo buscar ahora.")} Si no, cargala igual con la dirección en Observaciones.</span>`;
   }
 }
+// ═══════════════════════════════════════════════════════════════════
+//  PANEL DEL REPARTIDOR — simple: siguiente destino arriba (recorrido completo contraído),
+//  lo que tiene que tomar, y lo que lleva. Sin filtros ni pestañas.
+// ═══════════════════════════════════════════════════════════════════
+function renderRepartidorSimple(){
+  const a=recorridoDelRepartidor(), g=a?pasosDelRecorrido():null;
+  const {trans,devs}=cosasATuNombre();
+  const yo=_dniLimpio(S.miIdentidadRep?.dni);
+  // Para tomar: lo de SU recorrido que todavía no tiene, y los retiros en otra dirección (sin QR)
+  const deOtro=r=>{ const x=r.armadoId&&armadoDe(r.armadoId); return x && x.estado==="EN_CURSO" && _dniLimpio(x.dniRep)!==yo; };
+  const paraTomar=S.requests.filter(r=>pendienteEnRecorrido(r) && r.estado!=="En tránsito" && (
+      (a && r.armadoId===a.id) || (esOrigenOtraDireccion(r) && puedeTomarAhora(r) && !deOtro(r))));
+  const porLugar={}; paraTomar.forEach(r=>{ const l=esOrigenOtraDireccion(r)?`📍 ${direccionDe(r,"origen")||origenLabel(r)}`:(saleDeFabrica(r)?"Fábrica":origenLabel(r)); (porLugar[l]=porLugar[l]||[]).push(r); });
+  // ── Siguiente destino (arriba)
+  let sig="";
+  if(a && g){
+    const p=g.sig, ex=extremosDe(a), abierto=!!S.verRecorrido;
+    sig=`<div class="card sig-card">
+      <div class="sig-top" onclick="S.verRecorrido=!S.verRecorrido;render()">
+        <div><small>Siguiente destino · ${escH(codigoArmado(a))}</small>
+          <strong>${p?escH(p.libre?(p.obs||"Otra dirección"):p.nombre):`Volver a ${escH(ex.fin)}`}</strong>
+          <span>${p?_resumenParada(p):"Hiciste todas las paradas: escaneá el QR al volver"}</span></div>
+        <span class="sig-ver">${abierto?"Ocultar recorrido ▲":"Ver recorrido ▼"}</span>
+      </div>
+      ${p?avisoParada(p,a):""}
+      ${abierto?`<div class="guia-pasos" style="margin-top:10px">
+        <div class="guia-paso hecho"><i>✓</i><span>${escH(ex.inicio)} · salida</span></div>
+        ${g.pasos.map(x=>`<div class="guia-paso ${x.hecho?"hecho":x===p?"sig":""}"><i>${x.hecho?"✓":x===p?"→":x.repetida?"↻":x.libre||esOtraDireccion(x.nombre)?"📍":""}</i>
+          <span><b>${escH(x.libre?(x.obs||"Otra dirección"):x.nombre)}</b>${x.repetida?" (otra vez)":""}<small>${_resumenParada(x)}</small></span></div>`).join("")}
+        <div class="guia-paso"><i></i><span>Vuelta a ${escH(ex.fin)}</span></div></div>`:""}
+    </div>`;
+  } else {
+    sig=`<div class="card sig-card sin"><strong>Sin recorrido</strong><span>Escaneá el QR de Fábrica y elegí tu recorrido. Si ya saliste, escaneá el de la sucursal donde estás.</span></div>`;
+  }
+  const fila=(r,acc)=>`<div class="rs-it">
+      <div class="rs-info"><span class="mono">${escH(r.id)}</span>${r.tipoPedido==="bolsin"?` <span class="sk-chip amber">🎒 bolsín</span>`:""}
+        <strong>${escH(r.descripcion||"")}</strong><small>${escH(origenLabel(r))} → ${escH(esDestinoOtraDireccion(r)?(direccionDe(r,"destino")||r.destino):r.destino||"")}</small></div>
+      <div class="rs-acc">${acc}</div></div>`;
+  const tomar = Object.keys(porLugar).length ? `<div class="rs-sec"><div class="rs-tit">📥 Para tomar <span class="tab-n">${paraTomar.length}</span></div>
+      ${Object.entries(porLugar).map(([l,rs])=>`<div class="rs-lugar">${escH(l)}</div>${rs.map(r=>fila(r, esOrigenOtraDireccion(r)
+          ? `${botonVer(r)}<button class="btn btn-teal btn-sm" onclick="openTomarTransferencia('${escH(r.id)}')">Tomar</button>`
+          : `${botonVer(r)}<span class="rs-nota">te lo entregan con tu DNI</span>`)).join("")}`).join("")}</div>` : "";
+  const rec=_reclamosRep();
+  const lleva = `<div class="rs-sec"><div class="rs-tit">📦 Lo que llevás <span class="tab-n">${trans.length+devs.length}</span></div>
+      ${trans.length||devs.length ? "" : `<p class="rs-vacio">No llevás nada a tu nombre.</p>`}
+      ${trans.map(r=>fila(r, `${botonVer(r)}<button class="btn btn-ghost btn-sm" onclick="abrirDiferencia('t','${escH(r.id)}')">📝 Diferencia</button>${esDestinoOtraDireccion(r)?`<button class="btn btn-success btn-sm" onclick="openConfirmarEntrega('${escH(r.id)}')">✅ Entregado</button>`:""}${rec.includes(`t:${r.id}`)?`<span class="atn-rec">⚠️ avisaste</span>`:""}`)).join("")}
+      ${devs.map(d=>`<div class="rs-it"><div class="rs-info"><span class="mono" style="color:var(--purple)">Dev. ${escH(String(d.id))}</span><strong>Devolución ${escH(d.tipoDevolucion||"")}</strong><small>${escH(d.sucursal||"")} → Fábrica</small></div>
+        <div class="rs-acc"><button class="btn btn-ghost btn-sm" onclick="abrirDiferencia('dev','${escH(String(d.id))}')">📝 Diferencia</button>${rec.includes(`dev:${d.id}`)?`<span class="atn-rec">⚠️ avisaste</span>`:""}</div></div>`).join("")}
+    </div>`;
+  return `<div class="rs" style="animation:fadeUp .3s ease">${botonEscanear()}${sig}${tomar}${lleva}</div>`;
+}
+// ── 📝 Diferencia: llegó otra cantidad, dañado, no lo tengo, no lo pude entregar…
+const MOTIVOS_DIF=["Llegó otra cantidad","Está dañado o incompleto","No es lo que dice","No lo tengo","No lo pude entregar","Otro"];
+function abrirDiferencia(tipo,id){ S.dif={tipo, id, motivo:"", cant:"", nota:"", err:""}; S.modal="diferencia"; render(); }
+function renderDiferenciaModal(){
+  const d=S.dif||{}, esDev=d.tipo==="dev";
+  const r=esDev?(S.devoluciones||[]).find(x=>String(x.id)===String(d.id)):S.requests.find(x=>x.id===d.id); if(!r) return "";
+  const motivos=MOTIVOS_DIF.filter(m=>!esDev || ["No lo tengo","Está dañado o incompleto","Otro"].includes(m));
+  return `<p style="font-size:14px;margin:0 0 10px"><span class="mono" style="color:var(--blue)">${esDev?"Dev. ":""}${escH(String(d.id))}</span> · ${escH(esDev?`Devolución ${r.tipoDevolucion||""} de ${r.sucursal}`:`${r.descripcion||""} · ${r.cantidad||""} ${r.unidad||""}`)}</p>
+    <div class="dif-mot">${motivos.map(m=>`<button class="btn btn-sm ${d.motivo===m?"btn-teal":"btn-ghost"}" onclick="S.dif.motivo='${m}';S.dif.err='';render()">${m}</button>`).join("")}</div>
+    ${d.motivo==="Llegó otra cantidad"?`<div class="field" style="margin-top:10px"><label>¿Cuánto llegó?</label><input id="dif-cant" class="inp" type="number" inputmode="decimal" placeholder="Decía ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}" value="${escH(d.cant)}" oninput="S.dif.cant=this.value"/></div>`:""}
+    ${d.motivo && !["No lo tengo","No lo pude entregar"].includes(d.motivo)?`<div class="field" style="margin-top:10px"><label>Comentario <span style="color:var(--faint);font-weight:400">(opcional)</span></label><input class="inp" value="${escH(d.nota)}" oninput="S.dif.nota=this.value"/></div>`:""}
+    ${d.err?`<div class="err-msg" style="display:block">${escH(d.err)}</div>`:""}
+    <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-success btn-md" onclick="guardarDiferencia()">Guardar</button></div>`;
+}
+async function guardarDiferencia(){
+  const d=S.dif; if(!d) return;
+  if(!d.motivo){ d.err="Elegí qué pasa."; render(); return; }
+  const esDev=d.tipo==="dev", yo=S.miIdentidadRep||{nombre:S.user?.nombre||""};
+  if(d.motivo==="No lo tengo"){ S.modal=null; return noLoTengo(d.tipo, d.id, true); }
+  if(d.motivo==="No lo pude entregar"){ S.modal=null; render(); return openNoEntrega(d.id); }
+  const cant=_limpiarBusqueda(d.cant||$("dif-cant")?.value||"");
+  if(d.motivo==="Llegó otra cantidad" && !cant){ d.err="Escribí cuánto llegó."; render(); return; }
+  const r=esDev?(S.devoluciones||[]).find(x=>String(x.id)===String(d.id)):S.requests.find(x=>x.id===d.id); if(!r) return;
+  const hora=new Date().toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const texto=`📝 ${yo.nombre} (${hora}): ${d.motivo}${cant?`: llegaron ${cant}${esDev?"":` (decía ${r.cantidad} ${r.unidad||""})`}`:""}${d.nota.trim()?` — ${d.nota.trim()}`:""}`;
+  if(!esDev){
+    const ch={observaciones:[String(r.observaciones||"").trim(), texto].filter(Boolean).join("\n"), updatedAt:now()};
+    S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+    sheetsUpdate(r.id, ch);
+  }
+  const origen=esDev?r.sucursal:origenLabel(r);
+  crearNotificacion("LOGISTICA", `📝 Diferencia en ${esDev?"la devolución ":""}${d.id}: ${texto.replace(/^📝 /,"")}`, esDev?null:d.id);
+  if(origen && esSucursalReal(origen)) crearNotificacion(origen, `📝 Diferencia en ${esDev?"la devolución ":""}${d.id}: ${texto.replace(/^📝 /,"")}`, esDev?null:d.id);
+  S.modal=null; S.dif=null; toast("📝 Diferencia registrada y avisada a Logística"); render();
+}
 function renderRepartidorConGuia(){
-  const html=renderRepartidor();
-  if(S.estoyEn || !recorridoDelRepartidor()) return html;
-  return `<div style="margin-bottom:10px">${botonEscanear()}</div>${aTuNombreHtml(true)}${guiaRecorridoHtml()}${html}`;
+  if(S.estoyEn) return renderRepartidor();   // la pantalla del QR sigue igual
+  return renderRepartidorSimple();
 }
 // ═══ Repartidor: lo que figura A SU NOMBRE (para que no le asignen cosas que no tiene) ═══
 function cosasATuNombre(){
@@ -10642,14 +10748,14 @@ function cosasATuNombre(){
 }
 const _reclamosRep = () => { try{ return JSON.parse(localStorage.getItem("tl_reclamos_rep")||"[]"); }catch(e){ return []; } };
 // "No lo tengo": avisa a Logística y a quien se la entregó, para que lo revisen
-async function noLoTengo(tipo, id){
+async function noLoTengo(tipo, id, sinConfirmar){
   const yo=S.miIdentidadRep; if(!yo) return;
   const esDev=tipo==="dev";
   const r = esDev ? (S.devoluciones||[]).find(d=>String(d.id)===String(id)) : S.requests.find(x=>x.id===id); if(!r) return;
   const origen = esDev ? r.sucursal : origenLabel(r);
   const desc = esDev ? `la devolución ${id} de ${r.sucursal}` : `la ${id} (${origen} → ${r.destino})`;
   const entrego = !esDev && r.nombreEntregoOrigen ? r.nombreEntregoOrigen : origen;
-  if(!confirm(`¿Avisar que no tenés ${desc}?\n\nFigura a tu nombre. Se le avisa a Logística${entrego?` y a ${entrego}`:""} para que lo revisen.`)) return;
+  if(!sinConfirmar && !confirm(`¿Avisar que no tenés ${desc}?\n\nFigura a tu nombre. Se le avisa a Logística${entrego?` y a ${entrego}`:""} para que lo revisen.`)) return;
   crearNotificacion("LOGISTICA", `⚠️ ${yo.nombre} avisa que NO tiene ${desc}, que figura a su nombre${entrego?` (se la dio ${entrego})`:""}`, esDev?null:id);
   if(origen && esSucursalReal(origen)) crearNotificacion(origen, `⚠️ ${yo.nombre} avisa que no tiene ${desc}: revisá a quién se la entregaste`, esDev?null:id);
   try{ const k="tl_reclamos_rep", l=_reclamosRep(); l.push(`${tipo}:${id}`); localStorage.setItem(k, JSON.stringify(l.slice(-200))); }catch(e){}
@@ -11976,6 +12082,7 @@ function renderModals(){
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
   if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="diferencia")    return wrapModal("m","📝 Avisar una diferencia",renderDiferenciaModal(),460);
   if(S.modal==="verItem")       return wrapModal("m","📦 Qué es y a dónde va",renderVerItemModal(),460);
   if(S.modal==="scanQR")        return wrapModal("m","📷 Escanear QR",renderScanModal(),440);
   if(S.modal==="cerrarSol")     return wrapModal("m","🗂️ Cerrar solicitud",renderCerrarSolModal(),460);
