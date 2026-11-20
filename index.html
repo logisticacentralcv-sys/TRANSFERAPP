@@ -1202,7 +1202,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261119-0933";
+const APP_VERSION = "20261120-0850";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -7947,13 +7947,8 @@ async function entregaRepSeguir(){
   try{ const { data } = await sb.from("recorridos_armados").select("*").eq("estado","EN_CURSO").eq("dni_rep",dni).limit(1); arm=data&&data[0]?toCamelRow(data[0]):null; }catch(e){}
   try{ const { data } = await sb.from("flota_viajes").select("id,recorrido,dni_rep1,dni_rep2").eq("estado","ACTIVO").or(`dni_rep1.eq.${dni},dni_rep2.eq.${dni}`).limit(1); viajeAct=data&&data[0]||null; }catch(e){}
   if(!arm && viajeAct){ try{ const { data } = await sb.from("recorridos_armados").select("*").eq("id_viaje",viajeAct.id).eq("estado","EN_CURSO").limit(1); arm=data&&data[0]?toCamelRow(data[0]):null; }catch(e){} }   // va de acompañante
-  if(!arm && !viajeAct){
-    d.loading=false;
-    d.err = d.modo==="fabrica" ? `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR de Fábrica y elija su recorrido; después le entregás.`
-          : d.modo==="deposito" ? `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR del Depósito y elija su recorrido; después le entregás.`
-                               : `${rep.nombre} no tiene un recorrido iniciado. Que escanee el QR de la sucursal y elija en qué recorrido está; después le entregás.`;
-    render(); return;
-  }
+  // sin recorrido iniciado igual se le puede entregar: queda a su nombre y lo ve en "A tu nombre"
+  d.sinRecorrido = !arm && !viajeAct;
   if(S.armados===undefined || S.armados===null) await cargarArmados().catch(()=>{});
   d.arm=arm;
   const c=_candidatosEntrega(d);
@@ -7987,6 +7982,7 @@ function renderEntregaRepModal(){
   ${c.trans.length>6?`<input class="inp" style="margin-bottom:8px" type="search" placeholder="🔎 Buscar N°, etiqueta, destino…" value="${escH(d.q||"")}" oninput="S.entregaRep.q=this.value;render()" autocomplete="off"/>`:""}
   <div class="er-lista">
     ${mias.length?`<div class="ar-mini">De su recorrido</div>${mias.map(fila).join("")}`:""}
+    ${d.sinRecorrido?`<div class="ar-aviso-fab" style="margin-bottom:8px">⚠️ ${escH(d.nombre||"El repartidor")} no tiene un recorrido iniciado: igual queda a su nombre y lo ve en su app.</div>`:""}
     ${otras.length?`<div class="ar-mini">${d.modo==="fabrica"?"Otras listas en Fábrica":"Sin recorrido asignado (si las marcás, se suman al suyo)"}</div>${otras.map(fila).join("")}`:""}
     ${c.devs.length?`<div class="ar-mini">Devoluciones</div>${c.devs.map(filaDev).join("")}`:""}
     ${!c.trans.length&&!c.devs.length?`<div class="pk-vacio">No hay nada para entregar.</div>`:""}
@@ -8060,12 +8056,16 @@ async function barrerEnTransitoColgado(){
     const { data:vjs } = await sb.from("flota_viajes").select("id,dni_rep1,dni_rep2").eq("estado","ACTIVO");
     const activos=new Set((vjs||[]).flatMap(v=>[_dniLimpio(v.dni_rep1),_dniLimpio(v.dni_rep2)]).filter(Boolean));
     const ids=[...new Set(filas.map(r=>r.armadoId).filter(Boolean))];
-    const estArm={}; if(ids.length){ const { data:ar } = await sb.from("recorridos_armados").select("id,estado,codigo,recorrido,id_viaje").in("id",ids); (ar||[]).forEach(a=>estArm[a.id]=a); }
-    const viejo=Date.now()-6*3600e3;
+    const estArm={}; if(ids.length){ const { data:ar } = await sb.from("recorridos_armados").select("id,estado,codigo,recorrido,id_viaje,cerrado_at").in("id",ids); (ar||[]).forEach(a=>estArm[a.id]=a); }
+    const viejo=Date.now()-6*3600e3, tres=Date.now()-3*3600e3;
     const colgadas=filas.filter(r=>{
       const dni=(portadorSolicitud(r)||{}).dni||"";
       if(dni && activos.has(dni)) return false;                                   // lo tiene alguien que está en un recorrido ahora
       const a=r.armadoId && estArm[r.armadoId];
+      if(bolsinAFabrica(r)){                                                      // bolsines: 3 h después de terminado, al buzón
+        const fin = a ? (a.cerrado_at||"") : (r.updatedAt||r.createdAt||"");
+        return (!a || !["EN_CURSO","PREPARADO"].includes(a.estado)) && !!fin && new Date(fin).getTime() < tres;
+      }
       if(a) return !["EN_CURSO","PREPARADO"].includes(a.estado);                  // su recorrido ya se cerró
       return new Date(r.updatedAt||r.createdAt||0).getTime() < viejo;             // sin recorrido y hace más de 6 h
     });
@@ -8175,7 +8175,8 @@ async function dejarEnFabricaLoQueTengo(info, auto){
       const quien=(portadorSolicitud(r)||{}).dni||dnis[0];
       let ch, falta=null;
       if(bolsinAFabrica(r)){
-        if(!auto && !info.cerrando) continue;   // al dejar en Fábrica sigue con él; al cerrar el recorrido va al buzón (con falta)
+        // siguen con él para que los deje en el buzón de Tesorería; si a las 3 h de terminado no los dejó, van solos (barrido)
+        if(info.bolsinesQuedan || (!auto && !info.cerrando)) continue;
         ch={estado:"En el buzón", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, updatedAt:ts}; falta="No dejó el bolsín en el buzón: se dio por dejado al cerrarse el recorrido";
       } else if(_esLugarFabrica(r.destino)){
         ch={estado:"Entregada", deliveredAt:ts, nombreQuienEntrego:nombreDe(quien), dniEntrega:quien, nombreQuienRecibio:"Fábrica", updatedAt:ts};
@@ -10050,14 +10051,14 @@ async function _terminarViaje(e, auto){
   // se cierra el recorrido del viaje (también si va de acompañante)
   await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id_viaje",v.id).eq("estado","EN_CURSO");
   const arm=e.armado || (S.armados||[]).find(x=>x.idViaje===v.id) || null;
-  return await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni, v.dni_rep1, v.dni_rep2], nombre:S.miIdentidadRep?.nombre||v.nombre_rep1, recorrido:v.recorrido, armadoId:arm?.id, idViaje:v.id, cerrando:true}, false);
+  return await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni, v.dni_rep1, v.dni_rep2], nombre:S.miIdentidadRep?.nombre||v.nombre_rep1, recorrido:v.recorrido, armadoId:arm?.id, idViaje:v.id, cerrando:true, bolsinesQuedan:true}, false);
 }
 // Volvió y no tiene nada encima: el recorrido se termina solo y se muestran los preparados para salir de nuevo
 async function _terminarSiNoQuedaNada(e){
   if(!e || !e.viaje || e.paradaFabrica) return false;
   // ¿le queda algo encima? (transferencias, bolsines para el buzón o devoluciones; sin romperse si algo se está cargando)
   const yo=_dniLimpio(S.miIdentidadRep?.dni);
-  const encima=(S.requests||[]).some(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===yo)
+  const encima=(S.requests||[]).some(r=>r.estado==="En tránsito" && !bolsinAFabrica(r) && (portadorSolicitud(r)||{}).dni===yo)   // los bolsines los deja después en el buzón
             || (S.devoluciones||[]).some(d=>d.estado==="En camino" && _dniLimpio(d.dniQuienLevanto)===yo);
   if(encima) return false;
   const cod=e.armado?codigoArmado(e.armado):e.viaje.recorrido;
@@ -10196,10 +10197,37 @@ async function cerrarArmadoForzado(a, manual){
     await sb.from("flota_viajes").update({estado:"FINALIZADO", cierre_automatico:!manual}).eq("id",v.id).eq("estado","ACTIVO");
     await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:"FABRICA", evento:manual?"CIERRE MANUAL LOGISTICA":"CIERRE AUTOMATICO",
       gps_obs:manual?`Lo finalizó ${quien}`:"Cerrado solo: pasó el día sin que escanearan al volver", recorrido:v.recorrido});
-    await dejarEnFabricaLoQueTengo({dnis:[v.dni_rep1,v.dni_rep2], nombre:v.nombre_rep1, recorrido:codigoArmado(a), armadoId:a.id, idViaje:v.id}, true);
+    await dejarEnFabricaLoQueTengo({dnis:[v.dni_rep1,v.dni_rep2], nombre:v.nombre_rep1, recorrido:codigoArmado(a), armadoId:a.id, idViaje:v.id, bolsinesQuedan:true}, true);
   }
   await sb.from("recorridos_armados").update({estado:manual?"CERRADO":"CERRADO_AUTO", cerrado_at:ahora, cierre_automatico:!manual}).eq("id",a.id).eq("estado","EN_CURSO");
   if(!manual) crearNotificacion("LOGISTICA", `🕛 ${codigoArmado(a)} quedó abierto de un día para otro (no escanearon al volver): se cerró solo`, null);
+}
+// ═══ Desasignar un recorrido tomado por error: vuelve a "preparado", sin repartidor, para que lo tome quien corresponde ═══
+async function desasignarArmado(id){
+  const a=armadoDe(id); if(!a || a.estado!=="EN_CURSO") return;
+  if(!confirm(`¿Desasignar ${codigoArmado(a)} de ${a.nombreRep||"el repartidor"}?\n\nVuelve a quedar preparado, sin repartidor, para que lo tome quien corresponde.`)) return;
+  const ahora=new Date().toISOString(), quien=identidadSesion()?.nombre||S.user?.nombre||"Logística";
+  try{
+    // lo que ya le entregaron de este recorrido: ¿vuelve a "Lista para retirar" o queda a su nombre?
+    const { data } = await sb.from("solicitudes").select("*").eq("armado_id",id).eq("estado","En tránsito");
+    const llevadas=toCamelRows(data||[]);
+    let devolver=false;
+    if(llevadas.length) devolver=confirm(`${a.nombreRep||"El repartidor"} tiene ${llevadas.length} transferencia${llevadas.length!==1?"s":""} de este recorrido a su nombre (${llevadas.map(r=>r.id).join(", ")}).\n\n¿Volverlas a "Lista para retirar" en su origen?\n(Aceptar: vuelven a estar listas · Cancelar: quedan a su nombre)`);
+    if(a.idViaje){
+      await sb.from("flota_viajes").update({estado:"FINALIZADO"}).eq("id",a.idViaje).eq("estado","ACTIVO");
+      await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:a.idViaje, sucursal:"FABRICA", evento:"RECORRIDO DESASIGNADO", gps_obs:`Lo desasignó ${quien}: lo había tomado ${a.nombreRep||"?"} por error`, recorrido:a.recorrido});
+    }
+    const { error } = await sb.from("recorridos_armados").update({estado:"PREPARADO", dni_rep:null, nombre_rep:null, tomado_at:null, id_viaje:null, estimacion:null}).eq("id",id).eq("estado","EN_CURSO");
+    if(error) throw error;
+    if(devolver) for(const r of llevadas){
+      const ch={estado:"Lista para retirar", nombreQuienLevanto:"", dniRepartidor:"", nombreEntregoOrigen:"", updatedAt:now()};
+      const { error:e2 } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+      if(!e2) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+    }
+    if(a.dniRep) crearNotificacion(`REP:${a.dniRep}`, `↩️ ${codigoArmado(a)} ya no está a tu nombre (lo desasignó Logística)`, null);
+    await cargarArmados();
+    toast(`↩️ ${codigoArmado(a)} quedó preparado, sin repartidor`); render();
+  }catch(e){ console.warn("Desasignar:",e); toast("⚠️ No se pudo desasignar","warn"); }
 }
 async function finalizarArmado(id){
   const a=armadoDe(id); if(!a) return;
@@ -11184,7 +11212,7 @@ function renderArmarDelDia(){
       <div class="ar-head">
         <div><div class="ar-rec">${escH(codigoArmado(a))} <span class="badge" style="color:${est[a.estado][1]};border-color:${est[a.estado][1]}55">${est[a.estado][0]}</span></div>
           <div class="ar-sub">${mias.length} transferencia${mias.length!==1?"s":""} · armado por ${escH(a.creadoPor||"—")}${a.nombreRep?` · lo lleva <strong>${escH(a.nombreRep)}</strong>${a.tomadoAt?` desde las ${hm(a.tomadoAt)}`:""}`:""}</div></div>
-        <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button><button class="btn btn-danger btn-sm" onclick="abrirBorrarArmado('${escH(a.id)}')" title="Borrar un recorrido de prueba">🗑️</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}${a.estado==="EN_CURSO"?`<button class="btn btn-warn btn-sm" onclick="finalizarArmado('${escH(a.id)}')">🏁 Finalizar y archivar</button>`:""}</div>
+        <div style="display:flex;gap:6px">${admin?`<button class="btn btn-ghost btn-sm" onclick="abrirEditarArmado('${escH(a.id)}')">✏️ Corregir</button><button class="btn btn-danger btn-sm" onclick="abrirBorrarArmado('${escH(a.id)}')" title="Borrar un recorrido de prueba">🗑️</button>`:""}${a.estado==="PREPARADO"?`<button class="btn btn-ghost btn-sm" onclick="cancelarArmado('${escH(a.id)}')">Dar de baja</button>`:""}${a.estado==="EN_CURSO"?`<button class="btn btn-ghost btn-sm" onclick="desasignarArmado('${escH(a.id)}')" title="Lo tomó la persona equivocada: vuelve a quedar preparado">↩️ Desasignar</button><button class="btn btn-warn btn-sm" onclick="finalizarArmado('${escH(a.id)}')">🏁 Finalizar y archivar</button>`:""}</div>
       </div>
       ${editable?(()=>{ const ex=extremosDe(a), pars=paradasDeArmado(a);
         const puntos=puntosDisponiblesRecorrido().filter(x=>!pars.some(y=>normNotif(y)===normNotif(x)));
@@ -11375,7 +11403,8 @@ function renderElegirRecorridoEnCamino(e, pagina){
         :`<p style="color:var(--muted);font-size:14px">No hay recorridos preparados sin tomar.</p>`}
       ${curso.length?`<div class="qr-iniciar-tit" style="margin-top:14px;font-size:15px">👥 ¿Vas con alguien que ya salió?</div>
         ${curso.map(x=>`<button class="btn btn-ghost btn-md btn-full" style="margin-bottom:6px" onclick="qrUnirmeArmado('${escH(x.id)}')" ${e.loading?"disabled":""}>Voy con ${escH(x.nombreRep||"")} · ${escH(codigoArmado(x))}</button>`).join("")}`:""}
-      ${!prep.length&&!curso.length?`<p style="color:#fbbf24;font-size:14px">Avisale a Logística que arme tu recorrido y volvé a escanear.</p>`:""}
+      ${!prep.length&&!curso.length?`<p style="color:#fbbf24;font-size:14px">Avisale a Logística que arme tu recorrido.</p>`:""}
+      <button class="btn btn-ghost btn-md btn-full" style="margin-top:10px" onclick="S.estoyEn.estado='ok';S.estoyEn.sinRecorrido=true;render()">Seguir sin recorrido (entregar o retirar lo que tengo a mi nombre)</button>
       ${e.err?`<div class="err-msg" style="display:block;margin-top:10px">${escH(e.err)}</div>`:""}
     </div>`);
 }
