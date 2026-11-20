@@ -1179,24 +1179,29 @@ tr[onclick]:active td{background:var(--s3)}
 .atn-no{color:#fca5a5}.atn-rec{font-size:12px;color:#fbbf24;white-space:nowrap}
 
 
-.rs{display:flex;flex-direction:column;gap:12px;max-width:760px;margin:0 auto}
+.rs{display:flex;flex-direction:column;gap:12px;width:100%;max-width:900px;margin:0 auto}
 .sig-card{padding:14px 16px;border-color:#2de0c466}
 .sig-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;cursor:pointer}
-.sig-top small{display:block;font-size:12px;color:var(--muted)}.sig-top strong{display:block;font-size:22px;color:var(--teal);margin:2px 0}
+.sig-top small{display:block;font-size:12px;color:var(--muted)}.sig-top strong{display:block;font-size:clamp(19px,5.5vw,24px);color:var(--teal);margin:2px 0;overflow-wrap:anywhere}
 .sig-top span{font-size:13.5px;color:var(--muted)}
 .sig-ver{font-size:12.5px;color:var(--teal);white-space:nowrap;font-weight:600}
 .sig-card .guia-aviso{margin:10px 0 0}
 .sig-card.sin strong{display:block;font-size:16px}.sig-card.sin span{font-size:13px;color:var(--muted)}
-.rs-sec{background:var(--s1);border:1px solid var(--border);border-radius:14px;padding:12px 14px}
-.rs-tit{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;margin-bottom:4px}
-.rs-lugar{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin:10px 0 2px}
-.rs-it{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
-.rs-info{min-width:0;font-size:13.5px}.rs-info .mono{color:var(--blue);font-size:12px;margin-right:4px}.rs-info strong{font-weight:600}
-.rs-info small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
-.rs-acc{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:none;max-width:55%}
-.rs-nota{font-size:11.5px;color:var(--faint)}.rs-vacio{font-size:13px;color:var(--muted);margin:6px 0}
+.rs-sec{background:var(--s1);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+.rs-tit{display:flex;align-items:center;gap:8px;width:100%;background:none;border:0;color:var(--text);font-family:var(--font);font-weight:700;font-size:15.5px;padding:14px 16px;cursor:pointer;text-align:left;min-height:52px}
+.rs-chev{margin-left:auto;color:var(--muted);font-size:13px}
+.rs-cuerpo{padding:0 12px 12px}
+.rs-lugar{font-size:14px;font-weight:700;color:var(--text);margin:10px 4px 8px;overflow-wrap:anywhere}
+.rs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,270px),1fr));gap:10px}
+.rs-card{background:var(--s2);border:1px solid var(--border2);border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:3px;cursor:pointer;min-width:0;transition:border-color .15s}
+.rs-card:active,.rs-card:hover{border-color:var(--teal)}
+.rs-card-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rs-card-top .mono{color:var(--blue);font-size:12.5px}
+.rs-card-desc{font-weight:700;font-size:15px;overflow-wrap:anywhere}
+.rs-card-ruta{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
+.rs-card-acc{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;cursor:default}
+.rs-card-acc .btn{flex:1 1 auto;min-height:42px;justify-content:center}
+.rs-vacio{font-size:13px;color:var(--muted);margin:4px 4px 6px}
 .dif-mot{display:flex;flex-wrap:wrap;gap:6px}
-@media(max-width:560px){ .rs-it{flex-direction:column;align-items:flex-start} .rs-acc{max-width:100%;justify-content:flex-start} }
 
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
@@ -1222,7 +1227,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261120-1222";
+const APP_VERSION = "20261120-1233";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10683,25 +10688,40 @@ function renderRepartidorSimple(){
   } else {
     sig=`<div class="card sig-card sin"><strong>Sin recorrido</strong><span>Escaneá el QR de Fábrica y elegí tu recorrido. Si ya saliste, escaneá el de la sucursal donde estás.</span></div>`;
   }
-  const fila=(r,acc)=>`<div class="rs-it">
-      <div class="rs-info"><span class="mono">${escH(r.id)}</span>${r.tipoPedido==="bolsin"?` <span class="sk-chip amber">🎒 bolsín</span>`:""}
-        <strong>${escH(r.descripcion||"")}</strong><small>${escH(origenLabel(r))} → ${escH(esDestinoOtraDireccion(r)?(direccionDe(r,"destino")||r.destino):r.destino||"")}</small></div>
-      <div class="rs-acc">${acc}</div></div>`;
-  const tomar = Object.keys(porLugar).length ? `<div class="rs-sec"><div class="rs-tit">📥 Para tomar <span class="tab-n">${paraTomar.length}</span></div>
-      ${Object.entries(porLugar).map(([l,rs])=>`<div class="rs-lugar">${escH(l)}</div>${rs.map(r=>fila(r, esOrigenOtraDireccion(r)
-          ? `${botonVer(r)}<button class="btn btn-teal btn-sm" onclick="openTomarTransferencia('${escH(r.id)}')">Tomar</button>`
-          : `${botonVer(r)}<span class="rs-nota">te lo entregan con tu DNI</span>`)).join("")}`).join("")}</div>` : "";
-  const rec=_reclamosRep();
-  const lleva = `<div class="rs-sec"><div class="rs-tit">📦 Lo que llevás <span class="tab-n">${trans.length+devs.length}</span></div>
-      ${trans.length||devs.length ? "" : `<p class="rs-vacio">No llevás nada a tu nombre.</p>`}
-      ${trans.map(r=>fila(r, `${botonVer(r)}<button class="btn btn-ghost btn-sm" onclick="abrirDiferencia('t','${escH(r.id)}')">📝 Diferencia</button>${esDestinoOtraDireccion(r)?`<button class="btn btn-success btn-sm" onclick="openConfirmarEntrega('${escH(r.id)}')">✅ Entregado</button>`:""}${rec.includes(`t:${r.id}`)?`<span class="atn-rec">⚠️ avisaste</span>`:""}`)).join("")}
-      ${devs.map(d=>`<div class="rs-it"><div class="rs-info"><span class="mono" style="color:var(--purple)">Dev. ${escH(String(d.id))}</span><strong>Devolución ${escH(d.tipoDevolucion||"")}</strong><small>${escH(d.sucursal||"")} → Fábrica</small></div>
-        <div class="rs-acc"><button class="btn btn-ghost btn-sm" onclick="abrirDiferencia('dev','${escH(String(d.id))}')">📝 Diferencia</button>${rec.includes(`dev:${d.id}`)?`<span class="atn-rec">⚠️ avisaste</span>`:""}</div></div>`).join("")}
+  // Cada cosa es una TARJETA: tocándola se ve qué es y a dónde va (sin botón "Ver")
+  const tarjeta=(r,acc)=>`<div class="rs-card" role="button" tabindex="0" onclick="verItem('${escH(r.id)}')">
+      <div class="rs-card-top"><span class="mono">${escH(r.id)}</span>${r.tipoPedido==="bolsin"?`<span class="sk-chip amber">🎒 bolsín</span>`:""}</div>
+      <div class="rs-card-desc">${escH(r.descripcion||"")}</div>
+      <div class="rs-card-ruta">${escH(origenLabel(r))} → ${escH(esDestinoOtraDireccion(r)?(direccionDe(r,"destino")||r.destino):r.destino||"")}</div>
+      ${acc?`<div class="rs-card-acc" onclick="event.stopPropagation()">${acc}</div>`:""}
     </div>`;
+  const ab=k=>{ try{ if(!S.rsAbierto) S.rsAbierto=JSON.parse(localStorage.getItem("tl_rs_abierto")||"{}"); }catch(e){ S.rsAbierto={}; } return !!S.rsAbierto[k]; };
+  const seccion=(k,tit,n,cuerpo)=>`<div class="rs-sec ${ab(k)?"abierta":""}">
+      <button class="rs-tit" onclick="toggleSeccionRep('${k}')">${tit} <span class="tab-n">${n}</span><span class="rs-chev">${ab(k)?"▲":"▼"}</span></button>
+      ${ab(k)?`<div class="rs-cuerpo">${cuerpo}</div>`:""}
+    </div>`;
+  const tomar = Object.keys(porLugar).length ? seccion("tomar","📥 Para tomar",paraTomar.length,
+      Object.entries(porLugar).map(([l,rs])=>`<div class="rs-lugar">${escH(l)}</div><div class="rs-grid">${rs.map(r=>tarjeta(r, esOrigenOtraDireccion(r)
+          ? `<button class="btn btn-teal btn-md" onclick="openTomarTransferencia('${escH(r.id)}')">Tomar</button>` : "")).join("")}</div>`).join("")) : "";
+  const rec=_reclamosRep();
+  const lleva = seccion("lleva","📦 Lo que llevás",trans.length+devs.length,
+      (trans.length||devs.length) ? `<div class="rs-grid">
+        ${trans.map(r=>tarjeta(r, `<button class="btn btn-ghost btn-md" onclick="abrirDiferencia('t','${escH(r.id)}')">📝 Diferencia</button>${esDestinoOtraDireccion(r)?`<button class="btn btn-success btn-md" onclick="openConfirmarEntrega('${escH(r.id)}')">✅ Entregado</button>`:""}${rec.includes(`t:${r.id}`)?`<span class="atn-rec">⚠️ avisaste</span>`:""}`)).join("")}
+        ${devs.map(d=>`<div class="rs-card">
+          <div class="rs-card-top"><span class="mono" style="color:var(--purple)">Dev. ${escH(String(d.id))}</span></div>
+          <div class="rs-card-desc">Devolución ${escH(d.tipoDevolucion||"")}</div>
+          <div class="rs-card-ruta">${escH(d.sucursal||"")} → Fábrica</div>
+          <div class="rs-card-acc"><button class="btn btn-ghost btn-md" onclick="abrirDiferencia('dev','${escH(String(d.id))}')">📝 Diferencia</button>${rec.includes(`dev:${d.id}`)?`<span class="atn-rec">⚠️ avisaste</span>`:""}</div>
+        </div>`).join("")}</div>` : `<p class="rs-vacio">No llevás nada a tu nombre.</p>`);
   return `<div class="rs" style="animation:fadeUp .3s ease">${botonEscanear()}${sig}${tomar}${lleva}</div>`;
 }
 // ── 📝 Diferencia: llegó otra cantidad, dañado, no lo tengo, no lo pude entregar…
 const MOTIVOS_DIF=["Llegó otra cantidad","Está dañado o incompleto","No es lo que dice","No lo tengo","No lo pude entregar","Otro"];
+function toggleSeccionRep(k){
+  S.rsAbierto={...(S.rsAbierto||{}), [k]:!(S.rsAbierto||{})[k]};
+  try{ localStorage.setItem("tl_rs_abierto", JSON.stringify(S.rsAbierto)); }catch(e){}
+  render();
+}
 function abrirDiferencia(tipo,id){ S.dif={tipo, id, motivo:"", cant:"", nota:"", err:""}; S.modal="diferencia"; render(); }
 function renderDiferenciaModal(){
   const d=S.dif||{}, esDev=d.tipo==="dev";
