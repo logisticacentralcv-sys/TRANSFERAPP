@@ -1230,6 +1230,16 @@ tr[onclick]:active td{background:var(--s3)}
 .dif-lista{display:flex;flex-direction:column;gap:6px;padding:4px 0}
 .dif-it{background:var(--s2);border-radius:10px;padding:8px 10px;font-size:13px}
 
+
+.adm-chips{display:flex;flex-wrap:wrap;gap:6px}
+.adm-chip{display:inline-flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--border2);border-radius:999px;padding:5px 6px 5px 12px;font-size:13px}
+.adm-chip small{color:var(--faint);font-size:11.5px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.adm-chip button{background:none;border:0;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 6px;border-radius:999px}.adm-chip button:hover{color:#f87171;background:#f0525218}
+.retiro-nota{margin-top:6px;font-size:12.5px;color:#7dd3fc;background:#4f9eff14;border:1px solid #4f9eff40;border-radius:8px;padding:6px 10px}
+.retiro-chip{color:#7dd3fc;border-color:#4f9eff66;background:#4f9eff14}
+.qr-acomp-card{padding:14px 16px;margin-bottom:12px;border-color:#2de0c466}
+.qr-acomp-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.qr-acomp-btns .btn{flex:1 1 140px;justify-content:center;min-height:46px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1254,7 +1264,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261124-1004";
+const APP_VERSION = "20261124-1013";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1861,7 +1871,8 @@ function estadoBadges(r){
   // "Entregada" que no pasó un repartidor sino una persona a mano: se aclara en todas las listas
   const manual = (r.estado==="Entregada" && r.cambioManualEstado==="Entregada")
     ? ` <span class="badge" style="color:var(--amber);background:#f5a62314;border-color:#f5a62355" title="Cambiado a Entregada por ${escH(r.cambioManualPor||"—")}">✎ por ${escH(String(r.cambioManualPor||"—").split(",")[0].split(" ")[0])}</span>` : "";
-  return badge(label,S_COLOR[r.estado]) + manual + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"");
+  const _retiro = r && r.tipoPedido!=="bolsin" && r.tipoPedido!=="devolucion" && esOrigenOtraDireccion(r) ? `<span class="sk-chip retiro-chip">📦 Retiro</span>` : "";
+  return badge(label,S_COLOR[r.estado]) + manual + (esRepro?` ${badge("🔁 Reprogramada","#ff8c6b")}`:"")+_retiro;
 }
 function escH(s){ return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 function toast(msg,type="success"){
@@ -7189,6 +7200,56 @@ async function guardarCodigoRep(dni){
   f[dni]={modo:"codigo", hash:h, at:new Date().toISOString()};
   S.firmaEdit=null; guardarFirmasRep(f, "✅ Código guardado: avisale al repartidor");
 }
+// ═══ Admin: destinos (solo lo que existe: sucursales, Fábrica, Depósito…) y direcciones habituales de retiro ═══
+async function agregarDestinoAdmin(){
+  const n=($("adm-dest-nuevo")?.value||"").trim(); if(!n) return;
+  if((S.destinos||[]).some(x=>normNotif(x)===normNotif(n))){ toast("Ese destino ya está","warn"); return; }
+  const { error } = await sb.from("destinos").insert({nombre:n, activo:"si"});
+  if(error){ toast("⚠️ No se pudo agregar","warn"); return; }
+  S.destinos=[...(S.destinos||[]), n]; toast(`✅ Destino "${n}" agregado`); render();
+}
+async function quitarDestinoAdmin(n){
+  if(!confirm(`¿Sacar "${n}" de los destinos?\n\nNo se borra nada de lo ya cargado; solo deja de aparecer para elegir.`)) return;
+  const { error } = await sb.from("destinos").update({activo:"no"}).eq("nombre",n);
+  if(error){ toast("⚠️ No se pudo sacar","warn"); return; }
+  S.destinos=(S.destinos||[]).filter(x=>x!==n); toast(`"${n}" ya no aparece como destino`); render();
+}
+async function agregarDireccionHabitualAdmin(){
+  const nombre=($("adm-dir-nombre")?.value||"").trim(), direccion=($("adm-dir-calle")?.value||"").trim();
+  if(!nombre||!direccion){ S.admDirMsg="Escribí un nombre corto y la dirección."; render(); return; }
+  S.admDirMsg="Buscando la dirección y calculando los tiempos…"; render();
+  try{
+    const res=await fetch("/api/agregar-punto-matriz",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nombre,direccion})});
+    const j=await res.json().catch(()=>({}));
+    if(!res.ok||j.error) throw new Error(j.error||"No se encontró");
+    S.flotaDirecciones=[...(S.flotaDirecciones||[]).filter(x=>x.nombre!==(j.punto||nombre)), {nombre:j.punto||nombre, direccion:j.encontrada||direccion, es_original:false}];
+    S.admDirMsg=`✅ "${j.punto||nombre}" agregada: ${j.encontrada||direccion}`;
+  }catch(e){ S.admDirMsg="⚠️ "+e.message; }
+  render();
+}
+async function quitarDireccionHabitualAdmin(n){
+  if(!confirm(`¿Quitar la dirección "${n}"?\n\nDeja de aparecer para elegir; lo ya cargado no cambia.`)) return;
+  await sb.from("flota_matriz_tiempos").delete().eq("origen",n);
+  await sb.from("flota_matriz_tiempos").delete().eq("destino",n);
+  const { error } = await sb.from("flota_direcciones").delete().eq("nombre",n);
+  if(error){ toast("⚠️ No se pudo quitar","warn"); return; }
+  S.flotaDirecciones=(S.flotaDirecciones||[]).filter(x=>x.nombre!==n); toast(`"${n}" quitada`); render();
+}
+function renderCardDestinosAdmin(){
+  if(!S.flotaDirecciones && !S._dirsPedidasAdm){ S._dirsPedidasAdm=true; cargarDireccionesGuardadas().then(()=>render()); }
+  const dests=(S.destinos||[]).filter(x=>!getSucursales().some(s=>normNotif(s)===normNotif(x)));   // las sucursales se manejan aparte
+  return `<div class="card" style="padding:16px;margin-top:14px">
+    <div style="font-weight:700;font-size:15px">🎯 Destinos y direcciones de retiro</div>
+    <p style="font-size:13px;color:var(--muted);margin:4px 0 10px">Además de las sucursales, los únicos lugares son <strong>Fábrica</strong> y <strong>Depósito</strong>: las áreas (Compras, Administración, RRHH…) están en Fábrica. Sacá de acá lo que no corresponda y agregá lo que falte.</p>
+    <div class="adm-chips">${dests.map(n=>`<span class="adm-chip">${escH(n)}<button title="Sacar" onclick="quitarDestinoAdmin(decodeURIComponent('${encodeURIComponent(n)}'))">✕</button></span>`).join("")||`<span class="ar-sub">Sin destinos extra.</span>`}</div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="adm-dest-nuevo" class="inp" style="flex:1;min-width:180px" placeholder="Nuevo destino (ej: Depósito)"/><button class="btn btn-teal btn-sm" onclick="agregarDestinoAdmin()">+ Agregar destino</button></div>
+    <div style="font-weight:700;font-size:14px;margin-top:18px">📦 Direcciones habituales de retiro</div>
+    <p style="font-size:13px;color:var(--muted);margin:4px 0 10px">Proveedores, services, etc. Aparecen como <strong>origen</strong> al cargar una transferencia (es un retiro) y se ubican solas en el recorrido.</p>
+    <div class="adm-chips">${_dirsGuardadas().map(d=>`<span class="adm-chip" title="${escH(d.direccion||"")}">📍 ${escH(d.nombre)}<small>${escH(d.direccion||"")}</small><button title="Quitar" onclick="quitarDireccionHabitualAdmin(decodeURIComponent('${encodeURIComponent(d.nombre)}'))">✕</button></span>`).join("")||`<span class="ar-sub">Todavía no hay direcciones cargadas.</span>`}</div>
+    <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"><input id="adm-dir-nombre" class="inp" style="flex:1;min-width:150px" placeholder="Nombre corto (ej: Service Balanzas)"/><input id="adm-dir-calle" class="inp" style="flex:2;min-width:200px" placeholder="Dirección (ej: Av. Colón 1234, Mar del Plata)"/><button class="btn btn-teal btn-sm" onclick="agregarDireccionHabitualAdmin()">📍 Buscar y agregar</button></div>
+    ${S.admDirMsg?`<div style="font-size:12.5px;margin-top:6px">${escH(S.admDirMsg)}</div>`:""}
+  </div>`;
+}
 function renderCardFirmasRep(){
   const vistos=new Set(), reps=S.usuarios.filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no" && _dniLimpio(u.dni) && !vistos.has(_dniLimpio(u.dni)) && vistos.add(_dniLimpio(u.dni)))
     .sort((a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||"")));
@@ -7267,6 +7328,7 @@ function renderAdminConfig(){
       </div>
     </div>
   </div>
+  ${renderCardDestinosAdmin()}
   ${renderCardFirmasRep()}`;
 }
 
@@ -8169,7 +8231,7 @@ async function barrerEnTransitoColgado(){
     const activos=new Set((vjs||[]).flatMap(v=>[_dniLimpio(v.dni_rep1),_dniLimpio(v.dni_rep2)]).filter(Boolean));
     const ids=[...new Set(filas.map(r=>r.armadoId).filter(Boolean))];
     const estArm={}; if(ids.length){ const { data:ar } = await sb.from("recorridos_armados").select("id,estado,codigo,recorrido,id_viaje,cerrado_at").in("id",ids); (ar||[]).forEach(a=>estArm[a.id]=a); }
-    const viejo=Date.now()-6*3600e3, tres=Date.now()-3*3600e3;
+    const viejo=Date.now()-6*3600e3, tres=Date.now()-2*3600e3;   // bolsines: 2 h después de cerrado el recorrido
     const colgadas=filas.filter(r=>{
       const dni=(portadorSolicitud(r)||{}).dni||"";
       if(dni && activos.has(dni)) return false;                                   // lo tiene alguien que está en un recorrido ahora
@@ -10126,6 +10188,8 @@ async function qrIniciarViaje(){
   const yo=S.miIdentidadRep; if(!yo){ e.err="No sabemos quién sos: volvé a entrar con tu DNI."; render(); return; }
   if(!e.recSel){ e.err="Elegí el recorrido."; render(); return; }
   let dni2=_dniLimpio(e.dni2), nombre2=null;
+  if(e.conCompa && !dni2){ e.err="Escribí el DNI o el código de tu compañero (o elegí «Voy solo»)."; render(); return; }
+  if(dni2 && hayCodigosRep()){ const rr=await resolverFirmaRepartidor(dni2); if(rr.ok) dni2=rr.dni; }   // también con su código
   if(dni2){
     if(dni2===_dniLimpio(yo.dni)){ e.err="El acompañante tiene que ser otra persona."; render(); return; }
     const a=S.usuarios.find(u=>_dniLimpio(u.dni)===dni2 && u.tipo==="REPARTIDOR" && u.activo!=="no");
@@ -10363,7 +10427,7 @@ async function cerrarRecorridosVencidos(){
       if(!cerr || !cerr.length) continue;
       await sb.from("flota_registros_qr").insert({ts:new Date().toISOString(),id_viaje:v.id,sucursal:"FABRICA",evento:"CIERRE AUTOMATICO",gps_obs:`Cerrado solo a las ${HORAS_CIERRE_AUTO} horas`,recorrido:v.recorrido});
       if(armadoId) await sb.from("recorridos_armados").update({estado:"CERRADO_AUTO",cerrado_at:new Date().toISOString(),cierre_automatico:true}).eq("id",armadoId);
-      await dejarEnFabricaLoQueTengo({dnis:[v.dni_rep1,v.dni_rep2], nombre:v.nombre_rep1, recorrido:v.recorrido, armadoId, idViaje:v.id}, true);
+      await dejarEnFabricaLoQueTengo({dnis:[v.dni_rep1,v.dni_rep2], nombre:v.nombre_rep1, recorrido:v.recorrido, armadoId, idViaje:v.id, bolsinesQuedan:true}, true);   // los bolsines no: se dejan con el QR de Tesorería o a las 2 h
     }
   }catch(e){ console.warn("Cierre automático:",e); }
 }
@@ -11793,6 +11857,15 @@ function renderEstoyEn(){
     const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO" && normNotif(extremosDe(x).inicio)===normNotif(e.base||"Fábrica"));
     return pagina(`
     ${e.cerradoAnterior?`<div class="qr-banner ok">✅ Tu recorrido anterior (${escH(e.cerradoAnterior)}) quedó terminado.</div>`:""}
+    <div class="card qr-acomp-card">
+      <div class="qr-iniciar-tit" style="font-size:16px">👥 ¿Vas con un compañero?</div>
+      <div class="qr-acomp-btns">
+        <button class="btn btn-md ${e.conCompa?"btn-ghost":"btn-teal"}" onclick="S.estoyEn.conCompa=false;S.estoyEn.dni2='';render()">Voy solo</button>
+        <button class="btn btn-md ${e.conCompa?"btn-teal":"btn-ghost"}" onclick="S.estoyEn.conCompa=true;render();setTimeout(()=>document.getElementById('qr-acomp')?.focus(),80)">Voy con un compañero</button>
+      </div>
+      ${e.conCompa?`<input id="qr-acomp" class="inp" style="margin-top:10px" type="password" inputmode="numeric" autocomplete="off" placeholder="DNI o código de tu compañero" value="${escH(e.dni2||"")}" oninput="S.estoyEn.dni2=this.value"/>
+        <div class="ar-sub" style="margin-top:4px">Así lo que le entreguen a cualquiera de los dos queda en el mismo recorrido.</div>`:""}
+    </div>
     <div class="card qr-iniciar">
       <div class="qr-iniciar-tit">🚛 Elegí tu recorrido</div>
       ${!prep.length?`<p style="color:#fbbf24;font-size:15px;line-height:1.5">No hay recorridos preparados todavía. Pedile a Logística que arme el tuyo y volvé a escanear.</p>
@@ -11803,8 +11876,7 @@ function renderEstoyEn(){
           ${par.length?`<div class="qr-paradas">${par.map((p,i)=>`<span><b>${i+1}.</b> ${escH(p)}</span>`).join("")}</div>`:""}
           <button class="btn btn-success btn-md btn-full qr-salir" onclick="qrTomarArmado('${escH(x.id)}')" ${e.loading?"disabled":""}>${e.loading?`<span class="spinner"></span> Registrando…`:`✅ Salir con ${escH(codigoArmado(x))}`}</button>
         </div>`; }).join("")}
-      <details class="qr-acomp"><summary>¿Vas con acompañante?</summary>
-        <input id="qr-acomp" class="inp" type="number" inputmode="numeric" placeholder="DNI del acompañante" value="${escH(e.dni2||"")}" oninput="S.estoyEn.dni2=this.value"/></details>
+
       ${e.err?`<div class="err-msg" style="display:block;margin:10px 0">${escH(e.err)}</div>`:""}
     </div>`);
   }
@@ -12337,7 +12409,9 @@ function renderFormNueva(){
   const esLogForm      = u.rol==="logistica";
   const esPlanForm     = u.rol==="planificacion";
   const eligeOrigen    = esLogForm || esPlanForm;
-  const origenOptions  = [...getSucursales(),...(S.destinos.length?S.destinos:["Depósito Central","Casa Central","Compras","RRHH","Planificación"]),"Otra dirección"].filter((v,i,a)=>a.indexOf(v)===i);
+  const origenOptions  = [...getSucursales(),...(S.destinos.length?S.destinos:["Fábrica","Depósito"])].filter((v,i,a)=>a.indexOf(v)===i);
+  if(!S.flotaDirecciones && !S._dirsPedidas){ S._dirsPedidas=true; setTimeout(()=>cargarDireccionesGuardadas().then(()=>{ if(S.modal==="nuevaSol") render(); }),0); }
+  const retirosOptions = _dirsGuardadas().map(d=>d.nombre);
   return `
   ${divider("DATOS DEL PEDIDO")}
   ${eligeOrigen ? `
@@ -12348,7 +12422,10 @@ function renderFormNueva(){
     <select id="f-origen" onchange="checkOtraDireccion()">
       <option value="">— Seleccioná origen —</option>
       ${origenOptions.map(d=>`<option>${escH(d)}</option>`).join("")}
+      ${retirosOptions.length?`<optgroup label="📦 Retiro en dirección habitual">${retirosOptions.map(d=>`<option>${escH(d)}</option>`).join("")}</optgroup>`:""}
+      <option>Otra dirección</option>
     </select>
+    <div id="retiro-nota" class="retiro-nota" style="display:${S.nsRetiro?"block":"none"}">📦 <strong>Es un retiro:</strong> lo levanta el repartidor en esa dirección.</div>
   </div>` : `
   <div class="field field-disabled">
     <label>${u.rol==="area"?"Área solicitante":"Sucursal solicitante"}</label>
@@ -13633,6 +13710,9 @@ function checkOtraDireccion(){
   const esOtraDest = ($("f-dest")?.value||"")==="Otra dirección";
   const show = esOtraOrig || esOtraDest;
   S.nsOtraDir = show;   // queda guardado: si la app se redibuja, la sección sigue visible
+  const o=($("f-origen")?.value||"");
+  S.nsRetiro = esOtraOrig || _dirsGuardadas().some(d=>d.nombre===o);   // origen en otra dirección = es un retiro
+  const rn=$("retiro-nota"); if(rn) rn.style.display = S.nsRetiro ? "block" : "none";
   const aviso = $("otra-dir-aviso");
   if(aviso) aviso.style.display = show ? "block" : "none";
   const mark = $("obs-req-mark");
