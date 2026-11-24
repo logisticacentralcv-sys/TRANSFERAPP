@@ -1264,7 +1264,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261124-1013";
+const APP_VERSION = "20261124-1017";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8583,6 +8583,7 @@ function renderLogTabla(){
     if(f.fFecha     && !r.createdAt.startsWith(f.fFecha)) return false;
     if(f.fFechaRequerida && !(r.fechaRequerida||"").startsWith(f.fFechaRequerida)) return false;
     if(f.fRecorrido && r.recorrido !==f.fRecorrido) return false;
+    if(!filtroRepTipo(r,f)) return false;
     if(f.fSolicitante && !(solicitanteLabel(r)||"").toLowerCase().includes(f.fSolicitante.trim().toLowerCase())) return false;
     if(f.fTexto){
       const q = f.fTexto.trim().toLowerCase();
@@ -8592,7 +8593,7 @@ function renderLogTabla(){
     }
     return true;
   });
-  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fFechaRequerida||f.fRecorrido||f.fSolicitante||f.fTexto||f.fSoloActivas;
+  const hasF=f.fEstado||f.fSucursal||f.fDestino||f.fPrioridad||f.fFecha||f.fFechaRequerida||f.fRecorrido||f.fSolicitante||f.fTexto||f.fSoloActivas||f.fRepartidor||f.fTipo;
   const reqs=S.requests;
   const recOpts=S.recorridos.length?S.recorridos:["SUR","CENTRO","NORTE"];
 
@@ -8650,6 +8651,19 @@ function renderLogTabla(){
         <select onchange="S.fRecorrido=this.value;render()">
           <option value="">Todos</option>${recOpts.map(r=>`<option ${f.fRecorrido===r?"selected":""}>${escH(r)}</option>`).join("")}
         </select></div>
+      <div class="field" style="margin-bottom:0"><label>Repartidor</label>
+        <select onchange="S.fRepartidor=this.value;render()">
+          <option value="">Todos</option>${(()=>{ const vistos=new Set(), ns=[];
+            [...(S.usuarios||[]).filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no").map(u=>u.nombre), ...S.requests.map(r=>r.nombreQuienLevanto)].forEach(n=>{ const k=normNotif(n||""); if(n && !vistos.has(k)){ vistos.add(k); ns.push(n); } });
+            return ns.sort((a,b)=>a.localeCompare(b)).map(n=>`<option ${normNotif(f.fRepartidor||"")===normNotif(n)?"selected":""}>${escH(n)}</option>`).join(""); })()}
+        </select></div>
+      <div class="field" style="margin-bottom:0"><label>Tipo</label>
+        <select onchange="S.fTipo=this.value;render()">
+          <option value="">Todos</option>
+          <option value="transferencia" ${f.fTipo==="transferencia"?"selected":""}>Transferencias</option>
+          <option value="bolsin" ${f.fTipo==="bolsin"?"selected":""}>🎒 Bolsines</option>
+          <option value="retiro" ${f.fTipo==="retiro"?"selected":""}>📦 Retiros</option>
+        </select></div>
       <div class="field" style="margin-bottom:0"><label>Fecha (creación)</label>
         <input type="date" class="inp" value="${f.fFecha}" onchange="S.fFecha=this.value;render()"/>
       </div>
@@ -8703,7 +8717,7 @@ function renderLogTabla(){
         </tr></thead>
         <tbody>
           ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?10:9}">Sin resultados</td></tr>`:""}
-          ${paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto].join("|")).map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
+          ${paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto,f.fRepartidor,f.fTipo].join("|")).map(r=>`<tr onclick="openDetalle('${escH(r.id)}')" style="cursor:pointer">
             ${S.modoSeleccion?`<td onclick="event.stopPropagation()"><input type="checkbox" class="chk-round" ${S.logSeleccion.has(r.id)?"checked":""} onchange="toggleLogSeleccion('${escH(r.id)}',this.checked)"/></td>`:""}
             <td><div class="id-cell">${escH(r.id)}</div><div class="lt-sub">${fdt(r.createdAt)}</div></td>
             <td><div class="lt-ruta"><strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino||"—")}</div><div class="lt-sub sol">${escH(solicitanteLabel(r))}</div></td>
@@ -13719,7 +13733,18 @@ function checkOtraDireccion(){
   if(mark) mark.style.display = show ? "inline" : "none";
 }
 
-function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fFechaRequerida=S.fRecorrido=S.fSolicitante=S.fTexto=""; S.fSoloActivas=false; render(); }
+function clearFilters(){ S.fEstado=S.fSucursal=S.fDestino=S.fPrioridad=S.fFecha=S.fFechaRequerida=S.fRecorrido=S.fSolicitante=S.fTexto=S.fRepartidor=S.fTipo=""; S.fSoloActivas=false; render(); }
+// Repartidores que llevaron o tienen una transferencia (en cualquier tramo)
+function repartidoresDe(r){
+  const p=portadorSolicitud(r)||{};
+  return [r.nombreQuienLevanto, r.nombreQuienEntrego, p.nombre].filter(Boolean).map(n=>normNotif(n));
+}
+const tipoDeSolicitud = r => r.tipoPedido==="bolsin" ? "bolsin" : (esOrigenOtraDireccion(r) ? "retiro" : "transferencia");
+function filtroRepTipo(r, f){
+  if(f.fRepartidor && !repartidoresDe(r).includes(normNotif(f.fRepartidor))) return false;
+  if(f.fTipo && tipoDeSolicitud(r)!==f.fTipo) return false;
+  return true;
+}
 
 // ── Selección múltiple en la tabla de Logística ───────────
 function toggleRepSeleccion(id, checked){
@@ -14029,11 +14054,12 @@ function toggleLogSeleccionTodos(checked){
     if(f.fPrioridad && r.prioridad !==f.fPrioridad) return false;
     if(f.fFecha     && !r.createdAt.startsWith(f.fFecha)) return false;
     if(f.fRecorrido && r.recorrido !==f.fRecorrido) return false;
+    if(!filtroRepTipo(r,f)) return false;
     if(f.fSolicitante && !(solicitanteLabel(r)||"").toLowerCase().includes(f.fSolicitante.trim().toLowerCase())) return false;
     return true;
   });
   // Solo lo que está a la vista (las primeras 50); si querés más, tocá "Ver más" y volvé a marcar
-  const visibles=paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto].join("|"));
+  const visibles=paginar("log",filtered,[f.fSoloActivas,f.fEstado,f.fSucursal,f.fDestino,f.fPrioridad,f.fFecha,f.fFechaRequerida,f.fRecorrido,f.fSolicitante,f.fTexto,f.fRepartidor,f.fTipo].join("|"));
   if(checked) visibles.forEach(r=>S.logSeleccion.add(r.id));
   else visibles.forEach(r=>S.logSeleccion.delete(r.id));
   render();
