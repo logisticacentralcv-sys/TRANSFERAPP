@@ -1221,6 +1221,15 @@ tr[onclick]:active td{background:var(--s3)}
 .dir-g{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;color:var(--text);font-family:var(--font);cursor:pointer}
 .dir-g:hover{border-color:var(--teal)}.dir-g strong{font-size:13.5px}.dir-g span{font-size:12px;color:var(--muted)}
 
+
+.rp-dif{margin-top:16px;padding:12px 14px;border-radius:12px;background:var(--s2);border:1px solid var(--border2)}
+.rp-dif-tit{font-weight:700;font-size:14.5px;margin-bottom:8px}
+.rp-dif-btns{display:flex;gap:8px;flex-wrap:wrap}.rp-dif-btns .btn{flex:1 1 160px;justify-content:center}
+.dif-card{padding:16px;margin-bottom:16px}.dif-card h3{margin:0 0 2px;font-size:15px}
+.dif-pct{font-family:var(--mono);font-weight:700;padding:2px 8px;border-radius:999px}.dif-pct.medio{color:#fbbf24;background:#f5a62318}.dif-pct.alto{color:#f87171;background:#f0525218}
+.dif-lista{display:flex;flex-direction:column;gap:6px;padding:4px 0}
+.dif-it{background:var(--s2);border-radius:10px;padding:8px 10px;font-size:13px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1245,7 +1254,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261124-0737";
+const APP_VERSION = "20261124-1004";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -4640,7 +4649,8 @@ function abrirRevisionProduccion(id){
   const dec={};
   prods.forEach((x,i)=>{ const pr=x.produccion; if(!pr) return; const llego=_llegoCant(x);
     dec[i]={decision:(+pr.reingresa||0)>=llego?"si":(+pr.reingresa||0)>0?"parcial":"no", cant:String(pr.reingresa)}; });
-  S.revProd={devId:id, sucursal:d.sucursal, prods, dec, err:"", loading:false};
+  S.revProd={devId:id, sucursal:d.sucursal, prods, dec, err:"", loading:false,
+    llegada: d.diferenciaDeclarada===true?"distinto":d.diferenciaDeclarada===false?"igual":"", difNota:d.diferenciaNota||""};
   S.vista="revProduccion"; render(); window.scrollTo({top:0,behavior:"instant"});
 }
 function salirRevisionProduccion(){ S.revProd=null; S.rpEdit=null; S.vista="devoluciones"; render(); }
@@ -4800,11 +4810,20 @@ function renderRevisionProduccion(){
       <div style="margin-bottom:6px"><strong>Se descartan sin revisión</strong> (no son reutilizables). Si alguno está mal cargado, corregilo:</div>
       ${otras.map(({x,i})=>`<div class="rp-otra"><span>${escH(x.descripcion)} · ${fmtNum(_llegoCant(x))} ${escH(x.unidad||"")} ${_chipCorr(x)}</span><button class="rp-corr" onclick="rpAbrirEdicion(${i})">✏️ Corregir</button></div>`).join("")}
     </div>`:""}
+    ${(()=>{ if(!c.llegada && c.prods.some(x=>x._corr)) c.llegada="distinto";   // si corrigieron o agregaron, viene marcado "distinto"
+      return `<div class="rp-dif">
+        <div class="rp-dif-tit">¿Lo que llegó coincide con lo que declaró ${escH(c.sucursal||"la sucursal")}?</div>
+        <div class="rp-dif-btns">
+          <button class="btn btn-md ${c.llegada==="igual"?"btn-success":"btn-ghost"}" onclick="S.revProd.llegada='igual';render()">✅ Llegó igual</button>
+          <button class="btn btn-md ${c.llegada==="distinto"?"btn-warn":"btn-ghost"}" onclick="S.revProd.llegada='distinto';render()">⚠️ Llegó distinto</button>
+        </div>
+        ${c.llegada==="distinto"?`<input class="inp" style="margin-top:8px" placeholder="¿Qué fue distinto? (opcional)" value="${escH(c.difNota||"")}" oninput="S.revProd.difNota=this.value"/>`:""}
+      </div>`; })()}
     ${c.err?`<div class="err-msg" style="display:block;margin-top:12px">${escH(c.err)}</div>`:""}
     <div class="pk-foot">
       <div class="pk-resumen cl-tot"><span style="color:#2ecc7a">↩️ <strong>${res.re}</strong></span><span style="color:#f05252">🗑️ <strong>${res.de}</strong></span></div>
-      <button class="btn btn-success btn-md" onclick="rpPedirConfirmacion()" ${c.loading||faltan?"disabled":""}>
-        ${c.loading?`<span class="spinner"></span> Guardando…`:(faltan?`Faltan ${faltan}`:"Confirmar")}
+      <button class="btn btn-success btn-md" onclick="rpPedirConfirmacion()" ${c.loading||faltan||!c.llegada?"disabled":""}>
+        ${c.loading?`<span class="spinner"></span> Guardando…`:(faltan?`Faltan ${faltan}`:!c.llegada?"Marcá si llegó igual o distinto":"Confirmar")}
       </button>
     </div>
   </div>`;
@@ -4834,9 +4853,15 @@ async function rpGuardar(firmaParam){
     else if(y.produccion) delete y.produccion;               // ya no es reutilizable (lo corrigieron)
     return y;
   });
-  const changes={productosJson:JSON.stringify(prods), updatedAt:ahora};
+  const changes={productosJson:JSON.stringify(prods), updatedAt:ahora,
+    diferenciaDeclarada: c.llegada==="distinto", diferenciaNota: c.llegada==="distinto" ? (c.difNota||"").trim() : "", diferenciaPor: firma.nombre, diferenciaAt: ahora};
   try{
-    const { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+    let { error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id);
+    if(error && /diferencia_/.test(error.message||"")){   // falta devoluciones_06_diferencias.sql: se guarda lo demás
+      ["diferenciaDeclarada","diferenciaNota","diferenciaPor","diferenciaAt"].forEach(k=>delete changes[k]);
+      ({ error } = await sb.from("devoluciones").update(toSnakeRow(changes)).eq("id",d.id));
+      if(!error && _esStaff()) toast("⚠️ Falta correr devoluciones_06_diferencias.sql para guardar si llegó distinto","warn");
+    }
     if(error) throw error;
     S.devoluciones=S.devoluciones.map(x=>String(x.id)===String(d.id)?{...x,...changes}:x);
     const nCorr=prods.filter(x=>x.correccionProduccion && x.correccionProduccion.at===ahora).length;
@@ -6108,6 +6133,42 @@ function calidadSeleccionarMotivo(label){
 }
 
 function renderMetricasCalidad(){ return renderMetricasDevoluciones(); }
+// ═══ ¿Lo que llegó coincide con lo que declaró la sucursal? (marca de Producción al controlar) ═══
+function difDevolucion(d){
+  let ps=[]; try{ ps=JSON.parse(d.productosJson||"[]"); }catch(e){}
+  const corr=ps.filter(p=>p.correccionProduccion && !p.correccionProduccion.agregado).length;
+  const agr=ps.filter(p=>p.correccionProduccion && p.correccionProduccion.agregado).length;
+  const marcada = d.diferenciaDeclarada===true || d.diferenciaDeclarada===false;
+  const controlada = marcada || ps.some(p=>p.produccion || p.correccionProduccion);
+  const distinto = marcada ? d.diferenciaDeclarada===true : (corr+agr>0);   // las viejas: si corrigieron/agregaron productos
+  return {controlada, distinto, corr, agr, nota:d.diferenciaNota||"", por:d.diferenciaPor||""};
+}
+function cardDiferenciasDevoluciones(){
+  const desde=S.calidadDesde||"", hasta=S.calidadHasta||"", cat=categoriaDevolucionFija() || S.devMetCategoria || "";
+  const devs=(S.devoluciones||[]).filter(d=>{
+    const f=(d.createdAt||"").slice(0,10);
+    return (!cat || (d.tipoDevolucion||"Fresco")===cat) && (!desde || f>=desde) && (!hasta || f<=hasta) && (!S.calidadSucursal || d.sucursal===S.calidadSucursal);
+  });
+  const porSuc={};
+  devs.forEach(d=>{ const x=difDevolucion(d); if(!x.controlada) return;
+    const s=porSuc[d.sucursal||"—"]=porSuc[d.sucursal||"—"]||{ctrl:0, dist:0, corr:0, agr:0, lista:[]};
+    s.ctrl++; if(x.distinto){ s.dist++; s.lista.push({d,x}); } s.corr+=x.corr; s.agr+=x.agr; });
+  const filas=Object.entries(porSuc).sort((a,b)=>b[1].dist-a[1].dist || (b[1].dist/b[1].ctrl)-(a[1].dist/a[1].ctrl));
+  const tot=filas.reduce((a,[,v])=>({ctrl:a.ctrl+v.ctrl, dist:a.dist+v.dist}),{ctrl:0,dist:0});
+  return `<div class="card dif-card">
+    <h3>📏 Diferencias entre lo declarado y lo que llegó</h3>
+    <p class="ar-sub">Según el control de Producción. ${tot.ctrl?`${tot.dist} de ${tot.ctrl} devoluciones controladas llegaron distinto (${Math.round(100*tot.dist/tot.ctrl)}%).`:"Todavía no hay devoluciones controladas en este período."} Tocá una sucursal para ver cada una.</p>
+    ${filas.length?`<div class="table-wrap"><table class="hs-tabla"><thead><tr><th>Sucursal</th><th>Controladas</th><th>Llegaron distinto</th><th>%</th><th>Productos corregidos</th><th>Agregados</th></tr></thead><tbody>
+      ${filas.map(([s,v])=>{ const pct=Math.round(100*v.dist/v.ctrl), ab=S.difSucAbierta===s;
+        return `<tr style="cursor:pointer" onclick="S.difSucAbierta=${ab?"null":`'${escH(s)}'`};render()"><td><strong>${escH(s)}</strong> <span class="rs-chev">${v.dist?(ab?"▲":"▼"):""}</span></td><td>${v.ctrl}</td>
+          <td>${v.dist?`<strong style="color:#fbbf24">${v.dist}</strong>`:"0"}</td><td><span class="dif-pct ${pct>=30?"alto":pct>0?"medio":""}">${pct}%</span></td><td>${v.corr}</td><td>${v.agr}</td></tr>
+          ${ab&&v.lista.length?`<tr><td colspan="6"><div class="dif-lista">${v.lista.sort((a,b)=>String(b.d.createdAt).localeCompare(String(a.d.createdAt))).map(({d,x})=>`<div class="dif-it">
+            <span class="mono" style="color:var(--purple)">Dev. ${escH(String(d.id))}</span> · ${fd(d.createdAt)} · ${escH(d.tipoDevolucion||"")}
+            ${x.corr?` · ✏️ ${x.corr} corregido${x.corr!==1?"s":""}`:""}${x.agr?` · ➕ ${x.agr} agregado${x.agr!==1?"s":""}`:""}
+            ${x.nota?`<div class="ar-sub">“${escH(x.nota)}”${x.por?` — ${escH(x.por)}`:""}</div>`:""}</div>`).join("")}</div></td></tr>`:""}`; }).join("")}
+    </tbody></table></div>`:""}
+  </div>`;
+}
 function renderMetricasDevoluciones(){
   const desde=S.calidadDesde||"", hasta=S.calidadHasta||"";
   const q=(S.calidadProducto||"").trim();
@@ -6315,7 +6376,7 @@ function renderMetricasDevoluciones(){
     ${devsLista.length>listaMax?`<div style="display:flex;justify-content:center;margin-top:12px"><button class="btn btn-ghost btn-md" onclick="S.devListaMax=${listaMax+25};render()">Ver más (${devsLista.length-listaMax})</button></div>`:""}`}
   </div>`;
   const COLOR_CAT={Fresco:"var(--teal)",Secos:"var(--amber)",Congelado:"var(--blue)"};
-  return `
+  return `${cardDiferenciasDevoluciones()}
   <div id="cal-filtros" class="card" style="${cardStyle};margin-bottom:16px">
     ${!catFija?`
     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
