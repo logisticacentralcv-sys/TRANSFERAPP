@@ -1215,6 +1215,12 @@ tr[onclick]:active td{background:var(--s3)}
 .hs-fr-it .mono{color:var(--blue)}.hs-fr-it small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .hs-ctrl input[type=date]{width:auto;min-width:150px}
 
+
+.dir-g-wrap{margin-top:12px}
+.dir-g-lista{display:flex;flex-direction:column;gap:6px;margin-top:6px;max-height:220px;overflow:auto}
+.dir-g{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;color:var(--text);font-family:var(--font);cursor:pointer}
+.dir-g:hover{border-color:var(--teal)}.dir-g strong{font-size:13.5px}.dir-g span{font-size:12px;color:var(--muted)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1239,7 +1245,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261124-0707";
+const APP_VERSION = "20261124-0737";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10657,21 +10663,23 @@ function guiaSiguienteHtml(){
 // ── Al cargar una transferencia a "Otra dirección": buscarla en el momento (Google Maps, igual que Logística) ──
 async function buscarDireccionNuevaSol(){
   const nombre=($("ns-dir-nombre")?.value||"").trim(), direccion=($("ns-dir-calle")?.value||"").trim(), msg=$("ns-dir-msg");
-  if(!nombre||!direccion){ if(msg) msg.innerHTML=`<span style="color:#fca5a5">Escribí un nombre corto y la dirección.</span>`; return; }
-  if(msg) msg.innerHTML=`<span class="spinner"></span> Buscando la dirección y calculando los tiempos…`;
+  if(!nombre||!direccion){ S.nsDirMsg=`<span style="color:#fca5a5">Escribí un nombre corto y la dirección.</span>`; if(msg) msg.innerHTML=S.nsDirMsg; return; }
+  S.nsDirMsg=`<span class="spinner"></span> Buscando la dirección y calculando los tiempos…`; if(msg) msg.innerHTML=S.nsDirMsg;
   try{
     const res=await fetch("/api/agregar-punto-matriz",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({nombre,direccion})});
     const j=await res.json().catch(()=>({}));
-    if(!res.ok || j.error) throw new Error(j.error||"No se encontró");
+    if(!res.ok || j.error){ const er=new Error(j.error||"No se encontró"); er.existente=j.existente; throw er; }
     const nom=j.punto||nombre, encontrada=j.encontrada||direccion;
     S.nsDireccion={nombre:nom, direccion:encontrada};
     const obs=$("f-obs"); if(obs && !obs.value.trim()) obs.value=encontrada;
-    if(msg) msg.innerHTML=`✅ Encontrada: <strong>${escH(encontrada)}</strong><br><span style="color:var(--muted)">Se carga como «${escH(nom)}». Si no es esa, corregí la dirección y buscá de nuevo.</span>`;
+    S.nsDirMsg=`✅ Encontrada: <strong>${escH(encontrada)}</strong><br><span style="color:var(--muted)">Se carga como «${escH(nom)}». Si no es esa, corregí la dirección y buscá de nuevo.</span>`; if(msg) msg.innerHTML=`✅ Encontrada: <strong>${escH(encontrada)}</strong><br><span style="color:var(--muted)">Se carga como «${escH(nom)}». Si no es esa, corregí la dirección y buscá de nuevo.</span>`;
   }catch(e){
     S.nsDireccion=null;
     // el motivo concreto si es de la dirección; si es un error técnico, solo Logística/Admin lo ven completo
     const claro=/Google no encontró|Ya existe|No se pudo ubicar/.test(e.message||"");
-    if(msg) msg.innerHTML=`<span style="color:#fca5a5">${escH(claro||_esStaff()?e.message:"No se pudo buscar ahora.")} Si no, cargala igual con la dirección en Observaciones.</span>`;
+    if(e.existente && !(S.flotaDirecciones||[]).some(x=>x.nombre===e.existente.nombre)) S.flotaDirecciones=[...(S.flotaDirecciones||[]), {...e.existente, es_original:false}];
+    S.nsDirMsg=`<span style="color:#fca5a5">${escH(claro||_esStaff()?e.message:"No se pudo buscar ahora.")}</span>${e.existente?` <button type="button" class="btn btn-ghost btn-sm" onclick="usarDireccionGuardadaNuevaSol(decodeURIComponent('${encodeURIComponent(e.existente.nombre)}'))">Usar «${escH(e.existente.nombre)}»</button>`:` <span style="color:#fca5a5">Si no, cargala igual con la dirección en Observaciones.</span>`}`;
+    if(msg) msg.innerHTML=S.nsDirMsg;
   }
 }
 // ═══════════════════════════════════════════════════════════════════
@@ -11029,12 +11037,55 @@ function buscarDireccionDeParada(armadoId, i){
   const p=paradasArmado(a, transfDelArmado(a))[i]; if(!p || !p.libre) return;
   abrirDireccionNueva(armadoId, null, p.obs||"", {dj:(p.dj||[]).map(r=>r.id), rt:(p.rt||[]).map(r=>r.id)});
 }
+// ═══ Direcciones ya cargadas: elegir una en lugar de volver a buscarla ═══
+const _dirsGuardadas = () => (S.flotaDirecciones||[]).filter(d=>d && !d.es_original);
+async function cargarDireccionesGuardadas(){
+  if(S._dirsCargando) return; S._dirsCargando=true;
+  try{ const { data } = await sb.from("flota_direcciones").select("nombre,direccion,es_original"); if(data) S.flotaDirecciones=data; }catch(e){}
+  S._dirsCargando=false;
+}
+function listaDirsGuardadasHtml(filtro, accion){
+  const q=normNotif(filtro||"");
+  const ds=_dirsGuardadas().filter(d=>!q || normNotif(d.nombre).includes(q) || normNotif(d.direccion||"").includes(q)).slice(0,8);
+  if(!_dirsGuardadas().length) return `<p class="ar-sub" style="margin:4px 0">Todavía no hay direcciones cargadas.</p>`;
+  return ds.length ? ds.map(d=>`<button type="button" class="dir-g" onclick="${accion}(decodeURIComponent('${encodeURIComponent(d.nombre)}'))"><strong>${escH(d.nombre)}</strong><span>${escH(d.direccion||"")}</span></button>`).join("")
+                   : `<p class="ar-sub" style="margin:4px 0">No hay coincidencias.</p>`;
+}
+function filtrarDirsGuardadas(id, filtro, accion){ const el=$(id); if(el) el.innerHTML=listaDirsGuardadasHtml(filtro, accion); }
+// En el armado: usar la ya cargada (parada + transferencias atadas a ella)
+async function _aplicarDireccionEnRecorrido(nombre){
+  const d=S.dirNueva; if(!d) return;
+  rutaAgregar(d.armadoId, nombre);
+  const cambios=[];
+  if(d.transfId){ const r=S.requests.find(x=>x.id===d.transfId); if(r) cambios.push([r, esDestinoOtraDireccion(r)?"destino":"sucursal"]); }
+  if(d.lados){ (d.lados.dj||[]).forEach(id=>{ const r=S.requests.find(x=>x.id===id); if(r) cambios.push([r,"destino"]); });
+               (d.lados.rt||[]).forEach(id=>{ const r=S.requests.find(x=>x.id===id); if(r) cambios.push([r,"sucursal"]); }); }
+  for(const [r,campo] of cambios){
+    const ch={[campo]:nombre, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+    if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+  }
+  S.modal=null; S.dirNueva=null;
+  toast(`📍 "${nombre}" agregada al recorrido`); render();
+}
+function usarDireccionGuardadaRecorrido(nombre){ _aplicarDireccionEnRecorrido(nombre); }
+// Al cargar una transferencia: usar la ya cargada
+function usarDireccionGuardadaNuevaSol(nombre){
+  const d=_dirsGuardadas().find(x=>x.nombre===nombre); if(!d) return;
+  S.nsDireccion={nombre:d.nombre, direccion:d.direccion};
+  const obs=$("f-obs"); if(obs && !obs.value.trim()) obs.value=d.direccion||"";
+  S.nsDirMsg=`✅ Se carga como <strong>${escH(d.nombre)}</strong> (${escH(d.direccion||"")}).`;
+  const msg=$("ns-dir-msg"); if(msg) msg.innerHTML=S.nsDirMsg;
+}
 function renderDirNuevaModal(){
   const d=S.dirNueva||{};
   return `<p style="font-size:13.5px;color:var(--muted);margin:0 0 10px">Escribí un nombre corto y la dirección completa. Se calculan los tiempos de viaje desde y hacia todos los puntos (tarda unos segundos) y queda como parada de <strong>${escH(codigoArmado(armadoDe(d.armadoId)))}</strong>.</p>
-    <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Nombre corto (ej: Proveedor Colón)"/>
-    <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Av. Colón 1234, Mar del Plata)" value="${escH(d.sugerida||"")}" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();agregarDireccionYParada()}"/>
+    <input id="ar-nueva-direccion-nombre" class="inp" placeholder="Nombre corto (ej: Proveedor Colón)" value="${escH(d.nombre||"")}" oninput="S.dirNueva.nombre=this.value"/>
+    <input id="ar-nueva-direccion-calle" class="inp" style="margin-top:8px" placeholder="Dirección completa (ej: Av. Colón 1234, Mar del Plata)" value="${escH(d.calle??d.sugerida??"")}" oninput="S.dirNueva.calle=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();agregarDireccionYParada()}"/>
     <div id="ar-nueva-direccion-msg">${S.dirMsg||""}</div>
+    ${_dirsGuardadas().length?`<div class="dir-g-wrap"><div class="ar-mini">O elegí una que ya está cargada</div>
+      <input class="inp" placeholder="🔎 Buscar entre las cargadas" oninput="filtrarDirsGuardadas('dir-g-lista',this.value,'usarDireccionGuardadaRecorrido')"/>
+      <div id="dir-g-lista" class="dir-g-lista">${listaDirsGuardadasHtml("", "usarDireccionGuardadaRecorrido")}</div></div>`:""}
     <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Cancelar</button>
       <button class="btn btn-teal btn-md" id="ar-btn-agregar-direccion" onclick="agregarDireccionYParada()">📍 Buscar y agregar</button></div>`;
 }
@@ -11043,8 +11094,8 @@ async function agregarDireccionYParada(){
   const nombre=($("ar-nueva-direccion-nombre")?.value||"").trim();
   await agregarDireccionNueva();
   if(!(S.flotaDirecciones||[]).some(x=>normNotif(x.nombre)===normNotif(nombre))) return;   // el error ya se muestra en la ventana
-  rutaAgregar(d.armadoId, nombre);
-  // las transferencias quedan atadas a esa parada (destino u origen = la dirección nueva)
+  return _aplicarDireccionEnRecorrido(nombre);
+  // (lo de abajo quedó en _aplicarDireccionEnRecorrido)
   const cambios=[];
   if(d.transfId){ const r=S.requests.find(x=>x.id===d.transfId); if(r) cambios.push([r, esDestinoOtraDireccion(r)?"destino":"sucursal"]); }
   if(d.lados){ (d.lados.dj||[]).forEach(id=>{ const r=S.requests.find(x=>x.id===id); if(r) cambios.push([r,"destino"]); });
@@ -12282,16 +12333,19 @@ function renderFormNueva(){
     </div>
   </div>
   <!-- Aviso Otra dirección — se muestra dinámicamente -->
-  <div id="otra-dir-aviso" style="display:none;background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
+  <div id="otra-dir-aviso" style="display:${S.nsOtraDir?"block":"none"};background:#f5a62318;border-radius:8px;padding:11px 14px;margin-bottom:14px;font-size:13px;border-left:3px solid var(--amber)">
     📍 <strong>Otra dirección:</strong> es obligatorio aclarar la dirección exacta en Observaciones.
     En este caso no se requerirá código de entrega ya que el destinatario no tiene la app.
     <div style="margin-top:10px;font-weight:600">Si querés, buscala ahora (así se ubica sola en el recorrido):</div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
-      <input id="ns-dir-nombre" class="inp" style="flex:1;min-width:140px" placeholder="Nombre corto (ej: Service balanzas)" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation()}"/>
-      <input id="ns-dir-calle" class="inp" style="flex:2;min-width:180px" placeholder="Dirección (ej: Av. Colón 1234, Mar del Plata)" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();buscarDireccionNuevaSol()}"/>
+      <input id="ns-dir-nombre" class="inp" style="flex:1;min-width:140px" placeholder="Nombre corto (ej: Service balanzas)" value="${escH(S.nsDirNombre||"")}" oninput="S.nsDirNombre=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation()}"/>
+      <input id="ns-dir-calle" class="inp" style="flex:2;min-width:180px" placeholder="Dirección (ej: Av. Colón 1234, Mar del Plata)" value="${escH(S.nsDirCalle||"")}" oninput="S.nsDirCalle=this.value" onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();buscarDireccionNuevaSol()}"/>
       <button type="button" class="btn btn-teal btn-sm" onclick="buscarDireccionNuevaSol()">📍 Buscar</button>
     </div>
-    <div id="ns-dir-msg" style="font-size:12.5px;margin-top:6px"></div>
+    <div id="ns-dir-msg" style="font-size:12.5px;margin-top:6px">${S.nsDirMsg||""}</div>
+    <div class="dir-g-wrap"><div class="ar-mini">O elegí una que ya está cargada</div>
+      <input class="inp" placeholder="🔎 Buscar entre las cargadas" oninput="filtrarDirsGuardadas('ns-dir-g',this.value,'usarDireccionGuardadaNuevaSol')"/>
+      <div id="ns-dir-g" class="dir-g-lista">${(()=>{ if(!S.flotaDirecciones && !S._dirsPedidas){ S._dirsPedidas=true; setTimeout(()=>cargarDireccionesGuardadas().then(()=>filtrarDirsGuardadas('ns-dir-g','','usarDireccionGuardadaNuevaSol')),0); } return listaDirsGuardadasHtml("","usarDireccionGuardadaNuevaSol"); })()}</div></div>
   </div>
   <div class="field">
     <label>Observaciones<span id="obs-req-mark" style="display:none" class="req"> *</span></label>
@@ -13517,6 +13571,7 @@ function checkOtraDireccion(){
   const esOtraOrig = ($("f-origen")?.value||"")==="Otra dirección";
   const esOtraDest = ($("f-dest")?.value||"")==="Otra dirección";
   const show = esOtraOrig || esOtraDest;
+  S.nsOtraDir = show;   // queda guardado: si la app se redibuja, la sección sigue visible
   const aviso = $("otra-dir-aviso");
   if(aviso) aviso.style.display = show ? "block" : "none";
   const mark = $("obs-req-mark");
@@ -13966,6 +14021,7 @@ function closeModal(){
 }
 function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
 function openModal(m){
+  if(m==="nuevaSol"){ S.nsOtraDir=false; S.nsDireccion=null; S.nsDirNombre=""; S.nsDirCalle=""; S.nsDirMsg=""; }   // formulario nuevo, sin lo de la vez anterior
   if(arguments[0]==="nuevaSol" && !puede("nuevaTransferencia")){ avisoSinPermiso(); return; } S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
 function openDetalle(id){ S.selId=id; S.modal="detalle"; render(); }
 function openGestionar(id){
@@ -16675,6 +16731,7 @@ async function submitNueva(){
   let origenElegido = ($("f-origen")?.value||"").trim();
   // si buscaron la dirección, se carga con ese nombre (así tiene tiempos y se ubica en el recorrido)
   if(S.nsDireccion){ if(destino==="Otra dirección") destino=S.nsDireccion.nombre; else if(origenElegido==="Otra dirección") origenElegido=S.nsDireccion.nombre; S.nsDireccion=null; }
+  S.nsDirNombre=""; S.nsDirCalle=""; S.nsDirMsg=""; S.nsOtraDir=false;
   const archivoElegido = $("f-adjunto")?.files?.[0] || null;
   const esPlanSubmit  = S.user.rol==="planificacion";
   const esLogSubmit   = S.user.rol==="logistica";

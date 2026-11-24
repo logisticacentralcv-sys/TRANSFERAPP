@@ -51,16 +51,21 @@ module.exports = async (req, res) => {
         res.status(200).json({ ok: true, reutilizado: true, punto: existente.nombre, encontrada: existente.direccion });
         return;
       }
-      res.status(400).json({ error: `Ya existe un lugar llamado "${existente.nombre}" con otra dirección (${existente.direccion}). Usá otro nombre corto.` });
+      res.status(400).json({ error: `Ya existe un lugar llamado "${existente.nombre}" con otra dirección (${existente.direccion}). Usá otro nombre corto, o elegilo de los ya cargados.`, existente: { nombre: existente.nombre, direccion: existente.direccion } });
       return;
     }
 
     if (reemplazar) {
-      await supabase.from("flota_matriz_tiempos").delete().or(`origen.eq.${nombre},destino.eq.${nombre}`);
       await supabase.from("flota_direcciones").delete().eq("nombre", nombre);
     }
 
-    const puntosExistentes = (direccionesExistentes || []).filter((d) => d.nombre.toLowerCase() !== nombre.toLowerCase());
+    // Sin repetidos (el mismo lugar cargado dos veces daba "duplicate key")
+    const vistos = new Set();
+    const puntosExistentes = (direccionesExistentes || []).filter((d) => {
+      const k = norm(d.nombre);
+      if (!k || k === norm(nombre) || vistos.has(k)) return false;
+      vistos.add(k); return true;
+    });
     if (!puntosExistentes.length) {
       res.status(400).json({ error: "Todavía no hay ningún punto con dirección guardada contra el cual calcular (correr primero flota_07_direcciones.sql)." });
       return;
@@ -114,9 +119,14 @@ module.exports = async (req, res) => {
       return;
     }
 
-    const { error: errInsert } = await supabase.from("flota_matriz_tiempos").insert(filasNuevas);
+    // Lo que hubiera de este lugar (de un intento anterior) se reemplaza: así nunca se duplica
+    await supabase.from("flota_matriz_tiempos").delete().eq("origen", nombre);
+    await supabase.from("flota_matriz_tiempos").delete().eq("destino", nombre);
+    const unicas = [...new Map(filasNuevas.map((f) => [norm(f.origen) + "→" + norm(f.destino), f])).values()];
+    const { error: errInsert } = await supabase.from("flota_matriz_tiempos").insert(unicas);
     if (errInsert) throw errInsert;
 
+    await supabase.from("flota_direcciones").delete().eq("nombre", nombre);
     const { error: errDireccion } = await supabase.from("flota_direcciones").insert({
       nombre, direccion, lat: loc.lat, lon: loc.lng, es_original: false,
     });
