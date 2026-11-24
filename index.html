@@ -1239,7 +1239,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261124-0657";
+const APP_VERSION = "20261124-0707";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -11018,10 +11018,16 @@ function onAgregarParadaArmado(id){
   rutaAgregar(id, v);
 }
 // Otra dirección: se busca, se calculan los tiempos (igual que las direcciones de Flota) y se agrega como parada
-function abrirDireccionNueva(armadoId, transfId, sugerida){
+function abrirDireccionNueva(armadoId, transfId, sugerida, lados){
   S.armarRecorridoForm={...(S.armarRecorridoForm||{}), editandoDireccion:null, editandoDireccionValor:sugerida||""};
-  S.dirNueva={armadoId, transfId, sugerida:sugerida||""}; S.dirMsg=""; S.modal="dirNueva"; render();
+  S.dirNueva={armadoId, transfId, sugerida:sugerida||"", lados:lados||null}; S.dirMsg=""; S.modal="dirNueva"; render();
   setTimeout(()=>$("ar-nueva-direccion-nombre")?.focus(),120);
+}
+// "Otra dirección" que no se buscó (parada al final): se busca desde la misma parada, con lo de Observaciones
+function buscarDireccionDeParada(armadoId, i){
+  const a=armadoDe(armadoId); if(!a) return;
+  const p=paradasArmado(a, transfDelArmado(a))[i]; if(!p || !p.libre) return;
+  abrirDireccionNueva(armadoId, null, p.obs||"", {dj:(p.dj||[]).map(r=>r.id), rt:(p.rt||[]).map(r=>r.id)});
 }
 function renderDirNuevaModal(){
   const d=S.dirNueva||{};
@@ -11038,13 +11044,15 @@ async function agregarDireccionYParada(){
   await agregarDireccionNueva();
   if(!(S.flotaDirecciones||[]).some(x=>normNotif(x.nombre)===normNotif(nombre))) return;   // el error ya se muestra en la ventana
   rutaAgregar(d.armadoId, nombre);
-  if(d.transfId){   // la transferencia queda atada a esa parada (destino u origen = la dirección nueva)
-    const r=S.requests.find(x=>x.id===d.transfId);
-    if(r){
-      const ch = esDestinoOtraDireccion(r) ? {destino:nombre, updatedAt:now()} : {sucursal:nombre, updatedAt:now()};
-      const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
-      if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
-    }
+  // las transferencias quedan atadas a esa parada (destino u origen = la dirección nueva)
+  const cambios=[];
+  if(d.transfId){ const r=S.requests.find(x=>x.id===d.transfId); if(r) cambios.push([r, esDestinoOtraDireccion(r)?"destino":"sucursal"]); }
+  if(d.lados){ (d.lados.dj||[]).forEach(id=>{ const r=S.requests.find(x=>x.id===id); if(r) cambios.push([r,"destino"]); });
+               (d.lados.rt||[]).forEach(id=>{ const r=S.requests.find(x=>x.id===id); if(r) cambios.push([r,"sucursal"]); }); }
+  for(const [r,campo] of cambios){
+    const ch={[campo]:nombre, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+    if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
   }
   S.modal=null; S.dirNueva=null;
   toast(`📍 "${nombre}" agregada al recorrido`); render();
@@ -11357,7 +11365,7 @@ function renderArmarDelDia(){
     const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="rutaAlPrincipio('${A}',${iBase})" ${iBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
     // las agregadas solas (no las direcciones sin buscar) se mueven directo; al moverlas quedan fijas
     const fijar = editable && p.extra && !p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="moverExtra('${A}','${N}',${posBase},'inicio')" ${posBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},-1)" ${posBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},1)">↓</button><button class="btn btn-ghost btn-sm" onclick="fijarParada('${A}','${N}',${posBase})" title="Fijarla para poder moverla">📌</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>`
-      : editable && p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
+      : editable && p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-teal btn-sm" title="Buscar la dirección para ubicarla en el recorrido" onclick="buscarDireccionDeParada('${A}',${i})">📍 Buscar</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
     const yaPaso=!!ll;   // donde ya llegó no se mueve ni se saca
     return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
       `${yaPaso?"":ctrl}${yaPaso?"":fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et&&!p.libre?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
