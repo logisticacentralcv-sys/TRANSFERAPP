@@ -1203,6 +1203,18 @@ tr[onclick]:active td{background:var(--s3)}
 .rs-vacio{font-size:13px;color:var(--muted);margin:4px 4px 6px}
 .dif-mot{display:flex;flex-wrap:wrap;gap:6px}
 
+
+.hs-sub{font-size:13px;font-weight:700;color:var(--muted);margin:14px 0 6px}
+.hs-tabla tr.hs-falta td{background:#f0525210}
+.hs-falta-tag{font-size:11.5px;color:#fca5a5;font-weight:700;white-space:nowrap}
+.hs-faltas{margin-bottom:14px;border-color:#f0525244}
+.hs-fr{border-top:1px solid var(--border)}
+.hs-fr-cab{display:flex;align-items:center;gap:10px;width:100%;background:none;border:0;color:var(--text);font-family:var(--font);padding:10px 2px;cursor:pointer;text-align:left}
+.hs-fr-cab strong{font-size:14px}.hs-fr-n{font-size:12.5px;color:#fca5a5;font-weight:700;background:#f0525218;border-radius:999px;padding:2px 9px}
+.hs-fr-it{padding:8px 10px;margin:0 0 6px 8px;background:var(--s2);border-radius:10px;font-size:13px}
+.hs-fr-it .mono{color:var(--blue)}.hs-fr-it small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.hs-ctrl input[type=date]{width:auto;min-width:150px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1227,7 +1239,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261120-1233";
+const APP_VERSION = "20261124-0657";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -1810,6 +1822,14 @@ function fd(iso){
   if(soloFecha) return `${soloFecha[3]}/${soloFecha[2]}/${soloFecha[1]}`;
   return new Date(iso).toLocaleDateString("es-AR",{day:"2-digit",month:"2-digit",year:"numeric"});
 }
+function fmtDuracionMin(min){
+  if(min===null||min===undefined||isNaN(+min)) return "—";
+  const t=Math.max(0,Math.round(+min));
+  if(t<60) return `${t} min`;
+  if(t>=2880){ const d=Math.floor(t/1440), h=Math.round((t%1440)/60); return `${d} días${h?` ${h} h`:""}`; }
+  const h=Math.floor(t/60), m=t%60; return m?`${h} h ${m} min`:`${h} h`;
+}
+const fmtDuracionHoras = h => (h===null||h===undefined||isNaN(+h)) ? "—" : fmtDuracionMin(+h*60);
 function dh(a,b){ return (a&&b)?Math.round((new Date(b)-new Date(a))/3600000):null; }
 function emptyForm(){
   return {destino:"",descripcion:"",cantidad:"",unidad:"Unidades",prioridad:"Media",fechaRequerida:"",observaciones:""};
@@ -9662,8 +9682,8 @@ function renderMetricas(){
         <div class="kpi-mini"><div class="kpi-mini-val" style="color:var(--teal)">${reqs.filter(r=>r.estado==="Entregada").length}</div><div class="kpi-mini-lbl">Entregadas</div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px;padding-top:12px;border-top:1px solid var(--border)">
-        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">⚡ T. prom. respuesta</span><span class="mono" style="color:var(--blue)">${avgR!=null?avgR+"h":"—"}</span></div>
-        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">🚚 T. prom. entrega</span><span class="mono" style="color:var(--green)">${avgD!=null?avgD+"h":"—"}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">⚡ T. prom. respuesta</span><span class="mono" style="color:var(--blue)">${fmtDuracionHoras(avgR)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">🚚 T. prom. entrega</span><span class="mono" style="color:var(--green)">${fmtDuracionHoras(avgD)}</span></div>
         <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">⚠️ No entregadas</span><span class="mono" style="color:var(--red)">${noEntregadas.length} <span style="color:var(--faint);font-weight:400">(${noEntregadasReprog} reprogramadas)</span></span></div>
         <div style="display:flex;justify-content:space-between;font-size:15px"><span style="color:#a9b8d0">📅 Entregadas fuera de fecha</span><span class="mono" style="color:${fueraDeFecha.length?"var(--red)":"var(--green)"}">${fueraDeFecha.length} <span style="color:var(--faint);font-weight:400">(${pctFuera}% de las entregadas con fecha)</span></span></div>
       </div>
@@ -10871,7 +10891,7 @@ function estimarArmado(a, paradas, salida){
   return {viaje, descarga, total:viaje+descarga, falta, etas, vuelta:hora(t), conFlota, manana};
 }
 function toggleParada(k){ const a=S.armadoSel; S.paradasAbiertas=S.paradasAbiertas||new Set(); const key=a+"|"+k; S.paradasAbiertas.has(key)?S.paradasAbiertas.delete(key):S.paradasAbiertas.add(key); render(); }
-const _fmtMin=m=>m>=60?`${Math.floor(m/60)} h ${String(Math.round(m%60)).padStart(2,"0")} min`:`${Math.round(m)} min`;
+const _fmtMin=m=>fmtDuracionMin(m);
 
 // ── Incidencias (llamados de atención) ──
 async function cargarIncidencias(){
@@ -11047,11 +11067,12 @@ function avisoRecorridoHoy(r){
 //  calculado desde la hora real de salida.
 // ═══════════════════════════════════════════════════════════════════
 async function cargarHistoricoRecorridos(){
-  const dias=S.histDias||7, desde=new Date(Date.now()-dias*864e5).toISOString().slice(0,10);
+  const dias=S.histDias||7, desde=new Date(Date.now()-dias*864e5).toISOString().slice(0,10), dia=S.histFecha||"";
   S.hist={cargando:true, armados:[], viajes:{}, regs:{}, faltas:{}}; render();
   try{
     await Promise.all([cargarDatosQR().catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})]);
-    const { data:arm, error } = await sb.from("recorridos_armados").select("*").gte("fecha",desde).neq("estado","CANCELADO").order("created_at",{ascending:false}).limit(500);
+    let qa=sb.from("recorridos_armados").select("*"); qa = dia ? qa.eq("fecha",dia) : qa.gte("fecha",desde);   // un día puntual o los últimos N días
+    const { data:arm, error } = await qa.neq("estado","CANCELADO").order("created_at",{ascending:false}).limit(500);
     if(error) throw error;
     const armados=toCamelRows(arm||[]), ids=armados.map(a=>a.idViaje).filter(Boolean);
     const viajes={}, regs={}, faltas={};
@@ -11061,11 +11082,12 @@ async function cargarHistoricoRecorridos(){
       (v.data||[]).forEach(x=>viajes[x.id]=x);
       (r.data||[]).forEach(x=>{ (regs[x.id_viaje]=regs[x.id_viaje]||[]).push(x); });
     }
-    try{ const { data:inc } = await sb.from("incidencias_repartidores").select("armado_id,tipo").in("armado_id",armados.map(a=>a.id)); (inc||[]).forEach(x=>{ if((x.tipo||"NO_ENTREGO")==="NO_ENTREGO") faltas[x.armado_id]=(faltas[x.armado_id]||0)+1; }); }catch(e){}
+    let incid=[];
+    try{ const { data:inc } = await sb.from("incidencias_repartidores").select("*").in("armado_id",armados.map(a=>a.id)); incid=(inc||[]).filter(x=>!x.anulada); incid.forEach(x=>{ if((x.tipo||"NO_ENTREGO")==="NO_ENTREGO") faltas[x.armado_id]=(faltas[x.armado_id]||0)+1; }); }catch(e){}
     // los recorridos cerrados no siempre están en memoria: se traen sus transferencias para armar las paradas
     const faltan=armados.map(a=>a.id).filter(id=>!S.requests.some(r=>r.armadoId===id));
     for(let i=0;i<faltan.length;i+=100){ const { data } = await sb.from("solicitudes").select("*").in("armado_id",faltan.slice(i,i+100)); S.histTransf=[...(S.histTransf||[]).filter(x=>!(data||[]).some(d=>d.id===x.id)), ...toCamelRows(data||[])]; }
-    S.hist={cargando:false, armados, viajes, regs, faltas};
+    S.hist={cargando:false, armados, viajes, regs, faltas, incid};
   }catch(e){ console.warn("Histórico:",e); S.hist={cargando:false, error:true, armados:[], viajes:{}, regs:{}, faltas:{}}; }
   render();
 }
@@ -11092,7 +11114,7 @@ function analizarRecorrido(a){
     const realP=ll&&salida ? Math.round((new Date(ll.ts)-new Date(salida))/60000) : null;
     return {nombre:p.nombre, estHora:et?.hora||null, llego:ll?.ts||null, dif:(estMin!==null&&realP!==null)?realP-estMin:null, sinGps:/sin ubicación/i.test(ll?.gps_obs||""), estMin, realMin:realP, bultos:et?.bultos??null, descarga:et?.descarga??null};
   });
-  return {salida, vuelta, realMin, estMin:est&&!est.falta&&est.total!=null?est.total:null, filas, transf:foto&&Array.isArray(foto.transferencias)?foto.transferencias.length:transf.length, faltas:h.faltas[a.id]||0, auto:!!(v?.cierre_automatico||a.cierreAutomatico), conFoto:!!foto, manana:est?est.manana:null, bultos:filas.reduce((s,f)=>s+(+f.bultos||0),0)};
+  return {transfList:transf, salida, vuelta, realMin, estMin:est&&!est.falta&&est.total!=null?est.total:null, filas, transf:foto&&Array.isArray(foto.transferencias)?foto.transferencias.length:transf.length, faltas:h.faltas[a.id]||0, auto:!!(v?.cierre_automatico||a.cierreAutomatico), conFoto:!!foto, manana:est?est.manana:null, bultos:filas.reduce((s,f)=>s+(+f.bultos||0),0)};
 }
 function _hm(iso){ try{ const d=new Date(iso); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }catch(e){ return "—"; } }
 function _fd(iso){ try{ const d=new Date(iso.length<=10?iso+"T12:00:00":iso); return d.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"}); }catch(e){ return iso||""; } }
@@ -11104,7 +11126,8 @@ function renderHistoricoRecorridos(){
   if(h.error) return `<div class="card" style="padding:20px">⚠️ No se pudo cargar el histórico. <button class="btn btn-ghost btn-sm" onclick="cargarHistoricoRecorridos()">Reintentar</button></div>`;
   const q=normNotif(S.histBusq||""), suc=S.histSuc||"";
   let lista=h.armados.map(a=>({a, x:analizarRecorrido(a)}));
-  if(q) lista=lista.filter(({a})=>[codigoArmado(a),a.recorrido,a.nombreRep].some(v=>normNotif(v||"").includes(q)));
+  // también por N° de transferencia: ¿en qué recorrido estaba y quién la llevaba?
+  if(q) lista=lista.filter(({a,x})=>[codigoArmado(a),a.recorrido,a.nombreRep].some(v=>normNotif(v||"").includes(q)) || (x.transfList||[]).some(r=>normNotif(String(r.id)).includes(q)));
   const recorridosBase=[...new Set(h.armados.map(a=>String(a.recorrido||"").toUpperCase()))].sort();
   if(S.histRec) lista=lista.filter(({a})=>normNotif(a.recorrido)===normNotif(S.histRec));
   const sucursales=[...new Set(lista.flatMap(({x})=>x.filas.map(f=>f.nombre)))].sort((x,y)=>x.localeCompare(y));
@@ -11120,10 +11143,12 @@ function renderHistoricoRecorridos(){
     <div><span>Faltas</span><strong>${lista.reduce((s,{x})=>s+x.faltas,0)}</strong></div>
   </div>`;
   const controles=`<div class="hs-ctrl">
-    <select class="inp" onchange="S.histDias=+this.value;cargarHistoricoRecorridos()">${[7,14,30].map(d=>`<option value="${d}" ${(S.histDias||7)===d?"selected":""}>Últimos ${d} días</option>`).join("")}</select>
+    <input class="inp" type="date" title="Ver un día puntual" value="${escH(S.histFecha||"")}" onchange="S.histFecha=this.value;S.histSel=null;cargarHistoricoRecorridos()"/>
+    ${S.histFecha?`<button class="btn btn-ghost btn-sm" onclick="S.histFecha='';cargarHistoricoRecorridos()">✕ Ver los últimos días</button>`:""}
+    <select class="inp" ${S.histFecha?"disabled":""} onchange="S.histDias=+this.value;cargarHistoricoRecorridos()">${[7,14,30].map(d=>`<option value="${d}" ${(S.histDias||7)===d?"selected":""}>Últimos ${d} días</option>`).join("")}</select>
     <select class="inp" onchange="S.histRec=this.value;S.histSel=null;render()"><option value="">Todos los recorridos</option>${recorridosBase.map(r=>`<option ${normNotif(S.histRec||"")===normNotif(r)?"selected":""}>${escH(r)}</option>`).join("")}</select>
     <select class="inp" onchange="S.histSuc=this.value;render()"><option value="">Todas las sucursales</option>${sucursales.map(s=>`<option ${suc===s?"selected":""}>${escH(s)}</option>`).join("")}</select>
-    <input class="inp" type="search" placeholder="🔎 Recorrido o repartidor…" value="${escH(S.histBusq||"")}" oninput="S.histBusq=this.value;render()"/>
+    <input class="inp" type="search" placeholder="🔎 Recorrido, repartidor o N° de transferencia…" value="${escH(S.histBusq||"")}" oninput="S.histBusq=this.value;render()"/>
     <button class="btn btn-ghost btn-sm" onclick="cargarHistoricoRecorridos()">↻ Actualizar</button>
   </div>`;
   // Vista por sucursal: a qué hora llegaron los últimos días
@@ -11137,8 +11162,23 @@ function renderHistoricoRecorridos(){
   }
   const est={PREPARADO:"Preparado",EN_CURSO:"En curso",CERRADO:"Cerrado",CERRADO_AUTO:"Cerrado solo (5 h)"};
   const sel=S.histSel && lista.find(({a})=>a.id===S.histSel);
+  const ids=new Set(lista.map(({a})=>a.id)), faltasL=(h.incid||[]).filter(f=>ids.has(f.armado_id));
+  const porRep={}; faltasL.forEach(f=>{ const k=f.nombre||f.dni||"—"; (porRep[k]=porRep[k]||[]).push(f); });
+  const todasT=[...S.requests,...(S.histTransf||[])];
+  const faltasHtml = faltasL.length ? `<div class="card gr-card hs-faltas"><h3>⚠️ Faltas <span class="tab-n">${faltasL.length}</span></h3>
+      <p class="ar-sub">Cosas que el repartidor no entregó o no dejó por la app. Tocá un repartidor para ver cada una.</p>
+      ${Object.entries(porRep).sort((p,q)=>q[1].length-p[1].length).map(([rep,fs])=>{ const ab=(S.faltasAbiertas||new Set()).has(rep);
+        return `<div class="hs-fr"><button class="hs-fr-cab" onclick="S.faltasAbiertas=S.faltasAbiertas||new Set();S.faltasAbiertas.has('${escH(rep)}')?S.faltasAbiertas.delete('${escH(rep)}'):S.faltasAbiertas.add('${escH(rep)}');render()">
+          <strong>${escH(rep)}</strong><span class="hs-fr-n">${fs.length} falta${fs.length!==1?"s":""}</span><span class="rs-chev">${ab?"▲":"▼"}</span></button>
+          ${ab?fs.sort((p,q)=>String(q.created_at||"").localeCompare(String(p.created_at||""))).map(f=>{ const r=todasT.find(t=>String(t.id)===String(f.solicitud_id)); const ar=h.armados.find(z=>z.id===f.armado_id);
+            return `<div class="hs-fr-it" ${r?`style="cursor:pointer" onclick="openDetalle('${escH(r.id)}')"`:""}>
+              <div><span class="mono">${escH(String(f.solicitud_id||""))}</span> ${r?`${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong> · ${escH(r.descripcion||"")}`:""}</div>
+              <small>${f.created_at?_fd(f.created_at)+" "+_hm(f.created_at):""} · ${escH(ar?codigoArmado(ar):(f.recorrido||""))}${f.cierre_automatico?" · cierre automático":""} · ${escH(f.detalle||"")}</small></div>`; }).join(""):""}
+        </div>`; }).join("")}
+    </div>` : "";
   const graficos=`
     ${sel?detalleRecorridoMetricas(sel.a, sel.x):""}
+    ${faltasHtml}
     <div class="gr-2col">
       <div class="card gr-card"><h3>🕐 A qué hora llegamos a cada sucursal</h3><p class="ar-sub">Cada punto es una llegada (color = repartidor). Pasá el mouse para ver el detalle; tocalo para abrir ese recorrido.</p>${graficoLlegadas(lista)}</div>
       <div class="card gr-card"><h3>⏱️ ${S.histRec?`Quién tarda más en ${escH(S.histRec)}`:"Cuánto tarda cada recorrido"}</h3><p class="ar-sub">Real contra lo que se esperaba (promedio del período).</p>${graficoDuraciones(lista)}</div>
@@ -11162,7 +11202,12 @@ function renderHistoricoRecorridos(){
       </div>
       ${abierto?`<div class="table-wrap" style="margin-top:10px"><table class="hs-tabla"><thead><tr><th>#</th><th>Parada</th><th>Se esperaba</th><th>Llegó</th><th>Diferencia</th></tr></thead><tbody>
         ${x.filas.map((f,i)=>`<tr><td>${i+1}</td><td>${escH(f.nombre)}</td><td class="mono">${f.estHora||"—"}</td><td class="mono">${f.llego?_hm(f.llego):`<span style="color:var(--faint)">no registró</span>`}${f.sinGps?` <span title="Sin ubicación">📍?</span>`:""}</td><td>${_dif(f.dif)}</td></tr>`).join("")||`<tr class="empty-row"><td colspan="5">Sin paradas</td></tr>`}
-      </tbody></table></div>`:""}
+      </tbody></table></div>
+        ${(()=>{ const fal=new Set((S.hist.incid||[]).filter(f=>f.armado_id===a.id).map(f=>String(f.solicitud_id)));
+          return x.transfList&&x.transfList.length?`<div class="hs-sub">📦 Transferencias de este recorrido</div><div class="table-wrap"><table class="hs-tabla"><thead><tr><th>N°</th><th>De → a</th><th>Qué</th><th>Cómo terminó</th><th>La llevó</th></tr></thead><tbody>
+          ${x.transfList.map(r=>`<tr class="${fal.has(String(r.id))?"hs-falta":""}" style="cursor:pointer" onclick="openDetalle('${escH(r.id)}')"><td class="mono">${escH(r.id)}</td><td>${escH(origenLabel(r))} → ${escH(r.destino||"")}</td><td>${escH(r.descripcion||"")}</td>
+            <td>${badge(r.estado,S_COLOR[r.estado]||"var(--muted)")}${fal.has(String(r.id))?` <span class="hs-falta-tag">⚠️ falta</span>`:""}</td><td>${escH(r.nombreQuienLevanto||a.nombreRep||"—")}</td></tr>`).join("")}
+          </tbody></table></div>`:""; })()}`:""}
     </div>`; }).join(""):`<div class="pk-vacio">No hay recorridos en el período.</div>`);
 }
 // ═══ Métricas de recorridos: gráficos interactivos ═══
@@ -15046,7 +15091,7 @@ function tesMetDatos(){
     dif, porSuc, promH, buzonMas24:espBuzon.filter(x=>x.h>24).length, buzonMasViejo:espBuzon.length?Math.max(...espBuzon.map(x=>x.h)):null};
 }
 const _pl=(n,s,p)=>n===1?s:p;
-const _fmtHoras=h=>h===null||h===undefined?"—":h<1?`${Math.round(h*60)} min`:h<48?`${Math.round(h*10)/10} h`:`${Math.round(h/24*10)/10} días`;
+const _fmtHoras=h=>fmtDuracionHoras(h);
 function tesMetSerie(m){
   const serie=S.tesMetSerieSel||"enviados", desde=m.desde, hasta=m.hasta;
   const dia=serie==="enviados"?(r=>_diaDe(r.createdAt)):(r=>_diaDe(r.confirmadaSucursalAt));
