@@ -1244,6 +1244,10 @@ tr[onclick]:active td{background:var(--s3)}
 .qr-sinrec-dejar{padding:14px 16px;margin-bottom:12px;border-color:#2ecc7a66;display:flex;flex-direction:column;gap:6px}
 .qr-sinrec-dejar strong{font-size:16px}.qr-sinrec-dejar span{font-size:13px;color:var(--muted)}
 
+
+.nsh-op{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border2);border-radius:10px;margin-top:6px;cursor:pointer;font-size:13.5px}
+.nsh-op small{display:block;color:var(--muted);font-size:12px}.nsh-op input{margin-top:3px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1268,7 +1272,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261125-0716";
+const APP_VERSION = "20261125-0720";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -12388,6 +12392,7 @@ function renderModals(){
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
   if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="noSeHizo")      return wrapModal("m","⚠️ Esta transferencia no se hizo",renderNoSeHizoModal(),480);
   if(S.modal==="diferencia")    return wrapModal("m","📝 Avisar una diferencia",renderDiferenciaModal(),460);
   if(S.modal==="verItem")       return wrapModal("m","📦 Qué es y a dónde va",renderVerItemModal(),460);
   if(S.modal==="scanQR")        return wrapModal("m","📷 Escanear QR",renderScanModal(),440);
@@ -12556,6 +12561,49 @@ function renderFormNueva(){
 // Las sucursales no ven el recorrido de una transferencia hasta que la ponen "Lista para retirar"
 const ESTADOS_ANTES_DE_LISTA=["Pendiente","Pendiente Tesorería","En revisión","Aprobada","Programada","Reprogramada","Rechazada","Cancelada"];
 const recorridoVisible = r => S.user?.rol!=="sucursal" || !!r?.armadoId || !ESTADOS_ANTES_DE_LISTA.includes(r?.estado);   // si se asignó solo, se le avisa
+// ═══ "No se hizo": una transferencia que figura cerrada pero en realidad no se hizo (Planificación, Logística, Admin) ═══
+const ESTADOS_CERRADOS_NSH=["Entregada","Entregada (sin confirmar)","En el buzón","Cancelada","Rechazada"];
+const puedeMarcarNoSeHizo = r => !!r && ["planificacion","logistica","admin"].includes(S.user?.rol) && ESTADOS_CERRADOS_NSH.includes(r.estado);
+const MOTIVOS_NSH=["No se entregó","No se retiró","Se cerró sola sin hacerse","Otro"];
+function abrirNoSeHizo(id){ S.nsh={id, motivo:"", nota:"", reabrir:true, falta:true, err:""}; S.modal="noSeHizo"; render(); }
+function renderNoSeHizoModal(){
+  const d=S.nsh||{}, r=S.requests.find(x=>x.id===d.id); if(!r) return "";
+  const quienLaTenia=r.nombreQuienLevanto||"";
+  return `<p style="font-size:14px;margin:0 0 10px"><span class="mono" style="color:var(--blue)">${escH(r.id)}</span> · ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong> · figura <strong>${escH(r.estado)}</strong></p>
+    <div class="field"><label>¿Qué pasó? <span class="req">*</span></label>
+      <div class="dif-mot">${MOTIVOS_NSH.map(m=>`<button class="btn btn-sm ${d.motivo===m?"btn-teal":"btn-ghost"}" onclick="S.nsh.motivo='${m}';S.nsh.err='';render()">${m}</button>`).join("")}</div></div>
+    <div class="field"><label>Comentario <span style="color:var(--faint);font-weight:400">(opcional)</span></label>
+      <input class="inp" value="${escH(d.nota)}" oninput="S.nsh.nota=this.value"/></div>
+    <div class="field"><label>¿Qué hacemos?</label>
+      <label class="nsh-op"><input type="radio" name="nsh-op" ${d.reabrir?"checked":""} onchange="S.nsh.reabrir=true;render()"/> <span><strong>Volver a hacerla</strong><small>Queda pendiente otra vez, sin recorrido, para asignarla.</small></span></label>
+      <label class="nsh-op"><input type="radio" name="nsh-op" ${!d.reabrir?"checked":""} onchange="S.nsh.reabrir=false;render()"/> <span><strong>Dejarla cerrada como no realizada</strong><small>Queda cancelada, con el motivo.</small></span></label>
+    </div>
+    ${quienLaTenia?`<label class="nsh-op"><input type="checkbox" ${d.falta?"checked":""} onchange="S.nsh.falta=this.checked"/> <span>Registrar la falta a <strong>${escH(quienLaTenia)}</strong> (la tenía él)</span></label>`:""}
+    ${d.err?`<div class="err-msg" style="display:block">${escH(d.err)}</div>`:""}
+    <div class="cc-acciones"><button class="btn btn-ghost btn-md" onclick="closeModal()">Volver</button>
+      <button class="btn btn-warn btn-md" onclick="guardarNoSeHizo()">⚠️ Marcar que no se hizo</button></div>`;
+}
+async function guardarNoSeHizo(){
+  const d=S.nsh; if(!d) return;
+  if(!d.motivo){ d.err="Elegí qué pasó."; render(); return; }
+  const r=S.requests.find(x=>x.id===d.id); if(!r) return;
+  const quien=identidadSesion()?.nombre||S.user?.nombre||"Planificación", ts=now();
+  const hora=new Date().toLocaleString("es-AR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"});
+  const texto=`⚠️ No se hizo (lo marcó ${quien}, ${hora}): ${d.motivo}${d.nota.trim()?` — ${d.nota.trim()}`:""}${d.reabrir?" · vuelve a quedar pendiente":""}`;
+  const comentario=[String(r.comentario||"").trim(), texto].filter(Boolean).join("\n");
+  const changes = d.reabrir
+    ? {estado:"Aprobada", armadoId:null, deliveredAt:null, confirmadaSucursalAt:null, nombreQuienRecibio:"", dniQuienRecibio:"", nombreQuienLevanto:"", dniRepartidor:"", nombreEntregoOrigen:"", comentario, updatedAt:ts, cambioManualEstado:"Aprobada", cambioManualPor:quien, cambioManualAt:ts}
+    : {estado:"Cancelada", comentario, updatedAt:ts, cambioManualEstado:"Cancelada", cambioManualPor:quien, cambioManualAt:ts};
+  if(d.falta && r.nombreQuienLevanto){
+    try{ await sb.from("incidencias_repartidores").insert({dni:r.dniRepartidor||"", nombre:r.nombreQuienLevanto, tipo:"NO_ENTREGO", solicitud_id:r.id, armado_id:r.armadoId||null, recorrido:r.recorrido||"", cierre_automatico:false, detalle:`No se hizo (marcado por ${quien}): ${d.motivo}${d.nota.trim()?` — ${d.nota.trim()}`:""}`}); }catch(e){}
+  }
+  S.requests=S.requests.map(x=>x.id===r.id?{...x,...changes}:x);
+  S.modal=null; S.nsh=null; S.selId=null;
+  await sheetsUpdate(r.id, changes);
+  crearNotificacion("LOGISTICA", `⚠️ La ${r.id} (${origenLabel(r)} → ${r.destino}) figuraba ${r.estado} pero no se hizo: ${d.motivo}. ${d.reabrir?"Volvió a quedar pendiente.":"Quedó cancelada."}`, r.id);
+  if(d.reabrir) asignarRecorridoAuto(S.requests.find(x=>x.id===r.id)).catch(()=>{});
+  toast(d.reabrir?`⚠️ ${r.id}: vuelve a quedar pendiente`:`⚠️ ${r.id}: cerrada como no realizada`); render();
+}
 function renderDetalle(){
   const r=S.requests.find(x=>x.id===S.selId);
   if(!r) return "<p>No encontrado</p>";
@@ -12881,6 +12929,10 @@ function renderDetalle(){
       <button class="btn btn-warn btn-md btn-full" style="margin-top:8px" onclick="closeModal();openDejarCerrado('${escH(r.id)}')">
         🔒 Sucursal cerrada — dejar igual
       </button>`:""}
+    </div>`:""}
+  ${puedeMarcarNoSeHizo(r)?`
+    <div style="margin-top:12px;padding-top:14px;border-top:1px solid var(--border)">
+      <button class="btn btn-warn btn-md btn-full" onclick="abrirNoSeHizo('${escH(r.id)}')">⚠️ No se hizo (aunque figure cerrada)</button>
     </div>`:""}`;
 }
 
