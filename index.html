@@ -1277,7 +1277,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261125-0753";
+const APP_VERSION = "20261125-0824";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10465,17 +10465,28 @@ function hojaRutaHtml(id){
   const vuelven=mias.filter(r=>(terminaEnFabrica(r)||_esBaseDe(r.destino,ex.fin)) && !enParDj(r));
   const e=s=>escH(String(s??""));
   const corto=(s,n)=>{ s=String(s||""); return s.length>n?s.slice(0,n-1)+"…":s; };
-  // Cada cosa: solo los 4 números y la descripción (el recorrido ya está arriba)
-  const item=r=>`<div class="it"><b>${e(String(r.id).slice(-4))}</b> ${e(corto(r.descripcion,44))}</div>`;
+  // Cada cosa: solo los 4 números y la descripción (el recorrido ya está arriba).
+  // Bolsines: "1 bolsín" + precinto (en la tabla la sucursal ya está en la fila; al volver, de qué sucursal)
+  const mayus=s=>{ s=String(s||"").trim(); return s ? s.charAt(0).toUpperCase()+s.slice(1) : s; };
+  const precintos=r=>filasPrecintoDe(r).map(f=>String(f.precinto||"").trim()).filter(Boolean);
+  const cantBolsines=r=>{ const n=precintos(r).length; if(n) return n; const m=String(r.descripcion||"").match(/\((\d+)\)/); return m?+m[1]:(+r.cantidad||1); };
+  const item=(r,donde)=>{
+    if(r.tipoPedido==="bolsin"){
+      const n=cantBolsines(r), ps=precintos(r);
+      const de = donde==="volver" ? ` de ${e(origenLabel(r))}` : donde==="salir" ? ` para ${e(r.destino||"")}` : "";
+      return `<div class="it"><b>${n} ${n!==1?"bolsines":"bolsín"}</b>${de}${ps.length?` <span class="pr">🔒 ${ps.map(e).join(" · ")}</span>`:""}</div>`;
+    }
+    return `<div class="it"><b>${e(String(r.id).slice(-4))}</b> ${e(corto(mayus(r.descripcion),44))}</div>`;
+  };
   const filas=paradas.map((p,i)=>{
     const nom=p.libre?(p.obs||"Otra dirección"):p.nombre;
     const dirTxt=!p.libre && esOtraDireccion(p.nombre) ? ((S.flotaDirecciones||[]).find(x=>normNotif(x.nombre)===normNotif(p.nombre))?.direccion||"") : "";
     return `<tr><td class="n">${i+1}</td>
       <td class="par"><b>${e(corto(nom,32))}</b>${p.repetida?`<div class="sub">vuelve a pasar</div>`:""}${dirTxt?`<div class="sub">${e(corto(dirTxt,42))}</div>`:""}</td>
-      <td>${(p.dj||[]).map(item).join("")||`<span class="nada">—</span>`}</td>
-      <td>${(p.rt||[]).map(item).join("")||`<span class="nada">—</span>`}</td>
+      <td>${(p.dj||[]).map(r=>item(r,"tabla")).join("")||`<span class="nada">—</span>`}</td>
+      <td>${(p.rt||[]).map(r=>item(r,"tabla")).join("")||`<span class="nada">—</span>`}</td>
       <td class="f"></td></tr>`; }).join("");
-  const caja=(tit,lista)=>`<div class="caja"><div class="caja-t">${tit} <span>${lista.length}</span></div><div class="caja-l">${lista.map(item).join("")}</div></div>`;
+  const caja=(tit,lista,donde)=>`<div class="caja"><div class="caja-t">${tit} <span>${lista.length}</span></div><div class="caja-l">${lista.map(r=>item(r,donde)).join("")}</div></div>`;
   const hoy=new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit"});
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Hoja de ruta ${e(codigoArmado(a))}</title>
 <style>
@@ -10494,16 +10505,17 @@ td.n{text-align:center;font-weight:bold;font-size:13px}
 .par b{font-size:12px}.sub{font-size:9.5px;color:#444}
 .it{margin:1px 0;line-height:1.35}
 .nada{color:#aaa}
+.pr{font-size:10px;color:#333;white-space:nowrap}
 .pie{margin-top:8px;font-size:10px;color:#333;line-height:1.5}
 .firma{margin-top:14px;text-align:right;font-size:11px}
 @media screen{body{max-width:200mm;margin:12px auto}}
 </style></head><body>
 <div class="cab"><div><h1>${e(codigoArmado(a))}</h1><div style="font-size:12px">${e(hoy)}</div></div>
   <div class="d">Repartidor: <b>${e(a.nombreRep||"________________")}</b><br>Sale de <b>${e(ex.inicio)}</b> · vuelve a <b>${e(ex.fin)}</b></div></div>
-${salen.length?caja(`🏭 Cargá en ${e(ex.inicio)}`, salen):""}
+${salen.length?caja(`🏭 Cargá en ${e(ex.inicio)}`, salen, "salir"):""}
 <table><colgroup><col style="width:5%"><col style="width:19%"><col style="width:31%"><col style="width:31%"><col style="width:14%"></colgroup>
 <thead><tr><th>#</th><th>Parada</th><th>Dejás</th><th>Retirás</th><th>Firma</th></tr></thead><tbody>${filas||`<tr><td colspan="5">Sin paradas</td></tr>`}</tbody></table>
-${vuelven.length?caja(`↩️ Al volver, dejá en ${e(ex.fin)}`, vuelven):""}
+${vuelven.length?caja(`↩️ Al volver, dejá en ${e(ex.fin)}`, vuelven, "volver"):""}
 <div class="pie">En cada parada <b>escaneá el QR</b>. Los <b>bolsines</b> van al buzón de Tesorería con su QR. Si algo no coincide, avisá con <b>📝 Diferencia</b> en la app.</div>
 <div class="firma">Firma repartidor: ______________________</div>
 <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
