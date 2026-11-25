@@ -1268,7 +1268,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261125-0644";
+const APP_VERSION = "20261125-0716";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -2294,10 +2294,12 @@ function renderWidgetFlotaHoy(){
   // muestra a Logística. Cuando esté probado, sacamos esta restricción
   // para que lo vean también sucursales/planificación.
   if(S.user?.rol!=="logistica") return "";
-  const horaCorta = iso => iso ? new Date(iso).toLocaleTimeString("es-AR",{hour:"2-digit",minute:"2-digit"}) : "—";
-  const listaRecorridos = (!S.flotaHoy || !S.flotaHoy.length) ? "" : `
+  const horaCorta = iso => iso ? _hhmm2(new Date(iso)) : "—";   // 24 h, como en el resto de la app
+  // Solo los que están EN CURSO: al terminar o cerrarse, desaparecen de acá (quedan en Métricas → Recorridos)
+  const enCurso = (S.flotaHoy||[]).filter(v=>v.estado==="ACTIVO");
+  const listaRecorridos = !enCurso.length ? "" : `
     <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      ${S.flotaHoy.map(v=>{
+      ${enCurso.map(v=>{
         const activo = v.estado==="ACTIVO";
         const color = activo ? "var(--amber)" : "#1fa86a";
         // Hoja de ruta planificada (armada en Flota) para este recorrido —
@@ -2347,6 +2349,7 @@ function renderWidgetFlotaHoy(){
         return `<div style="background:var(--s2);border-radius:10px;padding:14px 16px;border-left:4px solid ${color};min-width:250px">
           <div style="font-weight:800;font-size:16px">${escH(codigoViaje(v))} ${activo?"🟡":"✅"}</div>
           <div style="font-size:13px;color:var(--muted);font-weight:600;margin-top:2px">👤 ${escH(v.repartidor||"—")}</div>
+          <div style="font-size:13px;margin-top:2px;color:var(--teal);font-weight:600">🕐 Salió de ${escH(extremosDe(hojaDelViaje(v).a).inicio)} a las ${horaCorta(v.horaSalida)}</div>
           <div style="font-size:13px;margin-top:4px;color:var(--text)">${estadoTxt}</div>
           ${listaParadas}
         </div>`;
@@ -11258,11 +11261,30 @@ function nuevoNombreRecorrido(){
   if(!n) { render(); return; }
   S.nuevoArmadoRec=nombreRecorridoCanonico(n); render();
 }
+// Hora estimada de llegada de una transferencia a su destino (con el recorrido en curso que la lleva)
+function etaDeSolicitud(r){
+  if(!r || !r.armadoId || !pendienteEnRecorrido(r)) return null;
+  const a=armadoDe(r.armadoId); if(!a) return null;
+  if(a.estado==="PREPARADO") return {codigo:codigoArmado(a), salio:false};
+  if(a.estado!=="EN_CURSO" || !a.idViaje) return null;
+  if(!(S.flotaHoy&&S.flotaHoy.length) && !S._flotaPedida){ S._flotaPedida=true; cargarEstadoFlotaHoy().then(()=>render()).catch(()=>{}); return {codigo:codigoArmado(a), salio:true}; }
+  const v=(S.flotaHoy||[]).find(x=>x.id===a.idViaje); if(!v) return {codigo:codigoArmado(a), salio:true};
+  const info=hojaDelViaje(v), etas=calcularParadasConEta(v,info);
+  const idx=info.paradas.findIndex(p=>(p.dj||[]).some(x=>x.id===r.id));
+  const e = idx>=0 ? etas[idx] : ((terminaEnFabrica(r) || _esBaseDe(r.destino, extremosDe(a).fin)) ? etas[etas.length-1] : null);
+  return {codigo:codigoArmado(a), salio:true, eta:e?.eta||null, llego:e?.horaReal||null, lugar:e?(e.esVuelta?extremosDe(a).fin:e.sucursal):r.destino};
+}
+const _hhmm2 = d => d ? String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0") : "";
 // Aviso para quien cargó la transferencia: con qué recorrido se retira hoy
 function avisoRecorridoHoy(r){
   if(!r || !r.armadoId || ["Entregada","Cancelada","Rechazada","Entregada (sin confirmar)"].includes(r.estado)) return "";
   if(S.armados===undefined){ S.armados=null; cargarArmados().then(()=>render()).catch(()=>{}); return ""; }
   const a=armadoDe(r.armadoId); if(!a || !_armadoAbierto(a)) return "";
+  const eta=etaDeSolicitud(r);
+  if(eta && eta.salio && eta.eta && r.estado==="En tránsito")
+    return `<div class="aviso-rec">🚚 En camino con <strong>${escH(codigoArmado(a))}</strong> · llega aprox. <strong>${_hhmm2(eta.eta)}</strong> a ${escH(eta.lugar||r.destino||"")}</div>`;
+  if(eta && eta.salio && eta.eta)
+    return `<div class="aviso-rec">🚛 Va con <strong>${escH(codigoArmado(a))}</strong> (ya salió) · llega aprox. <strong>${_hhmm2(eta.eta)}</strong> a ${escH(eta.lugar||r.destino||"")}</div>`;
   return `<div class="aviso-rec">🚛 Tu pedido se retira hoy con el recorrido <strong>${escH(codigoArmado(a))}</strong></div>`;
 }
 // ═══════════════════════════════════════════════════════════════════
@@ -12743,6 +12765,7 @@ function renderDetalle(){
     ${estadoBadges(r)} ${badge(r.prioridad,P_COLOR[r.prioridad])} ${badge(r.id,"var(--blue)")}
     ${r.recorrido&&recorridoVisible(r)?badge(r.recorrido,"var(--teal)"):""}
     ${chipEtiqueta(r)}
+    ${avisoRecorridoHoy(r)}
     ${_pasaPorFab(r) && !r.fabricaAt && ["Entregada","Entregada (sin confirmar)"].includes(r.estado)?badge("Directo, sin pasar por Fábrica","var(--amber)"):""}
   </div>
   ${esLogistica && !["Entregada","Rechazada","Cancelada"].includes(r.estado)?`
