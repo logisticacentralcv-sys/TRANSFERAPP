@@ -1277,7 +1277,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261125-0824";
+const APP_VERSION = "20261125-1354";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8327,8 +8327,24 @@ async function asignarPendientesEnFabrica(){
   }
   if(n){ toast(`🏭 ${n} que esperaba${n!==1?"n":""} en Fábrica se asignaron solas a su recorrido de salida`); render(); }
 }
+// ¿Está lista para ir en un recorrido? (aprobada o más adelante; un quiebre de stock, además, planificado)
+const ESTADOS_LISTOS_RECORRIDO=["Aprobada","Programada","Lista para retirar","En fábrica","No entregada","No levantada","En tránsito"];
+const listaParaRecorrido = r => !!r && ESTADOS_LISTOS_RECORRIDO.includes(r.estado) && !(r.tipoPedido==="quiebreStock" && !r.planificadoAt);
+// Las que quedaron en un recorrido sin estar aprobadas (ej. un quiebre de stock recién pedido) se sueltan
+async function soltarNoAprobadasDeRecorridos(){
+  if(!["logistica","admin"].includes(S.user?.rol)) return 0;
+  const mal=S.requests.filter(r=>r.armadoId && r.estado!=="En tránsito" && ["Pendiente","En revisión","Pendiente Tesorería"].includes(r.estado));
+  for(const r of mal){
+    const ch={armadoId:null, updatedAt:now()};
+    const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+    if(!error) S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+  }
+  if(mal.length){ toast(`↩️ ${mal.length} que todavía no estaba${mal.length!==1?"n":""} aprobada${mal.length!==1?"s":""} se sacaron de los recorridos`); render(); }
+  return mal.length;
+}
 async function asignarRecorridoAuto(r){
   if(!r || (r.armadoId && _armadoAbierto(armadoDe(r.armadoId))) || ["Entregada","Cancelada","Rechazada"].includes(r.estado)) return null;
+  if(!listaParaRecorrido(r)) return null;   // todavía no está aprobada (o es un quiebre sin planificar): no va en un recorrido
   const esBolsin = r.tipoPedido==="bolsin";
   try{ await cargarDatosQR(); }catch(e){}
   await cargarArmados();
@@ -10594,7 +10610,7 @@ async function cargarArmados(){
 }
 async function abrirArmarDelDia(){
   S.subTabRec="armar";
-  await Promise.all([cargarArmados().then(()=>barrerEnTransitoColgado()).then(()=>corregirBolsinesMalAsignados()).then(()=>asignarPendientesEnFabrica()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
+  await Promise.all([cargarArmados().then(()=>soltarNoAprobadasDeRecorridos()).then(()=>barrerEnTransitoColgado()).then(()=>corregirBolsinesMalAsignados()).then(()=>asignarPendientesEnFabrica()).catch(()=>{}), cargarDatosQR(true).catch(()=>{}), (S.flotaMatrizTiempos&&S.flotaMatrizTiempos.length)?null:cargarEstadoFlotaHoy().catch(()=>{})   /* una lista vacía también hay que cargarla */]);
   if(!S.armadoSel || !armadoDe(S.armadoSel)) S.armadoSel=(S.armados.find(_armadoAbierto)||{}).id||"";
   if(S.armadoSel) cargarAvanceArmado(S.armadoSel);
   render();
@@ -10965,7 +10981,7 @@ function renderRepartidorSimple(){
   const yo=_dniLimpio(S.miIdentidadRep?.dni);
   // Para tomar: lo de SU recorrido que todavía no tiene, y los retiros en otra dirección (sin QR)
   const deOtro=r=>{ const x=r.armadoId&&armadoDe(r.armadoId); return x && x.estado==="EN_CURSO" && _dniLimpio(x.dniRep)!==yo; };
-  const paraTomar=S.requests.filter(r=>pendienteEnRecorrido(r) && r.estado!=="En tránsito" && (
+  const paraTomar=S.requests.filter(r=>pendienteEnRecorrido(r) && listaParaRecorrido(r) && r.estado!=="En tránsito" && (
       (a && r.armadoId===a.id) || (esOrigenOtraDireccion(r) && puedeTomarAhora(r) && !deOtro(r))));
   const porLugar={}; paraTomar.forEach(r=>{ const l=esOrigenOtraDireccion(r)?`📍 ${direccionDe(r,"origen")||origenLabel(r)}`:(saleDeFabrica(r)?"Fábrica":origenLabel(r)); (porLugar[l]=porLugar[l]||[]).push(r); });
   // ── Siguiente destino (arriba)
