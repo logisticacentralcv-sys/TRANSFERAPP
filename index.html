@@ -1248,6 +1248,11 @@ tr[onclick]:active td{background:var(--s3)}
 .nsh-op{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--border2);border-radius:10px;margin-top:6px;cursor:pointer;font-size:13.5px}
 .nsh-op small{display:block;color:var(--muted);font-size:12px}.nsh-op input{margin-top:3px}
 
+
+.wa-lista{display:flex;flex-direction:column;gap:6px;max-height:340px;overflow:auto}
+.wa-fila{display:grid;grid-template-columns:minmax(110px,1fr) minmax(150px,1.3fr) auto;gap:8px;align-items:center}
+.wa-fila span{font-size:13.5px;font-weight:600}.wa-fila .inp{margin:0}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1272,7 +1277,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261125-0740";
+const APP_VERSION = "20261125-0753";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5337,7 +5342,9 @@ async function sheetsAdd(row){
     delete payload.id; // que lo genere Postgres, nunca lo mandamos nosotros
     const { data, error } = await sb.from("solicitudes").insert(payload).select().single();
     if(error) throw error;
-    return toCamelRow(data);
+    const creada=toCamelRow(Array.isArray(data)?data[0]:data);
+    avisarWhatsappTransferencia(creada);   // aviso por WhatsApp a las sucursales (si está activado)
+    return creada;
   }catch(e){
     console.warn("Supabase add:",e);
     toast(_esStaff()?"⚠️ No se pudo guardar: "+(e?.message||e):"⚠️ No se pudo guardar. Probá de nuevo; si sigue, avisale a Logística.","warn");
@@ -7261,6 +7268,50 @@ function renderCardDestinosAdmin(){
     ${S.admDirMsg?`<div style="font-size:12.5px;margin-top:6px">${escH(S.admDirMsg)}</div>`:""}
   </div>`;
 }
+// ═══ WhatsApp a las sucursales (automático, con la plataforma oficial de Meta) ═══
+const whatsappActivo = () => (S.config?.whatsapp_activo||"")==="si";
+function numerosWhatsapp(){ try{ return JSON.parse(S.config?.whatsapp_sucursales||"{}")||{}; }catch(e){ return {}; } }
+async function _guardarConfigWa(clave, valor){
+  S.config={...S.config, [clave]:valor}; render();
+  try{ const { error } = await sb.from("config").upsert({clave, valor}); if(error) throw error; }catch(e){ toast("⚠️ No se pudo guardar","warn"); }
+}
+function guardarNumeroWhatsapp(suc, valor){
+  const n=numerosWhatsapp(), v=String(valor||"").replace(/\D/g,"");
+  if(v) n[suc]=v; else delete n[suc];
+  _guardarConfigWa("whatsapp_sucursales", JSON.stringify(n));
+}
+async function _llamarApiWhatsapp(body){
+  let auth={};
+  try{ const { data } = await sb.auth.getSession(); if(data?.session?.access_token) auth={Authorization:`Bearer ${data.session.access_token}`}; }catch(e){}
+  const r=await fetch("/api/whatsapp-transferencia",{method:"POST",headers:{"Content-Type":"application/json",...auth},body:JSON.stringify(body)});
+  const j=await r.json().catch(()=>({}));
+  if(!r.ok||j.error) throw new Error(j.error||"No se pudo enviar");
+  return j;
+}
+async function probarWhatsapp(suc){
+  try{ await _llamarApiWhatsapp({prueba:true, sucursal:suc}); toast(`📲 Prueba enviada a ${suc}`); }
+  catch(e){ toast("⚠️ "+e.message,"warn"); }
+}
+// Al crear una transferencia: aviso a la sucursal de origen y a la de destino (no a la que la cargó)
+function avisarWhatsappTransferencia(r){
+  if(!r || !whatsappActivo() || r.tipoPedido==="bolsin") return;
+  const excluir = S.user?.rol==="sucursal" ? S.user.area : "";
+  _llamarApiWhatsapp({solicitudId:r.id, excluir}).then(j=>{ if(_esStaff() && j.fallas && j.fallas.length) toast(`⚠️ WhatsApp no llegó a: ${j.fallas.map(f=>f.sucursal).join(", ")}`,"warn"); })
+    .catch(e=>{ if(_esStaff()) console.warn("WhatsApp:",e.message); });
+}
+function renderCardWhatsapp(){
+  const n=numerosWhatsapp(), sucs=getSucursales().filter(s=>!/^(f[aá]brica|dep[oó]sito|tesorer[ií]a)$/i.test(s));
+  return `<div class="card" style="padding:16px;margin-top:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+      <div style="font-weight:700;font-size:15px">📲 WhatsApp a las sucursales</div>
+      <label class="cfg-chip ${whatsappActivo()?"on":""}" style="cursor:pointer"><input type="checkbox" class="chk-round" ${whatsappActivo()?"checked":""} onchange="_guardarConfigWa('whatsapp_activo', this.checked?'si':'no')"/><span>${whatsappActivo()?"Activado":"Desactivado"}</span></label>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin:4px 0 10px">Cuando se genera una transferencia, le llega un WhatsApp a la sucursal de origen (para prepararla) y a la de destino (se la llevan), menos a la que la cargó. Cargá el número con código de país y de área, sin 0 ni 15 (ej: 5492235551234).</p>
+    <div class="wa-lista">${sucs.map(s=>`<div class="wa-fila"><span>${escH(s)}</span>
+      <input class="inp" inputmode="tel" placeholder="549…" value="${escH(n[s]||"")}" onchange="guardarNumeroWhatsapp(decodeURIComponent('${encodeURIComponent(s)}'), this.value)"/>
+      <button class="btn btn-ghost btn-sm" ${n[s]?"":"disabled"} onclick="probarWhatsapp(decodeURIComponent('${encodeURIComponent(s)}'))">Probar</button></div>`).join("")}</div>
+  </div>`;
+}
 function renderCardFirmasRep(){
   const vistos=new Set(), reps=S.usuarios.filter(u=>u.tipo==="REPARTIDOR" && u.activo!=="no" && _dniLimpio(u.dni) && !vistos.has(_dniLimpio(u.dni)) && vistos.add(_dniLimpio(u.dni)))
     .sort((a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||"")));
@@ -7340,6 +7391,7 @@ function renderAdminConfig(){
     </div>
   </div>
   ${renderCardDestinosAdmin()}
+  ${renderCardWhatsapp()}
   ${renderCardFirmasRep()}`;
 }
 
@@ -10408,58 +10460,52 @@ async function cerrarArmadoForzado(a, manual){
 function hojaRutaHtml(id){
   const a=armadoDe(id); if(!a) return "";
   const mias=transfDelArmado(a), paradas=paradasArmado(a,mias), ex=extremosDe(a);
-  const est=paradas.length ? estimarArmado(a, paradas, a.tomadoAt||undefined) : null;
   const enParRt=r=>paradas.some(p=>(p.rt||[]).includes(r)), enParDj=r=>paradas.some(p=>(p.dj||[]).includes(r));
   const salen=mias.filter(r=>(saleDeFabrica(r)||_esBaseDe(origenLabel(r),ex.inicio)) && !enParRt(r));
   const vuelven=mias.filter(r=>(terminaEnFabrica(r)||_esBaseDe(r.destino,ex.fin)) && !enParDj(r));
   const e=s=>escH(String(s??""));
   const corto=(s,n)=>{ s=String(s||""); return s.length>n?s.slice(0,n-1)+"…":s; };
-  const item=(r,conDestino)=>`<div class="it"><b>${e(String(r.id).slice(-4))}</b> ${e(corto(r.descripcion,34))} · ${e(r.cantidad)} ${e(r.unidad||"")}${conDestino?` → <b>${e(corto(esDestinoOtraDireccion(r)?(direccionDe(r,"destino")||r.destino):r.destino,22))}</b>`:""}${r.tipoPedido==="bolsin"?` <span class="tag">BOLSÍN</span>`:""}${esOrigenOtraDireccion(r)&&r.tipoPedido!=="bolsin"?` <span class="tag">RETIRO</span>`:""}${r.tipoPedido!=="bolsin"?` <span class="et">${e(etiquetaPreparacion(r))}</span>`:""}</div>`;
+  // Cada cosa: solo los 4 números y la descripción (el recorrido ya está arriba)
+  const item=r=>`<div class="it"><b>${e(String(r.id).slice(-4))}</b> ${e(corto(r.descripcion,44))}</div>`;
   const filas=paradas.map((p,i)=>{
-    const et=est?.etas?.[i];
     const nom=p.libre?(p.obs||"Otra dirección"):p.nombre;
     const dirTxt=!p.libre && esOtraDireccion(p.nombre) ? ((S.flotaDirecciones||[]).find(x=>normNotif(x.nombre)===normNotif(p.nombre))?.direccion||"") : "";
     return `<tr><td class="n">${i+1}</td>
-      <td class="par"><b>${e(corto(nom,30))}</b>${p.repetida?`<div class="sub">vuelve a pasar</div>`:""}${dirTxt?`<div class="sub">${e(corto(dirTxt,40))}</div>`:""}${p.libre||dirTxt?`<div class="sub">sin QR: directo</div>`:""}</td>
-      <td class="h">${et&&et.hora?e(et.hora):"—"}</td>
-      <td>${(p.dj||[]).map(r=>item(r,false)).join("")||`<span class="nada">—</span>`}</td>
-      <td>${(p.rt||[]).map(r=>item(r,true)).join("")||`<span class="nada">—</span>`}</td>
+      <td class="par"><b>${e(corto(nom,32))}</b>${p.repetida?`<div class="sub">vuelve a pasar</div>`:""}${dirTxt?`<div class="sub">${e(corto(dirTxt,42))}</div>`:""}</td>
+      <td>${(p.dj||[]).map(item).join("")||`<span class="nada">—</span>`}</td>
+      <td>${(p.rt||[]).map(item).join("")||`<span class="nada">—</span>`}</td>
       <td class="f"></td></tr>`; }).join("");
-  const hoy=new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit",year:"numeric"});
-  const salidaTxt=a.tomadoAt?_hhmm2(new Date(a.tomadoAt)):horaSalidaArmado();
+  const caja=(tit,lista)=>`<div class="caja"><div class="caja-t">${tit} <span>${lista.length}</span></div><div class="caja-l">${lista.map(item).join("")}</div></div>`;
+  const hoy=new Date().toLocaleDateString("es-AR",{weekday:"long",day:"2-digit",month:"2-digit"});
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Hoja de ruta ${e(codigoArmado(a))}</title>
 <style>
-@page{size:A4;margin:9mm}
+@page{size:A4;margin:10mm}
 *{box-sizing:border-box}
-body{font-family:Arial,Helvetica,sans-serif;font-size:9.5px;color:#111;margin:0}
-h1{font-size:17px;margin:0}
-.cab{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:5px;margin-bottom:6px}
-.cab .d{font-size:10.5px;text-align:right;line-height:1.45}
-.bloque{border:1px solid #999;border-radius:4px;padding:4px 6px;margin:5px 0}
-.bloque .t{font-weight:bold;font-size:10.5px;margin-bottom:2px}
-table{width:100%;border-collapse:collapse;table-layout:fixed}
-th{background:#eee;font-size:9.5px;text-align:left;padding:3px 4px;border:1px solid #999}
-td{border:1px solid #999;padding:3px 4px;vertical-align:top}
-td.n{width:4%;text-align:center;font-weight:bold;font-size:11px}
-td.par{width:17%}td.h{width:7%;font-weight:bold;font-size:10.5px}td.f{width:14%}
-.sub{font-size:8.5px;color:#444}
-.it{margin:1px 0;line-height:1.3}
-.tag{font-size:8px;font-weight:bold;border:1px solid #111;border-radius:3px;padding:0 3px}
-.et{font-size:8px;color:#333;border-bottom:1px dotted #333}
-.nada{color:#999}
-.pie{margin-top:6px;font-size:9px;color:#333;line-height:1.5}
-.firma{margin-top:10px;display:flex;justify-content:space-between;font-size:9.5px}
+body{font-family:Arial,Helvetica,sans-serif;font-size:11px;color:#111;margin:0}
+.cab{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:8px}
+h1{font-size:20px;margin:0}.cab .d{font-size:12px;text-align:right;line-height:1.5}
+.caja{border:2px solid #111;border-radius:6px;padding:6px 10px;margin:8px 0}
+.caja-t{font-weight:bold;font-size:14px;margin-bottom:4px}.caja-t span{font-weight:normal;border:1px solid #111;border-radius:10px;padding:0 7px;font-size:12px}
+.caja-l{columns:2;column-gap:18px}.caja-l .it{font-size:12.5px;margin:2px 0;break-inside:avoid}
+table{width:100%;border-collapse:collapse;table-layout:fixed;margin-top:4px}
+th{background:#eee;font-size:11px;text-align:left;padding:4px 5px;border:1px solid #888}
+td{border:1px solid #888;padding:4px 5px;vertical-align:top}
+td.n{text-align:center;font-weight:bold;font-size:13px}
+.par b{font-size:12px}.sub{font-size:9.5px;color:#444}
+.it{margin:1px 0;line-height:1.35}
+.nada{color:#aaa}
+.pie{margin-top:8px;font-size:10px;color:#333;line-height:1.5}
+.firma{margin-top:14px;text-align:right;font-size:11px}
 @media screen{body{max-width:200mm;margin:12px auto}}
 </style></head><body>
-<div class="cab"><div><h1>Hoja de ruta · ${e(codigoArmado(a))}</h1><div>${e(hoy)}</div></div>
-  <div class="d">Repartidor: <b>${e(a.nombreRep||"________________")}</b><br>Sale de <b>${e(ex.inicio)}</b> ${e(salidaTxt)} · vuelve a <b>${e(ex.fin)}</b>${est&&!est.falta?` ≈ ${e(est.vuelta)}`:""}<br>${mias.length} transferencia${mias.length!==1?"s":""} · ${paradas.length} parada${paradas.length!==1?"s":""}</div></div>
-${salen.length?`<div class="bloque"><div class="t">Antes de salir, cargá (${salen.length}) — te lo entregan en ${e(ex.inicio)} con tu DNI</div>${salen.map(r=>item(r,true)).join("")}</div>`:""}
-<table><colgroup><col style="width:4%"><col style="width:15%"><col style="width:7%"><col style="width:31%"><col style="width:31%"><col style="width:12%"></colgroup><thead><tr><th>#</th><th>Parada</th><th>Llega ≈</th><th>Dejás</th><th>Retirás (→ a dónde va)</th><th>Hora / firma</th></tr></thead><tbody>${filas||`<tr><td colspan="6">Sin paradas</td></tr>`}</tbody></table>
-${vuelven.length?`<div class="bloque"><div class="t">Al volver a ${e(ex.fin)}, dejás (${vuelven.length})</div>${vuelven.map(r=>item(r,true)).join("")}</div>`:""}
-<div class="pie">• En cada parada <b>escaneá el QR</b>: así queda registrada la llegada. Lo que dejás lo firma quien recibe (DNI).<br>
-• Los <b>bolsines</b> se dejan en el buzón de Tesorería con su QR. • Si algo no coincide, avisá desde la app con <b>📝 Diferencia</b>.<br>
-• El número en negrita son los últimos 4 dígitos de la transferencia; la etiqueta subrayada es la que tiene el paquete.</div>
-<div class="firma"><span>Salida: ______ hs</span><span>Vuelta: ______ hs</span><span>Firma repartidor: ____________________</span></div>
+<div class="cab"><div><h1>${e(codigoArmado(a))}</h1><div style="font-size:12px">${e(hoy)}</div></div>
+  <div class="d">Repartidor: <b>${e(a.nombreRep||"________________")}</b><br>Sale de <b>${e(ex.inicio)}</b> · vuelve a <b>${e(ex.fin)}</b></div></div>
+${salen.length?caja(`🏭 Cargá en ${e(ex.inicio)}`, salen):""}
+<table><colgroup><col style="width:5%"><col style="width:19%"><col style="width:31%"><col style="width:31%"><col style="width:14%"></colgroup>
+<thead><tr><th>#</th><th>Parada</th><th>Dejás</th><th>Retirás</th><th>Firma</th></tr></thead><tbody>${filas||`<tr><td colspan="5">Sin paradas</td></tr>`}</tbody></table>
+${vuelven.length?caja(`↩️ Al volver, dejá en ${e(ex.fin)}`, vuelven):""}
+<div class="pie">En cada parada <b>escaneá el QR</b>. Los <b>bolsines</b> van al buzón de Tesorería con su QR. Si algo no coincide, avisá con <b>📝 Diferencia</b> en la app.</div>
+<div class="firma">Firma repartidor: ______________________</div>
 <script>window.onload=function(){setTimeout(function(){window.print();},250);};<\/script>
 </body></html>`;
 }
