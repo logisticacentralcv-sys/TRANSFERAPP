@@ -1240,6 +1240,10 @@ tr[onclick]:active td{background:var(--s3)}
 .qr-acomp-card{padding:14px 16px;margin-bottom:12px;border-color:#2de0c466}
 .qr-acomp-btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.qr-acomp-btns .btn{flex:1 1 140px;justify-content:center;min-height:46px}
 
+
+.qr-sinrec-dejar{padding:14px 16px;margin-bottom:12px;border-color:#2ecc7a66;display:flex;flex-direction:column;gap:6px}
+.qr-sinrec-dejar strong{font-size:16px}.qr-sinrec-dejar span{font-size:13px;color:var(--muted)}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1264,7 +1268,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261124-1017";
+const APP_VERSION = "20261125-0644";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8231,7 +8235,7 @@ async function barrerEnTransitoColgado(){
     const activos=new Set((vjs||[]).flatMap(v=>[_dniLimpio(v.dni_rep1),_dniLimpio(v.dni_rep2)]).filter(Boolean));
     const ids=[...new Set(filas.map(r=>r.armadoId).filter(Boolean))];
     const estArm={}; if(ids.length){ const { data:ar } = await sb.from("recorridos_armados").select("id,estado,codigo,recorrido,id_viaje,cerrado_at").in("id",ids); (ar||[]).forEach(a=>estArm[a.id]=a); }
-    const viejo=Date.now()-6*3600e3, tres=Date.now()-2*3600e3;   // bolsines: 2 h después de cerrado el recorrido
+    const viejo=Date.now()-24*3600e3, tres=Date.now()-2*3600e3;   // sin recorrido: 24 h (entregas excepcionales); bolsines: 2 h después de cerrado
     const colgadas=filas.filter(r=>{
       const dni=(portadorSolicitud(r)||{}).dni||"";
       if(dni && activos.has(dni)) return false;                                   // lo tiene alguien que está en un recorrido ahora
@@ -8241,7 +8245,7 @@ async function barrerEnTransitoColgado(){
         return (!a || !["EN_CURSO","PREPARADO"].includes(a.estado)) && !!fin && new Date(fin).getTime() < tres;
       }
       if(a) return !["EN_CURSO","PREPARADO"].includes(a.estado);                  // su recorrido ya se cerró
-      return new Date(r.updatedAt||r.createdAt||0).getTime() < viejo;             // sin recorrido y hace más de 6 h
+      return new Date(r.updatedAt||r.createdAt||0).getTime() < viejo;             // sin recorrido y hace más de 24 h
     });
     const porDni={}; colgadas.forEach(r=>{ const d=(portadorSolicitud(r)||{}).dni||"?"; (porDni[d]=porDni[d]||[]).push(r); });
     let n=0;
@@ -10853,7 +10857,9 @@ function renderRepartidorSimple(){
         <div class="guia-paso"><i></i><span>Vuelta a ${escH(ex.fin)}</span></div></div>`:""}
     </div>`;
   } else {
-    sig=`<div class="card sig-card sin"><strong>Sin recorrido</strong><span>Escaneá el QR de Fábrica y elegí tu recorrido. Si ya saliste, escaneá el de la sucursal donde estás.</span></div>`;
+    sig = trans.length
+      ? `<div class="card sig-card sin"><strong>Sin recorrido · llevás ${trans.length}</strong><span>Escaneá el QR de la sucursal donde lo dejás y entregalo con el DNI de quien recibe. Abajo, en "Lo que llevás", ves qué es y a dónde va.</span></div>`
+      : `<div class="card sig-card sin"><strong>Sin recorrido</strong><span>Escaneá el QR de Fábrica y elegí tu recorrido. Si ya saliste, escaneá el de la sucursal donde estás.</span></div>`;
   }
   // Cada cosa es una TARJETA: tocándola se ve qué es y a dónde va (sin botón "Ver")
   const tarjeta=(r,acc)=>`<div class="rs-card" role="button" tabindex="0" onclick="verItem('${escH(r.id)}')">
@@ -11759,9 +11765,16 @@ async function qrUnirmeArmado(id){
 }
 function renderElegirRecorridoEnCamino(e, pagina){
   const lugar=e.oficial||e.sucursal;
+  const yo=_dniLimpio(S.miIdentidadRep?.dni);
+  const paraDejar=S.requests.filter(r=>r.estado==="En tránsito" && (portadorSolicitud(r)||{}).dni===yo && normNotif(r.destino)===normNotif(lugar)).length;
   const prep=(S.armados||[]).filter(x=>x.estado==="PREPARADO");
   const curso=(S.armados||[]).filter(x=>x.estado==="EN_CURSO" && x.idViaje);
   return pagina(`
+    ${paraDejar?`<div class="card qr-sinrec-dejar">
+      <strong>📦 Tenés ${paraDejar} para dejar acá</strong>
+      <span>Te lo dieron sin recorrido: lo podés entregar igual.</span>
+      <button class="btn btn-success btn-md btn-full" onclick="S.estoyEn.estado='ok';S.estoyEn.sinRecorrido=true;render()">Entregar lo que tengo para ${escH(lugar)}</button>
+    </div>`:""}
     <div class="qr-banner warn">⚠️ Estás en <strong>${escH(lugar)}</strong> pero no iniciaste un recorrido (no escaneaste Fábrica). Elegí en cuál estás para seguir.</div>
     <div class="card qr-iniciar">
       <div class="qr-iniciar-tit">🚛 ¿En qué recorrido estás?</div>
