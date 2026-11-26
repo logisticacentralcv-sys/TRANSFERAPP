@@ -1277,7 +1277,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261126-0612";
+const APP_VERSION = "20261126-0615";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -5838,7 +5838,7 @@ function renderPlanificacion(){
       const esDestinoFab = ["fábrica","fabrica","depósito","deposito","deposito central"].includes((r.destino||"").trim().toLowerCase());
       const puedeRecibirFab = esDestinoFab && r.estado==="En tránsito";
       const botones = `
-        ${["Pendiente","En revisión"].includes(r.estado)?`<button class="btn btn-primary btn-sm" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
+        ${editableHastaRetiro(r)?`<button class="btn btn-primary btn-sm" onclick="openEditar('${escH(r.id)}')">✏️ Editar</button>`:""}
         ${puedeRecibirFab?`<button class="btn btn-teal btn-sm" onclick="openCodigoEntrega('${escH(r.id)}')">🔑 Confirmar en fábrica</button>`:""}
         ${avisoRecorridoHoy(r)}
         ${["Aprobada","Programada"].includes(r.estado) && !esOrigenOtraDireccion(r)?`<button class="btn btn-success btn-sm" onclick="openListo('${escH(r.id)}')">✅ Marcar lista</button>`:""}`.trim();
@@ -13575,6 +13575,9 @@ function renderPalabraModal(){
 }
 
 // ── Modal editar solicitud (planificación/área, solo Pendiente/En revisión) ──
+// Quien la creó (Planificación, áreas) la puede editar hasta que el repartidor la retira
+const ESTADOS_EDITABLES=["Pendiente","En revisión","Aprobada","Programada","Lista para retirar","Pendiente Tesorería"];
+const editableHastaRetiro = r => !!r && ESTADOS_EDITABLES.includes(r.estado);
 function renderEditarModal(){
   const d = S.editarModal;
   const r = S.requests.find(x=>x.id===d.id);
@@ -13607,7 +13610,18 @@ function renderEditarModal(){
         ${UNIDADES.map(u=>`<option ${((d.unidad||r?.unidad)===u)?"selected":""}>${u}</option>`).join("")}
       </select>
     </div>
-  </div>`:""}
+  </div>`:(r && editableHastaRetiro(r) && r.tipoPedido!=="bolsin" ? `
+  <div class="alert-info" style="margin-bottom:14px;font-size:12px">✏️ La podés cambiar hasta que el repartidor la retire.${["Aprobada","Lista para retirar","Programada"].includes(r.estado)?" Como ya está aprobada, se le avisa a Logística lo que cambies.":""}</div>
+  <div class="g2">
+    <div class="field">
+      <label>Destino</label>
+      <select id="ed-destino-c">${[...new Set([r.destino, ...getDestinos(), ...getSucursales()].filter(Boolean))].map(x=>`<option ${x===(d.destino??r.destino)?"selected":""}>${escH(x)}</option>`).join("")}</select>
+    </div>
+    <div class="field">
+      <label>Unidad</label>
+      <select id="ed-unidad-c">${UNIDADES.map(u=>`<option ${((d.unidad||r?.unidad)===u)?"selected":""}>${u}</option>`).join("")}</select>
+    </div>
+  </div>` : "")}
   <div class="field">
     <label>Descripción</label>
     <textarea id="ed-desc" rows="2">${escH(d.descripcion||r?.descripcion||"")}</textarea>
@@ -13739,11 +13753,23 @@ async function submitEditar(){
     changes.area     = area;
     if(unidad) changes.unidad = unidad;
   }
+  const rAntes = S.requests.find(x=>x.id===d.id);
+  if(S.user?.rol!=="admin" && rAntes){
+    if(!editableHastaRetiro(rAntes)){ S.editarModal.err="Ya la retiraron: no se puede editar."; render(); return; }
+    const dstC=($("ed-destino-c")?.value||"").trim(), uniC=($("ed-unidad-c")?.value||"").trim();
+    if(dstC && dstC!==rAntes.destino){ changes.destino=dstC; changes.armadoId=null; }   // cambia el destino: sale del recorrido y se vuelve a asignar
+    if(uniC) changes.unidad=uniC;
+  }
   S.editarModal.loading = true; renderNow();
   S.requests = S.requests.map(x=>x.id===d.id?{...x,...changes}:x);
   S.modal = null;
   toast("Solicitud actualizada");
-  sheetsUpdate(d.id, changes);
+  await sheetsUpdate(d.id, changes);
+  if(rAntes && S.user?.rol!=="admin" && ["Aprobada","Lista para retirar","Programada"].includes(rAntes.estado)){
+    const qué=[changes.destino&&`destino → ${changes.destino}`, changes.cantidad!==undefined&&+changes.cantidad!==+rAntes.cantidad&&`cantidad → ${changes.cantidad}`, changes.descripcion!==rAntes.descripcion&&"descripción", changes.unidad&&changes.unidad!==rAntes.unidad&&`unidad → ${changes.unidad}`].filter(Boolean).join(", ");
+    if(qué) crearNotificacion("LOGISTICA", `✏️ ${identidadSesion()?.nombre||S.user?.area||"Planificación"} editó la ${d.id} (ya aprobada): ${qué}`, d.id);
+  }
+  if(changes.destino) asignarRecorridoAuto(S.requests.find(x=>x.id===d.id)).catch(()=>{});
 }
 
 async function cancelarSolicitud(id){
