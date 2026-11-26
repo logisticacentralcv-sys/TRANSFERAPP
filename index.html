@@ -1277,7 +1277,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261125-1354";
+const APP_VERSION = "20261126-0612";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8285,8 +8285,36 @@ async function alLlegarAFabrica(id){
 // Barrido (al abrir Recorridos o crear uno): las que esperan en Fábrica se asignan solas si hay un recorrido que vaya
 // Lo que quedó EN TRÁNSITO de recorridos que ya se cerraron (y quien lo tenía no está en un recorrido activo):
 // se descarga como en el cierre automático (bolsines al buzón, lo de Fábrica entregado, lo demás a Fábrica), con falta
+// Nada queda EN TRÁNSITO más de 3 horas: se da por entregado (el primer tramo de "pasa por Fábrica", por llegado a Fábrica).
+// Los bolsines tienen su regla aparte (buzón con QR o a las 2 h del cierre).
+async function entregarEnTransitoVencidas(){
+  if(!["logistica","admin"].includes(S.user?.rol)) return 0;
+  let n=0;
+  try{
+    const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").limit(1000);
+    const lim=Date.now()-3*3600e3;
+    for(const r of toCamelRows(data||[])){
+      if(r.tipoPedido==="bolsin") continue;
+      const primerTramo=_pasaPorFab(r) && !r.fabricaAt;
+      const desde=new Date((!primerTramo && _pasaPorFab(r) ? r.salidaFabricaAt : null) || r.levantadoAt || r.updatedAt || r.createdAt || 0).getTime();
+      if(!(desde < lim)) continue;
+      const nota = primerTramo ? "⏱️ Llegó a Fábrica sola: 3 h en tránsito sin registrar la entrega" : "⏱️ Se dio por entregada sola: 3 h en tránsito sin registrar la entrega";
+      const comentario=[String(r.comentario||"").trim(), nota].filter(Boolean).join("\n");
+      const ch = primerTramo
+        ? {estado:"En fábrica", fabricaAt:now(), armadoId:null, comentario, updatedAt:now()}
+        : {estado:"Entregada", deliveredAt:now(), nombreQuienRecibio:r.nombreQuienRecibio||"— (automática)", comentario, updatedAt:now()};
+      const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+      if(error) continue;
+      S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x); n++;
+      try{ await sb.from("incidencias_repartidores").insert({dni:r.dniRepartidor||"", nombre:r.nombreQuienLevanto||"", tipo:"ENTREGA_AUTOMATICA", solicitud_id:r.id, armado_id:r.armadoId||null, recorrido:r.recorrido||"", cierre_automatico:true, detalle:"Se dio por entregada a las 3 h en tránsito (no se registró la entrega)"}); }catch(e){}
+    }
+    if(n){ toast(`⏱️ ${n} que llevaba${n!==1?"n":""} más de 3 h en tránsito se dio${n!==1?"eron":""} por entregada${n!==1?"s":""}`); render(); }
+  }catch(e){ console.warn("Entrega a las 3 h:",e); }
+  return n;
+}
 async function barrerEnTransitoColgado(){
   if(!["logistica","admin"].includes(S.user?.rol)) return 0;
+  await entregarEnTransitoVencidas();
   try{
     const { data } = await sb.from("solicitudes").select("*").eq("estado","En tránsito").limit(1000);
     const filas=toCamelRows(data||[]); if(!filas.length) return 0;
