@@ -1258,6 +1258,19 @@ tr[onclick]:active td{background:var(--s3)}
 .ar-grupo.otras{color:var(--muted);margin-top:14px;padding-top:10px;border-top:1px solid var(--border)}
 .ar-pasa{font-size:12px;color:var(--teal);font-weight:600;margin-top:2px}
 
+
+.ar-par-tit{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ar-par-tit .ar-nom{font-weight:700}
+.ar-der{margin-left:auto;display:flex;align-items:center;gap:10px}
+.ar-asa{cursor:grab;color:var(--faint);font-size:14px;letter-spacing:-2px;user-select:none;padding:0 2px}
+.ar-par-tit[draggable="true"]{cursor:grab}
+.ar-par-tit.arrastrando{opacity:.45}
+.ar-par-tit.sobre-par{box-shadow:inset 0 3px 0 var(--teal)}
+.ar-desc-min{font-size:15px;font-weight:700;color:var(--text);font-family:var(--mono);min-width:56px;text-align:right}
+.ar-par-tit .ar-eta{font-size:14px}
+.ar-x{background:none;border:1px solid var(--border2);color:var(--muted);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:13px;flex:none}
+.ar-x:hover{color:#f87171;border-color:#f8717166;background:#f0525214}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1282,7 +1295,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261126-0648";
+const APP_VERSION = "20261126-0706";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -8825,7 +8838,7 @@ function renderLogTabla(){
         <thead><tr>
           ${S.modoSeleccion?`<th><input type="checkbox" class="chk-round" ${filtered.length&&filtered.every(r=>S.logSeleccion.has(r.id))?"checked":""} onchange="toggleLogSeleccionTodos(this.checked)"/></th>`:""}
           <th>N° · Fecha</th><th>Origen → Destino</th><th>Descripción</th><th>F.Req.</th>
-          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th>¿Quién la tiene?</th><th></th>
+          <th>Prioridad</th><th>Estado</th><th>Recorrido</th><th></th>
         </tr></thead>
         <tbody>
           ${filtered.length===0?`<tr class="empty-row"><td colspan="${S.modoSeleccion?10:9}">Sin resultados</td></tr>`:""}
@@ -8838,7 +8851,7 @@ function renderLogTabla(){
             <td>${badge(r.prioridad,P_COLOR[r.prioridad])}</td>
             <td>${estadoBadges(r)}${esperaSalidaDeFabrica(r)?`<div class="ar-enfab" style="margin-top:3px" title="Llegó a Fábrica: falta asignarle el recorrido de salida">🏭 Falta recorrido de salida</div>`:""}</td>
             <td class="muted-cell">${r.recorrido?badge(r.recorrido,"var(--teal)"):"—"}</td>
-            <td class="muted-cell">${["En tránsito","En fábrica"].includes(r.estado) && r.nombreQuienLevanto?escH(r.nombreQuienLevanto):"—"}</td>
+
             <td style="white-space:nowrap" onclick="event.stopPropagation()">
               ${puede("solicitudes")&&r.estado!=="Entregada"&&r.estado!=="Rechazada"&&r.estado!=="Cancelada"?`<button class="btn btn-primary btn-sm" onclick="openGestionar('${escH(r.id)}')">Gestionar</button>`:""}
             </td>
@@ -10827,6 +10840,28 @@ function paradasArmado(a, mias){
   return base;
 }
 // Fijar una parada agregada sola (ej. la vuelta a una sucursal) para poder moverla
+// Arrastrar una parada a otro lugar del recorrido (las agregadas, al moverlas, quedan fijas)
+function arrastrarParada(ev,id,i){
+  S._arrParada={id,i};
+  try{ ev.dataTransfer.setData("application/x-parada", String(i)); ev.dataTransfer.effectAllowed="move"; }catch(e){}
+  ev.currentTarget.classList.add("arrastrando"); ev.stopPropagation();
+}
+function soltarParada(ev,id,j){
+  const d=S._arrParada; if(!d) return;
+  ev.preventDefault(); ev.stopPropagation(); S._arrParada=null;
+  if(d.id!==id || d.i===j) return;
+  moverParadaA(id, d.i, j);
+}
+async function moverParadaA(id, desde, hasta){
+  const a=armadoDe(id); if(!a) return;
+  const ps=paradasArmado(a, transfDelArmado(a)), pd=ps[desde]; if(!pd || pd.libre) return;
+  const base=[...paradasDeArmado(a)];
+  // posición en la lista de paradas cargadas: cuántas cargadas hay antes del lugar donde se suelta
+  let tgt=ps.slice(0, hasta>desde ? hasta+1 : hasta).filter(p=>!p.extra && p!==pd).length;
+  if(!pd.extra && pd.iBase!=null) base.splice(pd.iBase,1);
+  base.splice(Math.max(0,Math.min(base.length,tgt)),0,pd.nombre);
+  await guardarArmadoCampos(id,{paradas:base});
+}
 // Mover una parada agregada sola: queda fija en el lugar elegido
 function moverExtra(id, nombre, posBase, dir){
   const p=[...paradasDeArmado(armadoDe(id))];
@@ -11748,8 +11783,8 @@ function renderArmarDelDia(){
   const etaDe=n=>tiempo?tiempo.etas.find(x=>normNotif(x.nombre)===normNotif(n)):null;
   const abierta=k=>(S.paradasAbiertas||new Set()).has(a?.id+"|"+k);
   const chips=(dj,rt)=>`${dj.length?`<span class="ar-cnt dj">📤 ${dj.length}</span>`:""}${rt.length?`<span class="ar-cnt rt">📥 ${rt.length}</span>`:""}`;
-  const bloque=(k,titulo,num,items,extraTit,clase)=>`<div class="ar-parada ${clase||""}">
-      <div class="ar-par-tit ar-toggle" onclick="toggleParada('${escH(k)}')"><span class="ar-num">${num}</span> ${titulo}${extraTit||""}<span class="ar-flecha">${items?(abierta(k)?"▲":"▼"):""}</span></div>
+  const bloque=(k,titulo,num,items,extraTit,clase,attrs,der)=>`<div class="ar-parada ${clase||""}">
+      <div class="ar-par-tit ar-toggle" ${attrs||""} onclick="toggleParada('${escH(k)}')">${attrs&&attrs.includes("draggable")?`<span class="ar-asa" title="Arrastrá para cambiar el orden">⋮⋮</span>`:""}<span class="ar-num">${num}</span> <span class="ar-nom">${titulo}</span>${extraTit||""}<span class="ar-der">${der||""}<span class="ar-flecha">${items?(abierta(k)?"▲":"▼"):""}</span></span></div>
       ${abierta(k)?items:""}</div>`;
   const paradasHtml=paradas.map((p,i)=>{
     const dj=p.dj||deja(p.nombre), rt=p.rt||retira(p.nombre), ll=llegadaN(p.nombre,i), et=tiempo?tiempo.etas[i]:null;
@@ -11761,14 +11796,17 @@ function renderArmarDelDia(){
     const iBase=p.iBase!=null?p.iBase:-1;
     const posBase=paradas.slice(0,i).filter(x=>!x.extra).length;
     const A=escH(a.id), N=escH(p.nombre);
-    const ctrl = editable && iBase>=0 ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="rutaAlPrincipio('${A}',${iBase})" ${iBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},-1)" ${iBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="rutaMover('${A}',${iBase},1)" ${iBase===paradasDeArmado(a).length-1?"disabled":""}>↓</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
-    // las agregadas solas (no las direcciones sin buscar) se mueven directo; al moverlas quedan fijas
-    const fijar = editable && p.extra && !p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" title="Al principio" onclick="moverExtra('${A}','${N}',${posBase},'inicio')" ${posBase===0?"disabled":""}>⤒</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},-1)" ${posBase===0?"disabled":""}>↑</button><button class="btn btn-ghost btn-sm" onclick="moverExtra('${A}','${N}',${posBase},1)">↓</button><button class="btn btn-ghost btn-sm" onclick="fijarParada('${A}','${N}',${posBase})" title="Fijarla para poder moverla">📌</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>`
-      : editable && p.libre ? `<span class="ar-ctrl" onclick="event.stopPropagation()"><button class="btn btn-teal btn-sm" title="Buscar la dirección para ubicarla en el recorrido" onclick="buscarDireccionDeParada('${A}',${i})">📍 Buscar</button><button class="btn btn-ghost btn-sm" title="Sacar esta parada" onclick="quitarParadaArmado('${A}',${i})">✕</button></span>` : "";
     const yaPaso=!!ll;   // donde ya llegó no se mueve ni se saca
+    const puedeMover = editable && !yaPaso && !p.libre;
+    const quitar = editable && !yaPaso ? `<button class="ar-x" title="Sacar esta parada" onclick="event.stopPropagation();quitarParadaArmado('${A}',${i})">✕</button>` : "";
+    const buscar = editable && p.libre ? `<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();buscarDireccionDeParada('${A}',${i})">📍 Buscar</button>` : "";
+    const attrs = editable && !yaPaso
+      ? `${puedeMover?`draggable="true" ondragstart="arrastrarParada(event,'${A}',${i})" ondragend="this.classList.remove('arrastrando')"`:""} ondragover="if(S._arrParada){event.preventDefault();event.stopPropagation();this.classList.add('sobre-par')}" ondragleave="this.classList.remove('sobre-par')" ondrop="this.classList.remove('sobre-par');soltarParada(event,'${A}',${i})"`
+      : "";
+    const der = `${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Llegada estimada">≈ ${et.hora}</span>`:"")}${et&&!p.libre?`<span class="ar-desc-min" title="Descarga estimada">${et.descarga} min</span>`:""}${buscar}${quitar}`;
     return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
-      `${yaPaso?"":ctrl}${yaPaso?"":fijar}${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar por ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>x.id).join(", "))}</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}${et&&!p.libre?`<span class="ar-cnt" title="Descarga">📦 ${et.descarga}′</span>`:""}${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Descarga ${et.descarga} min (${et.fuente})">≈ ${et.hora}</span>`:"")}`,
-      `${ll?"ok":""} ${p.extra?"extra":""}`);
+      `${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}`,
+      `${ll?"ok":""} ${p.extra?"extra":""}`, attrs, der);
   }).join("");
   return `
   <div class="ar-wrap">
