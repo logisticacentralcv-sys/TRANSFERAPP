@@ -1253,6 +1253,11 @@ tr[onclick]:active td{background:var(--s3)}
 .wa-fila{display:grid;grid-template-columns:minmax(110px,1fr) minmax(150px,1.3fr) auto;gap:8px;align-items:center}
 .wa-fila span{font-size:13.5px;font-weight:600}.wa-fila .inp{margin:0}
 
+
+.ar-grupo{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.03em;margin:4px 2px 6px}
+.ar-grupo.otras{color:var(--muted);margin-top:14px;padding-top:10px;border-top:1px solid var(--border)}
+.ar-pasa{font-size:12px;color:var(--teal);font-weight:600;margin-top:2px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1277,7 +1282,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261126-0615";
+const APP_VERSION = "20261126-0648";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -11697,13 +11702,18 @@ function renderArmarDelDia(){
   // ── Izquierda: lo que todavía no está en un recorrido abierto
   let libres=S.requests.filter(r=>ESTADOS_ARMABLES.includes(r.estado) && !enArmadoAbierto(r) && r.tipoPedido!=="devolucion");
   if(q) libres=libres.filter(r=>[r.id,r.sucursal,r.area,r.destino,r.descripcion,r.recorrido].some(v=>normNotif(v||"").includes(q)));
-  const sugerida=r=> a && (normNotif(r.recorrido)===normNotif(a.recorrido) || parN.has(normNotif(r.destino)) || parN.has(normNotif(origenLabel(r))));
+  // Paradas del recorrido elegido (las cargadas y las que se agregaron solas)
+  const parTodas=new Set(a ? [...paradasDeArmado(a), ...paradasArmado(a, transfDelArmado(a)).map(p=>p.nombre)].map(normNotif) : []);
+  const paradaDe=r=> a ? (parTodas.has(normNotif(origenLabel(r))) ? origenLabel(r) : parTodas.has(normNotif(r.destino)) ? r.destino : "") : "";
+  const enEste=r=> !!paradaDe(r);   // su origen o su destino es una parada de este recorrido
+  const sugerida=r=> a && (enEste(r) || normNotif(r.recorrido)===normNotif(a.recorrido) || parN.has(normNotif(r.destino)) || parN.has(normNotif(origenLabel(r))));
   libres.sort((x,y)=>((esperaSalidaDeFabrica(y)?2:0)+(sugerida(y)?1:0))-((esperaSalidaDeFabrica(x)?2:0)+(sugerida(x)?1:0)));   // primero lo que llegó a Fábrica
   const bloqueada=r=> enCurso && !admin && saleDeFabrica(r);
   const gest=r=>puede("solicitudes")?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openGestionar('${escH(r.id)}')" title="Gestionar">⚙️</button>`:"";
   const filaLibre=r=>`<div class="ar-it ${sugerida(r)?"sug":""} ${esperaSalidaDeFabrica(r)?"en-fab":""}" draggable="${editable&&!bloqueada(r)?"true":"false"}" ondragstart="event.dataTransfer.setData('text/plain','${escH(r.id)}');this.classList.add('arrastrando')" ondragend="this.classList.remove('arrastrando')" onclick="openDetalle('${escH(r.id)}')">
       <div style="min-width:0;flex:1"><div class="ar-ruta"><span class="mono">${escH(r.id)}</span> <strong>${escH(origenLabel(r))}</strong> → ${escH(r.destino||"")}</div>
         ${esperaSalidaDeFabrica(r)?`<div class="ar-enfab">🏭 Llegó a Fábrica · falta el recorrido de salida a ${escH(r.destino||"")}</div>`:""}
+        ${paradaDe(r)?`<div class="ar-pasa">📍 Pasa por ${escH(paradaDe(r))}</div>`:""}
         <div class="ar-sub">${escH(r.descripcion||"")} · ${escH(String(r.cantidad||""))} ${escH(r.unidad||"")}${r.recorrido?` · ${escH(r.recorrido)}`:""} · ${r.estado==="No entregada"?`<span style="color:#fca5a5;font-weight:700">No entregada${r.nombreQuienLevanto?` por ${escH(r.nombreQuienLevanto)}`:""} · sale de Fábrica</span>`:escH(r.estado)}</div></div>
       ${gest(r)}
       ${editable?(bloqueada(r)?`<span class="ar-lock" title="El recorrido ya salió de Fábrica">🔒</span>`:`<button class="btn btn-success btn-sm" onclick="event.stopPropagation();asignarAArmado('${escH(r.id)}')" title="Sumar a ${escH(a.recorrido)}">➕</button>`):""}
@@ -11766,8 +11776,14 @@ function renderArmarDelDia(){
       <div class="ar-col-tit"><h3>📋 Transferencias sin recorrido <span class="tab-n">${libres.length}</span></h3>
         <input class="inp" style="max-width:260px" placeholder="🔎 Buscar N°, sucursal, destino…" value="${escH(S.armadoBusq||"")}" oninput="S.armadoBusq=this.value;render()"/></div>
       ${libres.filter(esperaSalidaDeFabrica).length?`<div class="ar-aviso-fab">🏭 <strong>${libres.filter(esperaSalidaDeFabrica).length}</strong> llegaron a Fábrica y esperan su recorrido de salida (están arriba de todo).</div>`:""}
-      ${a?`<p class="ar-ayuda">Arrastrá una transferencia al recorrido o tocá ➕. Arriba van las que coinciden con <strong>${escH(a.recorrido)}</strong>. Tocá una para ver el detalle, o ⚙️ para gestionarla.</p>`:`<p class="ar-ayuda">Elegí o creá un recorrido a la derecha para sumarle transferencias.</p>`}
-      <div class="ar-lista">${libres.length?paginar("armLibres",libres,q+"|"+(a?.id||"")).map(filaLibre).join("")+botonVerMas("armLibres",libres.length):`<div class="pk-vacio">No hay transferencias pendientes sin recorrido. ✅</div>`}</div>
+      ${a?`<p class="ar-ayuda">Arrastrá una transferencia al recorrido o tocá ➕. Arriba van las que salen o llegan a una parada de <strong>${escH(codigoArmado(a))}</strong>. Tocá una para ver el detalle, o ⚙️ para gestionarla.</p>`:`<p class="ar-ayuda">Elegí o creá un recorrido a la derecha para sumarle transferencias.</p>`}
+      ${(()=>{ if(!libres.length) return `<div class="ar-lista"><div class="pk-vacio">No hay transferencias pendientes sin recorrido. ✅</div></div>`;
+        const arriba=a?libres.filter(r=>esperaSalidaDeFabrica(r)||enEste(r)):[], resto=a?libres.filter(r=>!(esperaSalidaDeFabrica(r)||enEste(r))):libres;
+        return `<div class="ar-lista">
+          ${arriba.length?`<div class="ar-grupo">📍 Pasan por ${escH(codigoArmado(a))} <span class="tab-n">${arriba.length}</span></div>${arriba.map(filaLibre).join("")}`:""}
+          ${arriba.length&&resto.length?`<div class="ar-grupo otras">Otras sin recorrido <span class="tab-n">${resto.length}</span></div>`:""}
+          ${paginar("armLibres",resto,q+"|"+(a?.id||"")).map(filaLibre).join("")+botonVerMas("armLibres",resto.length)}
+        </div>`; })()}
     </div>
     <div class="card ar-col ar-drop" ondragover="if(${editable?"true":"false"}){event.preventDefault();this.classList.add('sobre')}" ondragleave="this.classList.remove('sobre')" ondrop="event.preventDefault();this.classList.remove('sobre');asignarAArmado(event.dataTransfer.getData('text/plain'))">
       <div class="ar-chips">
