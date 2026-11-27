@@ -1290,6 +1290,23 @@ tr[onclick]:active td{background:var(--s3)}
 .gr-ley-suc span{cursor:pointer;user-select:none}.gr-ley-suc span.off{opacity:.35;text-decoration:line-through}
 .gr-ley-acc{color:var(--teal)!important;font-weight:600}
 
+
+.inc-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:0 0 14px}
+.inc-kpis>div{background:var(--s1);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+.inc-kpis strong{display:block;font-size:20px}.inc-kpis span{font-size:12.5px;color:var(--muted)}
+.inc-barras{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.inc-fila{display:grid;grid-template-columns:minmax(120px,220px) 1fr 44px;gap:10px;align-items:center;padding:6px 8px;border-radius:10px;cursor:pointer}
+.inc-fila:hover,.inc-fila.abierta{background:var(--s2)}
+.inc-rep{display:flex;align-items:center;gap:6px;font-size:13.5px;min-width:0}.inc-rep strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.inc-bar{height:20px;background:var(--s2);border-radius:6px;overflow:hidden}
+.inc-bar-in{height:100%;display:flex}.inc-bar-in i{display:block;height:100%}
+.inc-n{font-family:var(--mono);font-weight:700;font-size:15px;text-align:right}
+.inc-desp{margin:2px 0 10px 12px;display:flex;flex-direction:column;gap:6px}
+.inc-it{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:8px 10px;font-size:13px}
+.inc-it .mono{color:var(--blue)}.inc-it small{flex-basis:100%;color:var(--muted);font-size:12px}.inc-it .btn{margin-left:auto}
+.inc-chip{font-size:11.5px;font-weight:700;border:1px solid;border-radius:999px;padding:1px 8px}
+@media(max-width:600px){ .inc-fila{grid-template-columns:1fr 36px} .inc-bar{grid-column:1/-1;grid-row:2} }
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1314,7 +1331,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261127-0647";
+const APP_VERSION = "20261127-0650";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -9809,12 +9826,68 @@ function metricasPorRepartidor(reqs){
   return Object.values(m).sort((a,b)=>b.tomo-a.tomo||a.nombre.localeCompare(b.nombre,"es"));
 }
 
+// ═══ Métricas → ⚠️ Incidencias: por repartidor, con gráfico de barras por tipo ═══
+const TIPOS_INCID={
+  NO_ENTREGO:{lbl:"📦 No la entregó", col:"#f05252"},
+  NO_LEVANTADA:{lbl:"🚫 No la retiró", col:"#f5a623"},
+  RETIRO_SIN_FIRMA:{lbl:"✍️ Retiró sin firma", col:"#9b8ff7"},
+  ENTREGA_AUTOMATICA:{lbl:"⏱️ No registró la entrega (3 h)", col:"#4f9eff"},
+};
+const tipoIncid = t => TIPOS_INCID[t||"NO_ENTREGO"] || {lbl:String(t||"Otra"), col:"#94a3b8"};
+function renderMetricasIncidencias(){
+  if(S.incidencias===undefined && !S._incidCargando){ S._incidCargando=true; cargarIncidencias().finally(()=>{ S._incidCargando=false; }); }
+  if(!Array.isArray(S.incidencias)) return `<div class="pk-vacio"><span class="spinner"></span> Cargando incidencias…</div>`;
+  const dias=S.incDias||30, dia=S.incFecha||"", q=normNotif(S.incBusq||""), oc=S.incTiposOcultos||(S.incTiposOcultos=new Set());
+  const desde=Date.now()-dias*864e5;
+  const enPeriodo=S.incidencias.filter(x=>{ const f=String(x.createdAt||""); return dia ? f.slice(0,10)===dia : new Date(f).getTime()>=desde; });
+  const lista=enPeriodo.filter(x=>!oc.has(x.tipo||"NO_ENTREGO") && (!q || normNotif(x.nombre||x.dni||"").includes(q)));
+  const porRep={}; lista.forEach(x=>{ const k=x.nombre||x.dni||"—"; (porRep[k]=porRep[k]||[]).push(x); });
+  const filas=Object.entries(porRep).sort((a,b)=>b[1].length-a[1].length);
+  const max=Math.max(1,...filas.map(([,xs])=>xs.length));
+  const tiposPresentes=[...new Set(enPeriodo.map(x=>x.tipo||"NO_ENTREGO"))];
+  const cuenta={}; lista.forEach(x=>{ const t=x.tipo||"NO_ENTREGO"; cuenta[t]=(cuenta[t]||0)+1; });
+  const masFrec=Object.entries(cuenta).sort((a,b)=>b[1]-a[1])[0];
+  const todasT=[...S.requests,...(S.histTransf||[])];
+  const controles=`<div class="hs-ctrl">
+      <select class="inp" ${dia?"disabled":""} onchange="S.incDias=+this.value;S.incRepAbierto=null;render()">${[7,30,90].map(d=>`<option value="${d}" ${dias===d?"selected":""}>Últimos ${d} días</option>`).join("")}</select>
+      <input class="inp" type="date" title="Ver un día puntual" value="${escH(dia)}" onchange="S.incFecha=this.value;S.incRepAbierto=null;render()"/>
+      ${dia?`<button class="btn btn-ghost btn-sm" onclick="S.incFecha='';render()">✕ Ver los últimos días</button>`:""}
+      <input class="inp" type="search" placeholder="🔎 Repartidor…" value="${escH(S.incBusq||"")}" oninput="S.incBusq=this.value;render()"/>
+      <button class="btn btn-ghost btn-sm" onclick="S.incidencias=undefined;render()" title="Volver a cargar">⟳</button>
+    </div>`;
+  const kpis=`<div class="inc-kpis">
+      <div><strong>${lista.length}</strong><span>incidencia${lista.length!==1?"s":""}</span></div>
+      <div><strong>${filas.length}</strong><span>repartidor${filas.length!==1?"es":""} con incidencias</span></div>
+      <div><strong>${masFrec?escH(tipoIncid(masFrec[0]).lbl):"—"}</strong><span>la más frecuente${masFrec?` (${masFrec[1]})`:""}</span></div>
+    </div>`;
+  const leyenda=`<div class="gr-ley gr-ley-suc">${(tiposPresentes.length?tiposPresentes:Object.keys(TIPOS_INCID)).map(t=>`<span class="${oc.has(t)?"off":""}" onclick="S.incTiposOcultos.has('${t}')?S.incTiposOcultos.delete('${t}'):S.incTiposOcultos.add('${t}');render()"><i style="background:${tipoIncid(t).col}"></i>${escH(tipoIncid(t).lbl)}</span>`).join("")}</div>`;
+  const barras = filas.length ? `<div class="inc-barras">${filas.map(([rep,xs])=>{
+      const ab=S.incRepAbierto===rep, porT={}; xs.forEach(x=>{ const t=x.tipo||"NO_ENTREGO"; porT[t]=(porT[t]||0)+1; });
+      return `<div class="inc-fila ${ab?"abierta":""}" onclick="S.incRepAbierto=S.incRepAbierto===decodeURIComponent('${encodeURIComponent(rep)}')?null:decodeURIComponent('${encodeURIComponent(rep)}');render()">
+          <div class="inc-rep"><strong>${escH(rep)}</strong><span class="rs-chev">${ab?"▲":"▼"}</span></div>
+          <div class="inc-bar"><div class="inc-bar-in" style="width:${xs.length/max*100}%">${Object.entries(porT).map(([t,n])=>`<i style="flex:${n};background:${tipoIncid(t).col}" title="${escH(tipoIncid(t).lbl)}: ${n}"></i>`).join("")}</div></div>
+          <div class="inc-n">${xs.length}</div>
+        </div>
+        ${ab?`<div class="inc-desp">${xs.map(x=>{ const r=todasT.find(t=>String(t.id)===String(x.solicitudId));
+          return `<div class="inc-it" ${r?`style="cursor:pointer" onclick="openDetalle('${escH(r.id)}')"`:""}>
+            <span class="inc-chip" style="color:${tipoIncid(x.tipo).col};border-color:${tipoIncid(x.tipo).col}66">${escH(tipoIncid(x.tipo).lbl)}</span>
+            <span class="mono">${escH(String(x.solicitudId||""))}</span>${r?` ${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong>`:""}
+            <small>${x.createdAt?_fd(x.createdAt)+" "+_hm(x.createdAt):""}${x.recorrido?` · ${escH(x.recorrido)}`:""}${x.cierreAutomatico?" · automática":""}${x.detalle?` · ${escH(x.detalle)}`:""}</small>
+            ${esAdminRec()?`<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();anularIncidencia('${escH(String(x.id))}')">Anular</button>`:""}
+          </div>`; }).join("")}</div>`:""}`; }).join("")}</div>`
+    : `<div class="pk-vacio">Sin incidencias en el período. ✅</div>`;
+  return `${controles}${kpis}
+    <div class="card gr-card"><h3>⚠️ Incidencias por repartidor</h3>
+      <p class="ar-sub">Cada barra son las incidencias del repartidor, por tipo. Tocá un tipo para mostrarlo u ocultarlo; tocá un repartidor para ver cada una.</p>
+      ${leyenda}${barras}</div>`;
+}
 function renderMetricasConSub(){
   const sub=S.metSub||"transferencias";
   return `<div class="tabs" style="margin-bottom:14px">
       <button class="tab ${sub==="transferencias"?"active":""}" onclick="S.metSub='transferencias';render()">📋 Transferencias</button>
       <button class="tab ${sub==="recorridos"?"active":""}" onclick="S.metSub='recorridos';S.hist=null;render()">🚛 Recorridos</button>
-    </div>${sub==="recorridos"?renderHistoricoRecorridos():renderMetricas()}`;
+      <button class="tab ${sub==="incidencias"?"active":""}" onclick="S.metSub='incidencias';render()">⚠️ Incidencias</button>
+    </div>${sub==="recorridos"?renderHistoricoRecorridos():sub==="incidencias"?renderMetricasIncidencias():renderMetricas()}`;
 }
 function renderMetricas(){
   let reqs = S.requests;
