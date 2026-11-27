@@ -1281,6 +1281,15 @@ tr[onclick]:active td{background:var(--s3)}
 .ar-x{background:none;border:1px solid var(--border2);color:var(--muted);border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:13px;flex:none}
 .ar-x:hover{color:#f87171;border-color:#f8717166;background:#f0525214}
 
+
+.gr-b.abierto{background:var(--s2);border-radius:10px}
+.gr-desp{margin:-2px 0 10px 18px;display:flex;flex-direction:column;gap:6px}
+.gr-desp-v{background:var(--s2);border:1px solid var(--border2);border-radius:10px;padding:8px 10px}
+.gr-desp-cab{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:13px}.gr-desp-cab .btn{margin-left:auto}
+.gr-desp-par{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;font-size:12.5px;color:var(--muted)}.gr-desp-par b{color:var(--text);font-weight:600}
+.gr-ley-suc span{cursor:pointer;user-select:none}.gr-ley-suc span.off{opacity:.35;text-decoration:line-through}
+.gr-ley-acc{color:var(--teal)!important;font-weight:600}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1305,7 +1314,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261126-0847";
+const APP_VERSION = "20261127-0647";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -10322,6 +10331,45 @@ async function qrRegistrarLlegadaBase(v, base, obs){
   }catch(err){ console.warn("Llegada a la base:",err); return null; }
 }
 // Hora de llegada (una por viaje y sucursal: si vuelve a escanear se conserva la primera)
+// ═══ Al fichar la ÚLTIMA sucursal: a la hora estimada de llegada a Fábrica, "No olvides cerrar el recorrido" ═══
+function programarRecordatorioCierre(v, lugar){
+  try{
+    const a=(S.armados||[]).find(x=>x.idViaje===v.id) || recorridoDelRepartidor(); if(!a) return;
+    const ps=paradasArmado(a, transfDelArmado(a)).filter(p=>!p.libre); if(!ps.length) return;
+    const ult=ps[ps.length-1]; if(normNotif(ult.nombre)!==normNotif(lugar)) return;   // todavía no es la última
+    const ex=extremosDe(a);
+    let desc=10; try{ const est=estimarArmado(a, ps); const d=est?.etas?.[ps.length-1]?.descarga; if(d!=null) desc=d; }catch(e){}
+    const viaje=minutosEntre(_ptoMatriz(ult.nombre), _ptoMatriz(ex.fin));
+    const min=Math.max(1, Math.round(desc + (viaje ?? 15)));
+    localStorage.setItem("tl_recordatorio_cierre", JSON.stringify({viaje:v.id, at:Date.now()+min*60000, fin:ex.fin, codigo:codigoArmado(a), visto:false}));
+    _armarTimerRecordatorio();
+  }catch(e){ console.warn("Recordatorio:",e); }
+}
+function _leerRecordatorio(){ try{ return JSON.parse(localStorage.getItem("tl_recordatorio_cierre")||"null"); }catch(e){ return null; } }
+function _armarTimerRecordatorio(){
+  const r=_leerRecordatorio(); if(!r || r.visto) return;
+  clearTimeout(S._recTimer); S._recTimer=setTimeout(mostrarRecordatorioCierre, Math.max(0, r.at-Date.now()));
+}
+function mostrarRecordatorioCierre(){
+  const r=_leerRecordatorio(); if(!r || r.visto) return;
+  if(!Array.isArray(S.armados)){ setTimeout(mostrarRecordatorioCierre, 5000); return; }   // todavía cargando
+  const a=recorridoDelRepartidor();
+  if(!a || a.idViaje!==r.viaje){ localStorage.removeItem("tl_recordatorio_cierre"); return; }   // ya lo cerró
+  r.visto=true; localStorage.setItem("tl_recordatorio_cierre", JSON.stringify(r));
+  try{ navigator.vibrate && navigator.vibrate([400,150,400,150,400]); }catch(e){}
+  try{ if(window.Notification && Notification.permission==="granted" && navigator.serviceWorker)
+    navigator.serviceWorker.ready.then(reg=>reg.showNotification("🏁 No olvides cerrar el recorrido",{body:`Al llegar a ${r.fin}, escaneá el QR para cerrar ${r.codigo}.`, icon:"/icons/notif-192.png", badge:"/icons/badge-96.png", tag:"cierre-"+r.viaje, requireInteraction:true})); }catch(e){}
+  S.recCierre=r; S.modal="recordatorioCierre"; render();
+}
+function renderRecordatorioCierreModal(){
+  const r=S.recCierre||{};
+  return `<div style="text-align:center;padding:6px 0 4px">
+    <div style="font-size:44px">🏁</div>
+    <p style="font-size:17px;font-weight:700;margin:6px 0">No olvides cerrar el recorrido</p>
+    <p style="font-size:14px;color:var(--muted);margin:0 0 14px">Al llegar a <strong>${escH(r.fin||"Fábrica")}</strong>, escaneá el QR para cerrar <strong>${escH(r.codigo||"")}</strong>.</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-ghost btn-md" style="flex:1" onclick="closeModal()">Entendido</button>
+      <button class="btn btn-teal btn-md" style="flex:1" onclick="closeModal();abrirEscaner()">📷 Escanear QR</button></div></div>`;
+}
 async function qrRegistrarLlegada(v, lugar, obs){
   // si la última llegada de este viaje fue acá, es la misma visita; si pasó por otro lado y volvió, es una visita nueva
   const { data:ult } = await sb.from("flota_registros_qr").select("id,ts,sucursal").eq("id_viaje",v.id).eq("evento","LLEGADA").order("ts",{ascending:false}).limit(1);
@@ -10329,6 +10377,7 @@ async function qrRegistrarLlegada(v, lugar, obs){
   const ts=new Date().toISOString();
   const { error } = await sb.from("flota_registros_qr").insert({ts, id_viaje:v.id, sucursal:lugar, evento:"LLEGADA", gps_obs:obs, recorrido:v.recorrido});
   if(error) throw error;
+  programarRecordatorioCierre(v, lugar);   // si es la última sucursal, a la hora estimada de llegada a Fábrica le recuerda cerrar
   return {ts, yaEstaba:false};
 }
 // ── Fábrica: iniciar y terminar el recorrido ──
@@ -10375,6 +10424,9 @@ async function _terminarViaje(e, auto){
   await sb.from("flota_registros_qr").insert({ts:ahora, id_viaje:v.id, sucursal:e.base?String(e.base).toUpperCase():"FABRICA", evento:"REGRESO FABRICA", gps_obs:(auto?"Terminado solo al volver (sin nada encima). ":"")+(pres.obs||""), recorrido:v.recorrido});
   // se cierra el recorrido del viaje (también si va de acompañante)
   await sb.from("recorridos_armados").update({estado:"CERRADO", cerrado_at:ahora}).eq("id_viaje",v.id).eq("estado","EN_CURSO");
+  const armT=e.armado || (S.armados||[]).find(x=>x.idViaje===v.id);
+  if(armT) await soltarNoTomadasDelRecorrido(armT, {dni:v.dni_rep1, nombre:v.nombre_rep1, idViaje:v.id, auto:!!auto});
+  try{ localStorage.removeItem("tl_recordatorio_cierre"); }catch(e){}
   const arm=e.armado || (S.armados||[]).find(x=>x.idViaje===v.id) || null;
   return await dejarEnFabricaLoQueTengo({dnis:[S.miIdentidadRep?.dni, v.dni_rep1, v.dni_rep2], nombre:S.miIdentidadRep?.nombre||v.nombre_rep1, recorrido:v.recorrido, armadoId:arm?.id, idViaje:v.id, cerrando:true, bolsinesQuedan:true}, false);
 }
@@ -10509,11 +10561,31 @@ const enArmadoAbierto = r => !!r.armadoId && _armadoAbierto(armadoDe(r.armadoId)
 //   · si nadie lo tomó → se da de baja (sus transferencias quedan libres para otro recorrido)
 //   · si salió → se termina el viaje; lo que tenían encima queda en Fábrica y cada cosa es una falta
 //   · queda registrado: evento en Flota, cierre automático o manual, y aviso a Logística
+// Al cerrarse un recorrido, lo que NO se retiró queda sin recorrido (para reasignar) y con registro de incidencia
+const ESTADOS_NO_TOMADAS=["Aprobada","Programada","Lista para retirar","En fábrica","No levantada","No entregada"];
+async function soltarNoTomadasDelRecorrido(a, info){
+  if(!a) return 0;
+  try{
+    const { data } = await sb.from("solicitudes").select("*").eq("armado_id",a.id).in("estado",ESTADOS_NO_TOMADAS);
+    const rs=toCamelRows(data||[]);
+    for(const r of rs){
+      const ch={armadoId:null, updatedAt:now()};
+      const { error } = await sb.from("solicitudes").update(toSnakeRow(ch)).eq("id",r.id);
+      if(error) continue;
+      S.requests=S.requests.map(x=>x.id===r.id?{...x,...ch}:x);
+      if(info && info.conIncidencia!==false)
+        try{ await sb.from("incidencias_repartidores").insert({dni:info.dni||a.dniRep||"", nombre:info.nombre||a.nombreRep||"", tipo:"NO_LEVANTADA", solicitud_id:r.id, armado_id:a.id, id_viaje:info.idViaje||a.idViaje||null, recorrido:codigoArmado(a), cierre_automatico:!!info.auto, detalle:`No se retiró en el recorrido ${codigoArmado(a)}: quedó sin recorrido para reasignar`}); }catch(e){}
+    }
+    if(rs.length) crearNotificacion("LOGISTICA", `↩️ ${codigoArmado(a)} se cerró sin retirar ${rs.length} transferencia${rs.length!==1?"s":""} (${rs.map(r=>r.id).join(", ")}): quedaron sin recorrido`, null);
+    return rs.length;
+  }catch(e){ return 0; }
+}
 async function cerrarArmadoForzado(a, manual){
   if(!a || !["PREPARADO","EN_CURSO"].includes(a.estado)) return;
   const ahora=new Date().toISOString(), quien=manual?(identidadSesion()?.nombre||S.user?.nombre||"Logística"):"";
   if(a.estado==="PREPARADO"){
     await sb.from("recorridos_armados").update({estado:"CANCELADO", cerrado_at:ahora, cierre_automatico:!manual}).eq("id",a.id).eq("estado","PREPARADO");
+    await soltarNoTomadasDelRecorrido(a, {conIncidencia:false});   // no salió: solo quedan sin recorrido
     return;
   }
   let v=null;
@@ -10525,6 +10597,7 @@ async function cerrarArmadoForzado(a, manual){
     await dejarEnFabricaLoQueTengo({dnis:[v.dni_rep1,v.dni_rep2], nombre:v.nombre_rep1, recorrido:codigoArmado(a), armadoId:a.id, idViaje:v.id, bolsinesQuedan:true}, true);
   }
   await sb.from("recorridos_armados").update({estado:manual?"CERRADO":"CERRADO_AUTO", cerrado_at:ahora, cierre_automatico:!manual}).eq("id",a.id).eq("estado","EN_CURSO");
+  await soltarNoTomadasDelRecorrido(a, {dni:v?.dni_rep1, nombre:v?.nombre_rep1, idViaje:v?.id, auto:!manual});
   if(!manual) crearNotificacion("LOGISTICA", `🕛 ${codigoArmado(a)} quedó abierto de un día para otro (no escanearon al volver): se cerró solo`, null);
 }
 // ═══ Desasignar un recorrido tomado por error: vuelve a "preparado", sin repartidor, para que lo tome quien corresponde ═══
@@ -11054,6 +11127,7 @@ async function buscarDireccionNuevaSol(){
 //  lo que tiene que tomar, y lo que lleva. Sin filtros ni pestañas.
 // ═══════════════════════════════════════════════════════════════════
 function renderRepartidorSimple(){
+  if(!S._recInit){ S._recInit=true; setTimeout(_armarTimerRecordatorio,0); }   // si había un recordatorio pendiente (se cerró la app), se vuelve a armar
   const a=recorridoDelRepartidor(), g=a?pasosDelRecorrido():null;
   const {trans,devs}=cosasATuNombre();
   const yo=_dniLimpio(S.miIdentidadRep?.dni);
@@ -11530,7 +11604,7 @@ async function cargarHistoricoRecorridos(){
       (r.data||[]).forEach(x=>{ (regs[x.id_viaje]=regs[x.id_viaje]||[]).push(x); });
     }
     let incid=[];
-    try{ const { data:inc } = await sb.from("incidencias_repartidores").select("*").in("armado_id",armados.map(a=>a.id)); incid=(inc||[]).filter(x=>!x.anulada); incid.forEach(x=>{ if((x.tipo||"NO_ENTREGO")==="NO_ENTREGO") faltas[x.armado_id]=(faltas[x.armado_id]||0)+1; }); }catch(e){}
+    try{ const { data:inc } = await sb.from("incidencias_repartidores").select("*").in("armado_id",armados.map(a=>a.id)); incid=(inc||[]).filter(x=>!x.anulada); incid.forEach(x=>{ if(["NO_ENTREGO","NO_LEVANTADA"].includes(x.tipo||"NO_ENTREGO")) faltas[x.armado_id]=(faltas[x.armado_id]||0)+1; }); }catch(e){}
     // los recorridos cerrados no siempre están en memoria: se traen sus transferencias para armar las paradas
     const faltan=armados.map(a=>a.id).filter(id=>!S.requests.some(r=>r.armadoId===id));
     for(let i=0;i<faltan.length;i+=100){ const { data } = await sb.from("solicitudes").select("*").in("armado_id",faltan.slice(i,i+100)); S.histTransf=[...(S.histTransf||[]).filter(x=>!(data||[]).some(d=>d.id===x.id)), ...toCamelRows(data||[])]; }
@@ -11557,15 +11631,16 @@ function analizarRecorrido(a){
     const nVis=paradas.slice(0,paradas.indexOf(p)).filter(x=>normNotif(x.nombre)===normNotif(p.nombre)).length;
     const ll=llegadas.filter(x=>normNotif(x.sucursal)===normNotif(p.nombre))[nVis];
     const et=est?.etas?.[paradas.indexOf(p)] || est?.etas.find(x=>normNotif(x.nombre)===normNotif(p.nombre));
-    const estMin=et&&salida ? et.min : null;
+    const estMin=et&&salida&&et.min!=null ? Math.round(et.min) : null;
     const realP=ll&&salida ? Math.round((new Date(ll.ts)-new Date(salida))/60000) : null;
-    return {nombre:p.nombre, estHora:et?.hora||null, llego:ll?.ts||null, dif:(estMin!==null&&realP!==null)?realP-estMin:null, sinGps:/sin ubicación/i.test(ll?.gps_obs||""), estMin, realMin:realP, bultos:et?.bultos??null, descarga:et?.descarga??null};
+    return {nombre:p.nombre, estHora:et?.hora||null, llego:ll?.ts||null, dif:(estMin!==null&&realP!==null)?Math.round(realP-estMin):null, sinGps:/sin ubicación/i.test(ll?.gps_obs||""), estMin, realMin:realP, bultos:et?.bultos??null, descarga:et?.descarga??null};
   });
-  return {transfList:transf, salida, vuelta, realMin, estMin:est&&!est.falta&&est.total!=null?est.total:null, filas, transf:foto&&Array.isArray(foto.transferencias)?foto.transferencias.length:transf.length, faltas:h.faltas[a.id]||0, auto:!!(v?.cierre_automatico||a.cierreAutomatico), conFoto:!!foto, manana:est?est.manana:null, bultos:filas.reduce((s,f)=>s+(+f.bultos||0),0)};
+  return {transfList:transf, salida, vuelta, realMin, estMin:est&&!est.falta&&est.total!=null?Math.round(est.total):null, filas, transf:foto&&Array.isArray(foto.transferencias)?foto.transferencias.length:transf.length, faltas:h.faltas[a.id]||0, auto:!!(v?.cierre_automatico||a.cierreAutomatico), conFoto:!!foto, manana:est?est.manana:null, bultos:filas.reduce((s,f)=>s+(+f.bultos||0),0)};
 }
 function _hm(iso){ try{ const d=new Date(iso); return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }catch(e){ return "—"; } }
 function _fd(iso){ try{ const d=new Date(iso.length<=10?iso+"T12:00:00":iso); return d.toLocaleDateString("es-AR",{weekday:"short",day:"2-digit",month:"2-digit"}); }catch(e){ return iso||""; } }
-const _dif = d => d===null ? "" : `<span class="hs-dif ${d>15?"tarde":d<-15?"antes":"ok"}">${d>0?"+":""}${d} min</span>`;
+const _dif = d => { if(d===null||d===undefined||isNaN(+d)) return ""; d=Math.round(+d);
+  return `<span class="hs-dif ${d>15?"tarde":d<-15?"antes":"ok"}">${d>0?"+":d<0?"−":""}${fmtDuracionMin(Math.abs(d))}</span>`; };
 function renderHistoricoRecorridos(){
   if(!S.hist){ setTimeout(cargarHistoricoRecorridos,0); return `<div class="pk-vacio"><span class="spinner"></span> Cargando el histórico…</div>`; }
   const h=S.hist;
@@ -11609,7 +11684,8 @@ function renderHistoricoRecorridos(){
   }
   const est={PREPARADO:"Preparado",EN_CURSO:"En curso",CERRADO:"Cerrado",CERRADO_AUTO:"Cerrado solo (5 h)"};
   const sel=S.histSel && lista.find(({a})=>a.id===S.histSel);
-  const ids=new Set(lista.map(({a})=>a.id)), faltasL=(h.incid||[]).filter(f=>ids.has(f.armado_id));
+  const ids=new Set(lista.map(({a})=>a.id)), faltasL=(h.incid||[]).filter(f=>ids.has(f.armado_id) && ["NO_ENTREGO","NO_LEVANTADA"].includes(f.tipo||"NO_ENTREGO"));
+  const tipoFalta=t=>t==="NO_LEVANTADA"?"🚫 No la retiró":"📦 No la entregó";
   const porRep={}; faltasL.forEach(f=>{ const k=f.nombre||f.dni||"—"; (porRep[k]=porRep[k]||[]).push(f); });
   const todasT=[...S.requests,...(S.histTransf||[])];
   const faltasHtml = faltasL.length ? `<div class="card gr-card hs-faltas"><h3>⚠️ Faltas <span class="tab-n">${faltasL.length}</span></h3>
@@ -11620,14 +11696,14 @@ function renderHistoricoRecorridos(){
           ${ab?fs.sort((p,q)=>String(q.created_at||"").localeCompare(String(p.created_at||""))).map(f=>{ const r=todasT.find(t=>String(t.id)===String(f.solicitud_id)); const ar=h.armados.find(z=>z.id===f.armado_id);
             return `<div class="hs-fr-it" ${r?`style="cursor:pointer" onclick="openDetalle('${escH(r.id)}')"`:""}>
               <div><span class="mono">${escH(String(f.solicitud_id||""))}</span> ${r?`${escH(origenLabel(r))} → <strong>${escH(r.destino||"")}</strong> · ${escH(r.descripcion||"")}`:""}</div>
-              <small>${f.created_at?_fd(f.created_at)+" "+_hm(f.created_at):""} · ${escH(ar?codigoArmado(ar):(f.recorrido||""))}${f.cierre_automatico?" · cierre automático":""} · ${escH(f.detalle||"")}</small></div>`; }).join(""):""}
+              <small><b>${tipoFalta(f.tipo)}</b> · ${f.created_at?_fd(f.created_at)+" "+_hm(f.created_at):""} · ${escH(ar?codigoArmado(ar):(f.recorrido||""))}${f.cierre_automatico?" · cierre automático":""} · ${escH(f.detalle||"")}</small></div>`; }).join(""):""}
         </div>`; }).join("")}
     </div>` : "";
   const graficos=`
     ${sel?detalleRecorridoMetricas(sel.a, sel.x):""}
     ${faltasHtml}
     <div class="gr-2col">
-      <div class="card gr-card"><h3>🕐 A qué hora llegamos a cada sucursal</h3><p class="ar-sub">Cada punto es una llegada (color = repartidor). Pasá el mouse para ver el detalle; tocalo para abrir ese recorrido.</p>${graficoLlegadas(lista)}</div>
+      <div class="card gr-card"><h3>🕐 A qué hora llegamos a cada sucursal, día por día</h3><p class="ar-sub">Una línea por sucursal (si llegó más de una vez el mismo día, el promedio). Tocá una sucursal abajo para mostrarla u ocultarla; pasá el mouse por un punto para ver la hora.</p>${graficoLlegadasLineas(lista)}</div>
       <div class="card gr-card"><h3>⏱️ ${S.histRec?`Quién tarda más en ${escH(S.histRec)}`:"Cuánto tarda cada recorrido"}</h3><p class="ar-sub">Real contra lo que se esperaba (promedio del período).</p>${graficoDuraciones(lista)}</div>
     </div>
     <h3 style="margin:18px 0 8px;font-size:15px">Todos los recorridos</h3>`;
@@ -11682,22 +11758,59 @@ function graficoLlegadas(lista){
   const reps=[...new Set(pts.map(p=>p.a.nombreRep||"—"))];
   return `${svg}<div class="gr-ley">${reps.map(r=>`<span><i style="background:${colorRepartidor(r)}"></i>${escH(r)}</span>`).join("")}<span><i class="gr-ley-prom"></i>promedio</span></div>`;
 }
+// 🕐 Hora de llegada a cada sucursal, día por día (una línea por sucursal)
+const COLORES_SUC=["#2de0c4","#4f9eff","#f5a623","#f05252","#9b8ff7","#2ecc7a","#f472b6","#facc15","#22d3ee","#fb923c","#a3e635","#e879f9","#94a3b8","#38bdf8","#fda4af"];
+function graficoLlegadasLineas(lista){
+  const porSuc={}, dias=new Set();
+  lista.forEach(({a,x})=>{ const dia=String(a.fecha||a.createdAt||"").slice(0,10); (x.filas||[]).forEach(f=>{ if(!f.llego||f.libre) return;
+    const d=new Date(f.llego), m=d.getHours()*60+d.getMinutes(); dias.add(dia);
+    const s=(porSuc[f.nombre]=porSuc[f.nombre]||{}); (s[dia]=s[dia]||[]).push(m); }); });
+  const ds=[...dias].sort(); const sucs=Object.keys(porSuc).sort((p,q)=>p.localeCompare(q));
+  if(!ds.length) return `<div class="pk-vacio">Sin llegadas registradas en el período.</div>`;
+  const oc=S.histLineasOcultas||(S.histLineasOcultas=new Set());
+  const vis=sucs.filter(s=>!oc.has(s));
+  const vals=vis.flatMap(s=>Object.values(porSuc[s]).map(xs=>xs.reduce((p,q)=>p+q,0)/xs.length));
+  const minY=Math.floor((Math.min(...(vals.length?vals:[480]))-20)/60)*60, maxY=Math.ceil((Math.max(...(vals.length?vals:[720]))+20)/60)*60;
+  const W=860, H=300, L=52, R=16, T=12, B=36;
+  const X=i=> ds.length===1 ? (L+W-R)/2 : L+i*(W-L-R)/(ds.length-1), Y=m=> T+(1-(m-minY)/Math.max(60,maxY-minY))*(H-T-B);
+  const hhmm=m=>`${String(Math.floor(m/60)).padStart(2,"0")}:${String(Math.round(m%60)).padStart(2,"0")}`;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" class="gr-svg">`;
+  for(let m=minY;m<=maxY;m+=60) svg+=`<line x1="${L}" y1="${Y(m)}" x2="${W-R}" y2="${Y(m)}" class="gr-fila"/><text x="${L-8}" y="${Y(m)+4}" class="gr-eje" text-anchor="end">${hhmm(m)}</text>`;
+  const paso=Math.max(1,Math.ceil(ds.length/10));
+  ds.forEach((d,i)=>{ if(i%paso===0||i===ds.length-1) svg+=`<text x="${X(i)}" y="${H-12}" class="gr-eje" text-anchor="middle">${d.slice(8,10)}/${d.slice(5,7)}</text>`; });
+  vis.forEach(s=>{ const col=COLORES_SUC[sucs.indexOf(s)%COLORES_SUC.length];
+    const pts=ds.map((d,i)=>porSuc[s][d]?[X(i),Y(porSuc[s][d].reduce((p,q)=>p+q,0)/porSuc[s][d].length),d]:null).filter(Boolean);
+    if(pts.length>1) svg+=`<polyline points="${pts.map(p=>p[0]+","+p[1]).join(" ")}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round"/>`;
+    pts.forEach(p=>{ const m=porSuc[s][p[2]].reduce((a,b)=>a+b,0)/porSuc[s][p[2]].length; svg+=`<circle cx="${p[0]}" cy="${p[1]}" r="4.5" fill="${col}"><title>${escH(s)} · ${p[2].slice(8,10)}/${p[2].slice(5,7)} · llegó ${hhmm(m)}</title></circle>`; });
+  });
+  svg+=`</svg>`;
+  return `<div class="table-wrap">${svg}</div><div class="gr-ley gr-ley-suc">${sucs.map(s=>`<span class="${oc.has(s)?"off":""}" onclick="S.histLineasOcultas.has('${escH(s)}')?S.histLineasOcultas.delete('${escH(s)}'):S.histLineasOcultas.add('${escH(s)}');render()"><i style="background:${COLORES_SUC[sucs.indexOf(s)%COLORES_SUC.length]}"></i>${escH(s)}</span>`).join("")}
+    <span class="gr-ley-acc" onclick="S.histLineasOcultas=new Set();render()">ver todas</span><span class="gr-ley-acc" onclick="S.histLineasOcultas=new Set(${JSON.stringify(sucs).replace(/"/g,"&quot;")});render()">ocultar todas</span></div>`;
+}
 // ⏱️ Quién tarda más: con un recorrido elegido, por repartidor; sin elegir, por recorrido
 function graficoDuraciones(lista){
   const con=lista.filter(({x})=>x.realMin!==null);
   if(!con.length) return `<div class="pk-vacio">Sin recorridos terminados en el período.</div>`;
   const porRec=!S.histRec, grupos={};
-  con.forEach(({a,x})=>{ const k=porRec?String(a.recorrido||"").toUpperCase():(a.nombreRep||"—"); (grupos[k]=grupos[k]||[]).push(x); });
+  const viajes={};
+  con.forEach(({a,x})=>{ const k=porRec?String(a.recorrido||"").toUpperCase():(a.nombreRep||"—"); (grupos[k]=grupos[k]||[]).push(x); (viajes[k]=viajes[k]||[]).push({a,x}); });
   const filas=Object.entries(grupos).map(([k,xs])=>{ const r=xs.reduce((s,x)=>s+x.realMin,0)/xs.length, es=xs.filter(x=>x.estMin!==null); return {k, n:xs.length, real:Math.round(r), est:es.length?Math.round(es.reduce((s,x)=>s+x.estMin,0)/es.length):null}; }).sort((p,q)=>q.real-p.real);
   const max=Math.max(...filas.map(f=>Math.max(f.real,f.est||0)),1);
-  return `<div class="gr-barras">${filas.map(f=>`<div class="gr-b" onclick="${porRec?`S.histRec='${escH(f.k)}';render()`:`S.histBusq='${escH(f.k)}';render()`}" title="${porRec?"Ver este recorrido":"Ver los recorridos de "+escH(f.k)}">
+  // Desplegable de un repartidor: cada vez que hizo este recorrido (día, salida de Fábrica, cuánto tardó y cada sucursal)
+  const desplegable=k=>{ if(porRec || S.histRepAbierto!==k) return "";
+    return `<div class="gr-desp">${(viajes[k]||[]).sort((p,q)=>String(q.a.fecha||q.a.createdAt).localeCompare(String(p.a.fecha||p.a.createdAt))).map(({a,x})=>`<div class="gr-desp-v">
+      <div class="gr-desp-cab"><strong>${_fd(a.fecha||a.createdAt)}</strong> · ${escH(codigoArmado(a))} · salió de Fábrica <strong>${x.salida?_hm(x.salida):"—"}</strong>${x.realMin!=null?` · tardó ${_fmtMin(x.realMin)}`:""}${x.estMin!=null&&x.realMin!=null?` ${_dif(x.realMin-x.estMin)}`:""}
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();S.histSel='${escH(a.id)}';render()">📊 Ver</button></div>
+      <div class="gr-desp-par">${x.filas.map(f=>`<span><b>${escH(f.nombre)}</b> ${f.llego?_hm(f.llego):"—"}${f.dif!=null?` ${_dif(f.dif)}`:""}</span>`).join("")}</div>
+    </div>`).join("")}</div>`; };
+  return `<div class="gr-barras">${filas.map(f=>`<div class="gr-b ${!porRec&&S.histRepAbierto===f.k?"abierto":""}" onclick="${porRec?`S.histRec='${escH(f.k)}';render()`:`S.histRepAbierto=S.histRepAbierto==='${escH(f.k)}'?null:'${escH(f.k)}';render()`}" title="${porRec?"Ver este recorrido":"Ver cada vez que "+escH(f.k)+" lo hizo"}">
       <div class="gr-b-k">${!porRec?`<i style="background:${colorRepartidor(f.k)}"></i>`:""}${escH(f.k)} <small>${f.n} vez${f.n!==1?"es":""}</small></div>
       <div class="gr-b-bars">
         <div class="gr-b-bar real" style="width:${f.real/max*100}%"><span>${_fmtMin(f.real)}</span></div>
         ${f.est!==null?`<div class="gr-b-bar est" style="width:${f.est/max*100}%"><span>esperado ${_fmtMin(f.est)}</span></div>`:""}
       </div>
-      <div class="gr-b-d">${f.est!==null?_dif(f.real-f.est):""}</div></div>`).join("")}</div>
-    ${porRec?`<p class="ar-sub" style="margin-top:6px">Tocá un recorrido para comparar a los repartidores que lo hicieron.</p>`:`<p class="ar-sub" style="margin-top:6px">Mismo recorrido (${escH(S.histRec)}): quién tarda más. Tocá un repartidor para ver sus recorridos.</p>`}`;
+      <div class="gr-b-d">${f.est!==null?_dif(f.real-f.est):""}</div></div>${desplegable(f.k)}`).join("")}</div>
+    ${porRec?`<p class="ar-sub" style="margin-top:6px">Tocá un recorrido para comparar a los repartidores que lo hicieron.</p>`:`<p class="ar-sub" style="margin-top:6px">Mismo recorrido (${escH(S.histRec)}): quién tarda más. Tocá un repartidor para ver cada vez que lo hizo; o para ver sus recorridos.</p>`}`;
 }
 // Detalle de un recorrido: línea de tiempo esperado vs real + tabla
 function detalleRecorridoMetricas(a, x){
@@ -11709,7 +11822,7 @@ function detalleRecorridoMetricas(a, x){
   x.filas.forEach((f,i)=>{
     if(f.estMin!=null && f.realMin!=null) svg+=`<line x1="${X(f.estMin)}" y1="36" x2="${X(f.realMin)}" y2="86" class="gr-une ${f.dif>15?"tarde":""}"/>`;
     if(f.estMin!=null) svg+=`<circle cx="${X(f.estMin)}" cy="36" r="7" class="gr-est"><title>${escH(f.nombre)} · esperado ${f.estHora}</title></circle><text x="${X(f.estMin)}" y="20" class="gr-eje" text-anchor="middle">${i+1}</text>`;
-    if(f.realMin!=null) svg+=`<circle cx="${X(f.realMin)}" cy="86" r="7" fill="${colorRepartidor(a.nombreRep)}"><title>${escH(f.nombre)} · llegó ${_hm(f.llego)}${f.dif!==null?` (${f.dif>0?"+":""}${f.dif} min)`:""}</title></circle><text x="${X(f.realMin)}" y="110" class="gr-eje" text-anchor="middle">${i+1}</text>`;
+    if(f.realMin!=null) svg+=`<circle cx="${X(f.realMin)}" cy="86" r="7" fill="${colorRepartidor(a.nombreRep)}"><title>${escH(f.nombre)} · llegó ${_hm(f.llego)}${f.dif!==null?` (${f.dif>0?"+":f.dif<0?"−":""}${fmtDuracionMin(Math.abs(f.dif))})`:""}</title></circle><text x="${X(f.realMin)}" y="110" class="gr-eje" text-anchor="middle">${i+1}</text>`;
   });
   if(x.estMin!=null) svg+=`<text x="${X(x.estMin)}" y="52" class="gr-eje" text-anchor="middle">🏁</text>`;
   if(x.realMin!=null) svg+=`<text x="${X(x.realMin)}" y="102" class="gr-eje" text-anchor="middle">🏁</text>`;
@@ -12623,6 +12736,7 @@ function renderModals(){
   if(S.modal==="pickeoDni") return wrapModal("m",S.pickeoDni?.titulo||"Confirmar",renderPickeoDniModal(),400);
   if(S.modal==="reporteBolsines") return wrapModal("m","⬇ Reporte de bolsines",renderReporteBolsinModal(),460);
   if(S.modal==="rpEdit")        return wrapModal("m",S.rpEdit?.nuevo?"➕ Agregar producto":"✏️ Corregir producto",renderRpEditModal(),560);
+  if(S.modal==="recordatorioCierre") return wrapModal("m","Recordatorio",renderRecordatorioCierreModal(),420);
   if(S.modal==="noSeHizo")      return wrapModal("m","⚠️ Esta transferencia no se hizo",renderNoSeHizoModal(),480);
   if(S.modal==="diferencia")    return wrapModal("m","📝 Avisar una diferencia",renderDiferenciaModal(),460);
   if(S.modal==="verItem")       return wrapModal("m","📦 Qué es y a dónde va",renderVerItemModal(),460);
