@@ -1307,6 +1307,15 @@ tr[onclick]:active td{background:var(--s3)}
 .inc-chip{font-size:11.5px;font-weight:700;border:1px solid;border-radius:999px;padding:1px 8px}
 @media(max-width:600px){ .inc-fila{grid-template-columns:1fr 36px} .inc-bar{grid-column:1/-1;grid-row:2} }
 
+
+.hr-sol{margin:12px 0;padding:12px 14px;border-radius:12px;background:var(--s2);border:1px solid var(--border2)}
+.hr-tit{font-weight:700;font-size:14px;margin-bottom:6px}
+.hr-res{font-size:14px;line-height:1.5}
+.hr-resp{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:8px;font-size:12.5px;color:var(--muted)}
+.hr-resp span{background:var(--s1);border:1px solid var(--border2);border-radius:999px;padding:2px 9px;color:var(--text);font-weight:600}
+.hr-ev{margin-top:10px;display:flex;flex-direction:column;gap:4px;font-size:13px;border-top:1px solid var(--border);padding-top:8px}
+.hr-ev small{color:var(--faint);font-family:var(--mono);font-size:11.5px;margin-right:4px}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1331,7 +1340,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261127-0650";
+const APP_VERSION = "20261127-0656";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -13022,6 +13031,61 @@ async function guardarNoSeHizo(){
   if(d.reabrir) asignarRecorridoAuto(S.requests.find(x=>x.id===r.id)).catch(()=>{});
   toast(d.reabrir?`⚠️ ${r.id}: vuelve a quedar pendiente`:`⚠️ ${r.id}: cerrada como no realizada`); render();
 }
+// ═══ Detalle: 🧭 Recorridos y responsables (historial que anota la base sola) ═══
+async function cargarHistorialSol(id){
+  S.histSol=S.histSol||{}; S.histSol[id]={cargando:true, filas:[], incid:[]};
+  let filas=[], incid=[], falta=false;
+  try{ const { data, error } = await sb.from("historial_transferencias").select("*").eq("solicitud_id",id).order("ts",{ascending:true}); if(error) falta=true; else filas=data||[]; }catch(e){ falta=true; }
+  try{ const { data } = await sb.from("incidencias_repartidores").select("*").eq("solicitud_id",id); incid=data||[]; }catch(e){}
+  S.histSol[id]={cargando:false, filas, incid, falta}; render();
+}
+function historialRecorridosHtml(r){
+  if(!r) return "";
+  S.histSol=S.histSol||{};
+  const h=S.histSol[r.id];
+  if(!h){ setTimeout(()=>cargarHistorialSol(r.id),0); return ""; }
+  if(h.cargando) return "";
+  const filas=h.filas||[], incid=h.incid||[];
+  const asig=[]; filas.filter(f=>f.evento==="ASIGNADA").forEach(f=>{ if(!asig.some(x=>x.recorrido===f.recorrido)) asig.push({recorrido:f.recorrido||"—", rep:f.repartidor||""}); });
+  // si todavía no hay historial (transferencias viejas), lo que se sabe hoy
+  if(!asig.length && r.armadoId){ const a=armadoDe(r.armadoId); if(a) asig.push({recorrido:codigoArmado(a), rep:a.nombreRep||""}); }
+  incid.forEach(x=>{ if(x.recorrido && !asig.some(y=>y.recorrido===x.recorrido)) asig.push({recorrido:x.recorrido, rep:x.nombre||""}); });
+  const ret=filas.filter(f=>f.evento==="RETIRADA").slice(-1)[0];
+  const llevo = ret ? {rep:ret.repartidor||r.nombreQuienLevanto||"", recorrido:ret.recorrido||""} : (r.nombreQuienLevanto ? {rep:r.nombreQuienLevanto, recorrido:r.recorrido||""} : null);
+  const cierreManual = filas.filter(f=>f.evento==="ESTADO" && f.por).slice(-1)[0] || (r.cambioManualPor ? {por:r.cambioManualPor, estado_despues:r.cambioManualEstado||r.estado} : null);
+  const hecha = ["Entregada","Entregada (sin confirmar)","En el buzón"].includes(r.estado);
+  const cerradaSinHacer = ["Cancelada","Rechazada"].includes(r.estado);
+  const resp=[...new Set([...asig.map(a=>a.rep), llevo?.rep].filter(Boolean))];
+  if(!asig.length && !llevo && !filas.length && !incid.length) return "";
+  const fmtRec = a => `<strong>${escH(a.recorrido)}</strong>${a.rep?` (${escH(a.rep)})`:""}`;
+  let resumen="";
+  if(hecha && llevo){
+    const primero=asig[0];
+    resumen = (primero && (primero.recorrido!==llevo.recorrido || (primero.rep && llevo.rep && normNotif(primero.rep)!==normNotif(llevo.rep))) ? `Se la tenía que llevar ${fmtRec(primero)} · ` : "")
+      + `la llevó <strong>${escH(llevo.rep||"—")}</strong>${llevo.recorrido?` en <strong>${escH(llevo.recorrido)}</strong>`:""}`;
+  } else if(cerradaSinHacer || (!hecha && r.estado!=="En tránsito" && asig.length && !r.armadoId)){
+    resumen = asig.length ? `Estuvo en ${asig.length} recorrido${asig.length!==1?"s":""} (${asig.map(fmtRec).join(", ")}) y <strong>no se hizo</strong>` : `No se hizo`;
+  } else if(r.estado==="En tránsito" && llevo){
+    resumen = `La lleva <strong>${escH(llevo.rep)}</strong>${llevo.recorrido?` en <strong>${escH(llevo.recorrido)}</strong>`:""}`;
+  } else if(asig.length){
+    resumen = `Asignada a ${fmtRec(asig[asig.length-1])}${asig.length>1?` · antes estuvo en ${asig.slice(0,-1).map(fmtRec).join(", ")}`:""}`;
+  }
+  if(cierreManual && (hecha||cerradaSinHacer)) resumen += ` · la cerró a mano <strong>${escH(cierreManual.por)}</strong>`;
+  const ev=[
+    ...filas.map(f=>({ts:f.ts, t: f.evento==="ASIGNADA" ? `➕ Asignada a <strong>${escH(f.recorrido||"—")}</strong>${f.repartidor?` (${escH(f.repartidor)})`:""}`
+       : f.evento==="SACADA" ? `↩️ Salió de <strong>${escH(f.recorrido||"—")}</strong>${f.repartidor?` (${escH(f.repartidor)})`:""}${f.por?` · lo hizo ${escH(f.por)}`:""}`
+       : f.evento==="RETIRADA" ? `🚚 La retiró <strong>${escH(f.repartidor||"—")}</strong>${f.recorrido?` (${escH(f.recorrido)})`:""}`
+       : `● ${escH(f.estado_despues||"")}${f.detalle?` · ${escH(f.detalle)}`:""}${f.por?` · a mano por <strong>${escH(f.por)}</strong>`:""}`})),
+    ...incid.map(x=>({ts:x.created_at, t:`⚠️ ${escH(tipoIncid(x.tipo).lbl)} · <strong>${escH(x.nombre||"—")}</strong>${x.recorrido?` (${escH(x.recorrido)})`:""}`}))
+  ].sort((p,q)=>String(p.ts).localeCompare(String(q.ts)));
+  return `<div class="hr-sol">
+    <div class="hr-tit">🧭 Recorridos y responsables</div>
+    ${resumen?`<div class="hr-res">${resumen}</div>`:""}
+    ${resp.length?`<div class="hr-resp">Responsables: ${resp.map(n=>`<span>${escH(n)}</span>`).join("")}</div>`:""}
+    ${ev.length?`<div class="hr-ev">${ev.map(e=>`<div><small>${e.ts?_fd(e.ts)+" "+_hm(e.ts):""}</small> ${e.t}</div>`).join("")}</div>`:""}
+    ${h.falta&&_esStaff()?`<div class="ar-sub">Para ver el historial completo falta correr historial_01_transferencias.sql.</div>`:""}
+  </div>`;
+}
 function renderDetalle(){
   const r=S.requests.find(x=>x.id===S.selId);
   if(!r) return "<p>No encontrado</p>";
@@ -13232,6 +13296,7 @@ function renderDetalle(){
     ${r.recorrido&&recorridoVisible(r)?badge(r.recorrido,"var(--teal)"):""}
     ${chipEtiqueta(r)}
     ${avisoRecorridoHoy(r)}
+    ${["logistica","admin","planificacion"].includes(S.user?.rol)||_esStaff()?historialRecorridosHtml(r):""}
     ${_pasaPorFab(r) && !r.fabricaAt && ["Entregada","Entregada (sin confirmar)"].includes(r.estado)?badge("Directo, sin pasar por Fábrica","var(--amber)"):""}
   </div>
   ${esLogistica && !["Entregada","Rechazada","Cancelada"].includes(r.estado)?`
@@ -14722,7 +14787,9 @@ function handleBg(e){ if(e.target.id==="modal-bg") closeModal(); }
 function openModal(m){
   if(m==="nuevaSol"){ S.nsOtraDir=false; S.nsDireccion=null; S.nsDirNombre=""; S.nsDirCalle=""; S.nsDirMsg=""; }   // formulario nuevo, sin lo de la vez anterior
   if(arguments[0]==="nuevaSol" && !puede("nuevaTransferencia")){ avisoSinPermiso(); return; } S.modal=m; S.formErr={}; S.form=emptyForm(); render(); }
-function openDetalle(id){ S.selId=id; S.modal="detalle"; render(); }
+function openDetalle(id){
+  if(S.histSol) delete S.histSol[id];   // historial fresco
+  S.selId=id; S.modal="detalle"; render(); }
 function openGestionar(id){
   if(!puede("solicitudes")){ avisoSinPermiso(); return; }
   // Buscar la solicitud con su id exacto
