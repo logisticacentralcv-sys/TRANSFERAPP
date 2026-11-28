@@ -1316,6 +1316,21 @@ tr[onclick]:active td{background:var(--s3)}
 .hr-ev{margin-top:10px;display:flex;flex-direction:column;gap:4px;font-size:13px;border-top:1px solid var(--border);padding-top:8px}
 .hr-ev small{color:var(--faint);font-family:var(--mono);font-size:11.5px;margin-right:4px}
 
+
+/* Paradas como tarjetas, arrastre suave */
+.ar-col .ar-parada[data-par-i]{background:var(--s2);border:1px solid var(--border2);border-left:4px solid var(--border2);border-radius:14px;padding:10px 12px;margin:0 0 10px;transition:transform .22s cubic-bezier(.2,.8,.2,1), box-shadow .2s, border-color .2s;will-change:transform}
+.ar-col .ar-parada[data-par-i]:hover{border-color:var(--teal);border-left-color:var(--teal)}
+.ar-col .ar-parada.ok[data-par-i]{border-left-color:#2ecc7a}
+.ar-col .ar-parada.extra[data-par-i]{border-left-color:var(--amber)}
+.ar-par-tit[data-mov]{cursor:grab}
+.ar-asa{font-size:16px;padding:4px 6px;margin-left:-4px;border-radius:6px;touch-action:none;cursor:grab}
+.ar-asa:hover{background:var(--s1);color:var(--text)}
+.ar-hueco{opacity:0}
+.ar-fantasma{position:fixed;z-index:9999;pointer-events:none;margin:0!important;background:var(--s2);border:1px solid var(--teal);border-left:4px solid var(--teal);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;color:var(--text);box-shadow:0 18px 40px rgba(0,0,0,.5);transform:scale(1.03) rotate(.6deg);opacity:.97;border-color:var(--teal)!important;transition:transform .15s}
+.ar-fantasma.ar-cayendo{transition:top .17s cubic-bezier(.2,.8,.2,1), transform .17s;transform:scale(1) rotate(0)}
+body.arrastrando-parada{user-select:none;cursor:grabbing}
+body.arrastrando-parada *{cursor:grabbing!important}
+
 @media (prefers-reduced-motion: reduce){
   html{scroll-behavior:auto}
   *,*::before,*::after{animation-duration:.01ms!important;animation-delay:0s!important;transition-duration:.01ms!important}
@@ -1340,7 +1355,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261128-0649";
+const APP_VERSION = "20261128-0722";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -11005,6 +11020,69 @@ function paradasArmado(a, mias){
   return base;
 }
 // Fijar una parada agregada sola (ej. la vuelta a una sucursal) para poder moverla
+// ═══ Arrastre suave de paradas: una copia sigue al puntero y las demás tarjetas se abren donde va a caer ═══
+let _arrP=null;
+function iniciarArrastreParada(ev, id, i){
+  if(ev.button!==undefined && ev.button!==0) return;
+  if(ev.target.closest("button,select,input,a,.ar-x")) return;
+  if(ev.pointerType==="touch" && !ev.target.closest(".ar-asa")) return;   // con el dedo, desde el ⋮⋮ (así se puede desplazar la pantalla)
+  const card=ev.currentTarget.closest(".ar-parada"); if(!card) return;
+  _arrP={id, i, card, x0:ev.clientX, y0:ev.clientY, activo:false};
+  document.addEventListener("pointermove", _moverArrP, {passive:false});
+  document.addEventListener("pointerup", _soltarArrP);
+  document.addEventListener("pointercancel", _cancelarArrP);
+}
+function _empezarArrP(){
+  const d=_arrP, card=d.card, lista=card.parentElement;
+  d.cards=[...lista.querySelectorAll(":scope > .ar-parada[data-par-i]")];
+  d.idx=d.cards.indexOf(card); d.target=d.idx;
+  const r=card.getBoundingClientRect(), mb=parseFloat(getComputedStyle(card).marginBottom)||0, mt=parseFloat(getComputedStyle(card).marginTop)||0;
+  d.h=r.height+Math.max(mb,mt); d.offY=d.y0-r.top; d.left=r.left;
+  d.mids=d.cards.map(c=>{ const b=c.getBoundingClientRect(); return b.top+window.scrollY+b.height/2; });
+  const f=card.cloneNode(true); f.classList.add("ar-fantasma"); f.removeAttribute("data-par-i");
+  f.style.width=r.width+"px"; f.style.left=r.left+"px"; f.style.top=r.top+"px";
+  document.body.appendChild(f); d.fant=f;
+  d.cards.forEach(c=>{ if(c!==card) c.classList.add("ar-se-corre"); });
+  card.classList.add("ar-hueco"); document.body.classList.add("arrastrando-parada");
+  d.activo=true;
+}
+function _moverArrP(ev){
+  const d=_arrP; if(!d) return;
+  if(!d.activo){ if(Math.hypot(ev.clientX-d.x0, ev.clientY-d.y0)<6) return; _empezarArrP(); }
+  ev.preventDefault();
+  d.fant.style.top=(ev.clientY-d.offY)+"px";
+  // si se acerca al borde de la pantalla, la pantalla se desplaza sola
+  if(ev.clientY<70) window.scrollBy(0,-14); else if(ev.clientY>window.innerHeight-70) window.scrollBy(0,14);
+  const y=ev.clientY+window.scrollY;
+  let t=0; d.mids.forEach((m,k)=>{ if(k!==d.idx && y>m) t++; });
+  d.target=t;
+  d.cards.forEach((c,k)=>{ if(k===d.idx) return;
+    const s = (d.idx<k && k<=t) ? -d.h : (t<=k && k<d.idx) ? d.h : 0;
+    c.style.transform = s ? `translateY(${s}px)` : ""; });
+}
+function _limpiarArrP(d){
+  document.removeEventListener("pointermove", _moverArrP);
+  document.removeEventListener("pointerup", _soltarArrP);
+  document.removeEventListener("pointercancel", _cancelarArrP);
+  if(!d || !d.activo) return;
+  d.fant && d.fant.remove();
+  d.cards.forEach(c=>{ c.style.transform=""; c.classList.remove("ar-se-corre","ar-hueco"); });
+  document.body.classList.remove("arrastrando-parada");
+  S._finArrastre=Date.now();
+}
+function _cancelarArrP(){ const d=_arrP; _arrP=null; _limpiarArrP(d); }
+function _soltarArrP(){
+  const d=_arrP; _arrP=null; if(!d) return;
+  if(!d.activo){ _limpiarArrP(d); return; }   // fue un toque: abre/cierra la tarjeta como siempre
+  const destino = d.cards[d.target];
+  const hasta = destino ? +destino.dataset.parI : d.i;
+  // la copia baja suave hasta el lugar donde cae, y recién ahí se guarda
+  const r = destino ? destino.getBoundingClientRect() : d.card.getBoundingClientRect();
+  const base = d.card.getBoundingClientRect();
+  const yFin = destino ? (d.target>d.idx ? r.bottom-base.height : r.top) : base.top;
+  d.fant.classList.add("ar-cayendo"); d.fant.style.top=(yFin - (destino && d.target!==d.idx ? (d.target>d.idx?-0:0) : 0))+"px";
+  setTimeout(()=>{ _limpiarArrP(d); if(hasta!==d.i) moverParadaA(d.id, d.i, hasta); }, 170);
+}
 // Arrastrar una parada a otro lugar del recorrido (las agregadas, al moverlas, quedan fijas)
 function arrastrarParada(ev,id,i){
   S._arrParada={id,i};
@@ -11423,7 +11501,7 @@ function estimarArmado(a, paradas, salida){
   if(paradas.length){ const fin=_ptoMatriz(ex.fin), tr=minutosEntre(ant,fin); if(tr===null){ if(!falta) falta=[ant,fin]; } else { viaje+=tr; t+=tr; } }
   return {viaje, descarga, total:viaje+descarga, falta, etas, vuelta:hora(t), conFlota, manana};
 }
-function toggleParada(k){ const a=S.armadoSel; S.paradasAbiertas=S.paradasAbiertas||new Set(); const key=a+"|"+k; S.paradasAbiertas.has(key)?S.paradasAbiertas.delete(key):S.paradasAbiertas.add(key); render(); }
+function toggleParada(k){ if(Date.now()-(S._finArrastre||0)<350) return; const a=S.armadoSel; S.paradasAbiertas=S.paradasAbiertas||new Set(); const key=a+"|"+k; S.paradasAbiertas.has(key)?S.paradasAbiertas.delete(key):S.paradasAbiertas.add(key); render(); }
 const _fmtMin=m=>fmtDuracionMin(m);
 
 // ── Incidencias (llamados de atención) ──
@@ -11988,8 +12066,8 @@ function renderArmarDelDia(){
   const etaDe=n=>tiempo?tiempo.etas.find(x=>normNotif(x.nombre)===normNotif(n)):null;
   const abierta=k=>(S.paradasAbiertas||new Set()).has(a?.id+"|"+k);
   const chips=(dj,rt)=>`${dj.length?`<span class="ar-cnt dj">📤 ${dj.length}</span>`:""}${rt.length?`<span class="ar-cnt rt">📥 ${rt.length}</span>`:""}`;
-  const bloque=(k,titulo,num,items,extraTit,clase,attrs,der)=>`<div class="ar-parada ${clase||""}">
-      <div class="ar-par-tit ar-toggle" ${attrs||""} onclick="toggleParada('${escH(k)}')">${attrs&&attrs.includes("draggable")?`<span class="ar-asa" title="Arrastrá para cambiar el orden">⋮⋮</span>`:""}<span class="ar-num">${num}</span> <span class="ar-nom">${titulo}</span>${extraTit||""}<span class="ar-der">${der||""}<span class="ar-flecha">${items?(abierta(k)?"▲":"▼"):""}</span></span></div>
+  const bloque=(k,titulo,num,items,extraTit,clase,attrs,der,dataPar)=>`<div class="ar-parada ${clase||""}" ${dataPar||""}>
+      <div class="ar-par-tit ar-toggle" ${attrs||""} onclick="toggleParada('${escH(k)}')">${attrs&&attrs.includes("data-mov")?`<span class="ar-asa" title="Arrastrá para cambiar el orden">⋮⋮</span>`:""}<span class="ar-num">${num}</span> <span class="ar-nom">${titulo}</span>${extraTit||""}<span class="ar-der">${der||""}<span class="ar-flecha">${items?(abierta(k)?"▲":"▼"):""}</span></span></div>
       ${abierta(k)?items:""}</div>`;
   const paradasHtml=paradas.map((p,i)=>{
     const dj=p.dj||deja(p.nombre), rt=p.rt||retira(p.nombre), ll=llegadaN(p.nombre,i), et=tiempo?tiempo.etas[i]:null;
@@ -12005,13 +12083,12 @@ function renderArmarDelDia(){
     const puedeMover = editable && !yaPaso && !p.libre;
     const quitar = editable && !yaPaso ? `<button class="ar-x" title="Sacar esta parada" onclick="event.stopPropagation();quitarParadaArmado('${A}',${i})">✕</button>` : "";
     const buscar = editable && p.libre ? `<button class="btn btn-teal btn-sm" onclick="event.stopPropagation();buscarDireccionDeParada('${A}',${i})">📍 Buscar</button>` : "";
-    const attrs = editable && !yaPaso
-      ? `${puedeMover?`draggable="true" ondragstart="arrastrarParada(event,'${A}',${i})" ondragend="this.classList.remove('arrastrando')"`:""} ondragover="if(S._arrParada){event.preventDefault();event.stopPropagation();this.classList.add('sobre-par')}" ondragleave="this.classList.remove('sobre-par')" ondrop="this.classList.remove('sobre-par');soltarParada(event,'${A}',${i})"`
-      : "";
+    // arrastre suave (mouse o dedo desde el ⋮⋮): las otras tarjetas se abren donde va a caer
+    const attrs = puedeMover ? `data-mov="1" onpointerdown="iniciarArrastreParada(event,'${A}',${i})"` : "";
     const der = `${ll?`<span class="ar-ll">✓ llegó ${hm(ll.ts)}</span>`:(et&&et.hora?`<span class="ar-eta" title="Llegada estimada">≈ ${et.hora}</span>`:"")}${et&&!p.libre?`<span class="ar-desc-min" title="Descarga estimada">${et.descarga} min</span>`:""}${buscar}${quitar}`;
     return bloque(p.nombre+"#"+i, p.libre?`📍 ${escH(p.obs||"Otra dirección")} <span class="ar-tag">sin buscar</span>`:escH(p.nombre), i+1, det,
       `${p.repetida?`<span class="ar-tag" title="Se vuelve a pasar por acá por: ${escH([...(p.dj||[]),...(p.rt||[])].map(x=>`${x.id} (${origenLabel(x)} → ${x.destino})`).join(", "))}">🔁 vuelve a pasar</span>`:""}${p.extra&&!p.repetida?`<span class="ar-tag">➕ agregada</span>`:""}${chips(dj,rt)}`,
-      `${ll?"ok":""} ${p.extra?"extra":""}`, attrs, der);
+      `${ll?"ok":""} ${p.extra?"extra":""}`, attrs, der, `data-par-i="${i}"`);
   }).join("");
   return `
   <div class="ar-wrap">
