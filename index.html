@@ -1340,7 +1340,7 @@ const USE_SHEETS   = SUPABASE_URL !== "";  // se mantiene el nombre por compatib
 // version.json (sin caché) al abrir y al volver a la pestaña: si el servidor tiene una versión
 // más nueva se recarga sola, o —si hay algo a medio hacer— muestra un aviso para tocar.
 // Así un celular o tablet con la versión vieja guardada se pone al día sin que nadie haga nada.
-const APP_VERSION = "20261127-0656";
+const APP_VERSION = "20261128-0649";
 let _ultimoChequeoVersion = 0;
 async function chequearVersion(){
   if(Date.now()-_ultimoChequeoVersion < 60000) return;
@@ -13040,7 +13040,7 @@ async function cargarHistorialSol(id){
   S.histSol[id]={cargando:false, filas, incid, falta}; render();
 }
 function historialRecorridosHtml(r){
-  if(!r) return "";
+  if(!r || S.user?.rol!=="logistica") return "";   // solo Logística
   S.histSol=S.histSol||{};
   const h=S.histSol[r.id];
   if(!h){ setTimeout(()=>cargarHistorialSol(r.id),0); return ""; }
@@ -13296,7 +13296,7 @@ function renderDetalle(){
     ${r.recorrido&&recorridoVisible(r)?badge(r.recorrido,"var(--teal)"):""}
     ${chipEtiqueta(r)}
     ${avisoRecorridoHoy(r)}
-    ${["logistica","admin","planificacion"].includes(S.user?.rol)||_esStaff()?historialRecorridosHtml(r):""}
+    ${S.user?.rol==="logistica"?historialRecorridosHtml(r):""}
     ${_pasaPorFab(r) && !r.fabricaAt && ["Entregada","Entregada (sin confirmar)"].includes(r.estado)?badge("Directo, sin pasar por Fábrica","var(--amber)"):""}
   </div>
   ${esLogistica && !["Entregada","Rechazada","Cancelada"].includes(r.estado)?`
